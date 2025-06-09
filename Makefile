@@ -1,7 +1,7 @@
 # the-spice-must-flow Makefile
 
-BINARY_NAME=the-spice-must-flow
-MAIN_PACKAGE=./cmd/the-spice-must-flow
+BINARY_NAME=spice
+MAIN_PACKAGE=./cmd/spice
 GO=go
 GOTEST=$(GO) test
 GOVET=$(GO) vet
