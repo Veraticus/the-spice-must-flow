@@ -11,9 +11,9 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 )
 
-// MockUserPrompter is a test implementation of the UserPrompter interface.
+// MockPrompter is a test implementation of the Prompter interface.
 // It auto-accepts suggestions for testing purposes.
-type MockUserPrompter struct {
+type MockPrompter struct {
 	startTime         time.Time
 	customResponses   map[string]string
 	rejectMerchants   map[string]bool
@@ -41,9 +41,9 @@ type MockBatchConfirmCall struct {
 	Classifications []model.Classification
 }
 
-// NewMockUserPrompter creates a new mock user prompter.
-func NewMockUserPrompter(autoAccept bool) *MockUserPrompter {
-	return &MockUserPrompter{
+// NewMockPrompter creates a new mock user prompter.
+func NewMockPrompter(autoAccept bool) *MockPrompter {
+	return &MockPrompter{
 		confirmCalls:      make([]MockConfirmCall, 0),
 		batchConfirmCalls: make([]MockBatchConfirmCall, 0),
 		autoAccept:        autoAccept,
@@ -54,7 +54,7 @@ func NewMockUserPrompter(autoAccept bool) *MockUserPrompter {
 }
 
 // ConfirmClassification confirms a single classification.
-func (m *MockUserPrompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
+func (m *MockPrompter) ConfirmClassification(_ context.Context, pending model.PendingClassification) (model.Classification, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -116,7 +116,7 @@ func (m *MockUserPrompter) ConfirmClassification(ctx context.Context, pending mo
 }
 
 // BatchConfirmClassifications confirms multiple classifications at once.
-func (m *MockUserPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+func (m *MockPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -234,7 +234,7 @@ func (m *MockUserPrompter) BatchConfirmClassifications(ctx context.Context, pend
 }
 
 // GetCompletionStats returns statistics about the classification run.
-func (m *MockUserPrompter) GetCompletionStats() service.CompletionStats {
+func (m *MockPrompter) GetCompletionStats() service.CompletionStats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -248,21 +248,21 @@ func (m *MockUserPrompter) GetCompletionStats() service.CompletionStats {
 }
 
 // SetCustomResponse sets a custom category response for a specific merchant.
-func (m *MockUserPrompter) SetCustomResponse(merchant, category string) {
+func (m *MockPrompter) SetCustomResponse(merchant, category string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.customResponses[merchant] = category
 }
 
 // SetRejectMerchant marks a merchant to be rejected during confirmation.
-func (m *MockUserPrompter) SetRejectMerchant(merchant string) {
+func (m *MockPrompter) SetRejectMerchant(merchant string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.rejectMerchants[merchant] = true
 }
 
 // GetConfirmCalls returns all single confirmation calls for verification.
-func (m *MockUserPrompter) GetConfirmCalls() []MockConfirmCall {
+func (m *MockPrompter) GetConfirmCalls() []MockConfirmCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -272,7 +272,7 @@ func (m *MockUserPrompter) GetConfirmCalls() []MockConfirmCall {
 }
 
 // GetBatchConfirmCalls returns all batch confirmation calls for verification.
-func (m *MockUserPrompter) GetBatchConfirmCalls() []MockBatchConfirmCall {
+func (m *MockPrompter) GetBatchConfirmCalls() []MockBatchConfirmCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -282,21 +282,21 @@ func (m *MockUserPrompter) GetBatchConfirmCalls() []MockBatchConfirmCall {
 }
 
 // ConfirmCallCount returns the number of single confirmation calls.
-func (m *MockUserPrompter) ConfirmCallCount() int {
+func (m *MockPrompter) ConfirmCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.confirmCalls)
 }
 
 // BatchConfirmCallCount returns the number of batch confirmation calls.
-func (m *MockUserPrompter) BatchConfirmCallCount() int {
+func (m *MockPrompter) BatchConfirmCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.batchConfirmCalls)
 }
 
 // Reset clears all recorded calls and statistics.
-func (m *MockUserPrompter) Reset() {
+func (m *MockPrompter) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.confirmCalls = make([]MockConfirmCall, 0)

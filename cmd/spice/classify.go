@@ -4,10 +4,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
 	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
@@ -48,7 +48,7 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	resume := viper.GetBool("classification.resume")
 	dryRun := viper.GetBool("classification.dry_run")
 
-	fmt.Println(cli.StyleTitle("🌶️  Starting transaction categorization..."))
+	slog.Info("Starting transaction categorization")
 
 	// Initialize storage
 	dbPath := viper.GetString("database.path")
@@ -61,33 +61,37 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("Failed to close database", "error", err)
+		}
+	}()
 
 	// Run migrations
 	if err := db.Migrate(ctx); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	fmt.Println(cli.StyleSuccess("✓ Connected to database"))
+	slog.Info("Connected to database successfully")
 
 	// For now, use mock implementations
 	// TODO: Replace with real implementations in later phases
-	var llm service.LLMClassifier
-	var prompter service.UserPrompter
+	var classifier engine.Classifier
+	var prompter engine.Prompter
 
 	if dryRun {
-		fmt.Println(cli.StyleInfo("ℹ️  Running in dry-run mode - using mock components"))
-		llm = engine.NewMockLLMClassifier()
-		prompter = engine.NewMockUserPrompter(true) // Auto-accept in dry-run
+		slog.Info("Running in dry-run mode - using mock components")
+		classifier = engine.NewMockClassifier()
+		prompter = engine.NewMockPrompter(true) // Auto-accept in dry-run
 	} else {
 		// TODO: Initialize real LLM and prompter
-		fmt.Println(cli.StyleWarning("⚠️  Using mock components (real implementations coming soon)"))
-		llm = engine.NewMockLLMClassifier()
-		prompter = engine.NewMockUserPrompter(false)
+		slog.Warn("Using mock components (real implementations coming soon)")
+		classifier = engine.NewMockClassifier()
+		prompter = engine.NewMockPrompter(false)
 	}
 
 	// Create classification engine
-	classificationEngine := engine.New(db, llm, prompter)
+	classificationEngine := engine.New(db, classifier, prompter)
 
 	// Determine date range
 	var fromDate *time.Time
@@ -110,8 +114,8 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	// Run classification
 	if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
 		if err == context.Canceled {
-			fmt.Println(cli.StyleWarning("\n⚠️  Classification interrupted"))
-			fmt.Println(cli.StyleInfo("ℹ️  Progress saved. Resume with: spice classify --resume"))
+			slog.Warn("Classification interrupted")
+			slog.Info("Progress saved. Resume with: spice classify --resume")
 			return nil
 		}
 		return fmt.Errorf("classification failed: %w", err)
@@ -125,33 +129,34 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 }
 
 func showCompletionStats(stats service.CompletionStats) {
-	fmt.Println(cli.StyleSuccess("\n✅ Classification complete!"))
-
-	fmt.Printf("\n%s\n", cli.StyleTitle("Summary"))
-	fmt.Printf("Total transactions:      %d\n", stats.TotalTransactions)
+	slog.Info("Classification complete!", "total_transactions", stats.TotalTransactions)
 
 	if stats.TotalTransactions > 0 {
 		autoPercent := float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100
 		userPercent := float64(stats.UserClassified) / float64(stats.TotalTransactions) * 100
 
-		fmt.Printf("Auto-classified:         %d (%.1f%%)\n", stats.AutoClassified, autoPercent)
-		fmt.Printf("User-classified:         %d (%.1f%%)\n", stats.UserClassified, userPercent)
+		slog.Info("Classification statistics",
+			"auto_classified", stats.AutoClassified,
+			"auto_percent", autoPercent,
+			"user_classified", stats.UserClassified,
+			"user_percent", userPercent)
 	}
 
-	fmt.Printf("\nNew vendor rules:        %d\n", stats.NewVendorRules)
-	fmt.Printf("Time taken:              %s\n", stats.Duration.Round(time.Second))
+	slog.Info("Classification details",
+		"new_vendor_rules", stats.NewVendorRules,
+		"duration", stats.Duration.Round(time.Second))
 
 	if stats.TotalTransactions > 0 {
 		// Estimate time saved (30 seconds per manual transaction)
 		timeSaved := time.Duration(stats.AutoClassified) * 30 * time.Second
-		fmt.Printf("Time saved:              ~%s (estimated)\n", timeSaved.Round(time.Minute))
+		slog.Info("Time saved", "estimated_time", timeSaved.Round(time.Minute))
 	}
 
-	fmt.Printf("\n%s\n", cli.StyleInfo("Ready for export: spice flow --export"))
+	slog.Info("Ready for export: spice flow --export")
 }
 
 func expandPath(path string) string {
-	if len(path) > 0 && path[0] == '~' {
+	if path != "" && path[0] == '~' {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			path = home + path[1:]

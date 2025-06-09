@@ -21,23 +21,23 @@ import (
 type ClassificationEngine struct {
 	cacheExpiry time.Time
 	storage     service.Storage
-	llm         service.LLMClassifier
-	prompter    service.UserPrompter
+	classifier  Classifier
+	prompter    Prompter
 	vendorCache map[string]*model.Vendor
 	batchSize   int
 	cacheMu     sync.RWMutex
 }
 
-// EngineConfig holds configuration options for the classification engine.
-type EngineConfig struct {
+// Config holds configuration options for the classification engine.
+type Config struct {
 	BatchSize         int
 	VendorCacheTTL    time.Duration
 	VarianceThreshold float64
 }
 
-// DefaultEngineConfig returns the default configuration.
-func DefaultEngineConfig() EngineConfig {
-	return EngineConfig{
+// DefaultConfig returns the default configuration.
+func DefaultConfig() Config {
+	return Config{
 		BatchSize:         50,
 		VendorCacheTTL:    5 * time.Minute,
 		VarianceThreshold: 10.0,
@@ -45,16 +45,16 @@ func DefaultEngineConfig() EngineConfig {
 }
 
 // New creates a new classification engine with the given dependencies.
-func New(storage service.Storage, llm service.LLMClassifier, prompter service.UserPrompter) *ClassificationEngine {
-	config := DefaultEngineConfig()
-	return NewWithConfig(storage, llm, prompter, config)
+func New(storage service.Storage, classifier Classifier, prompter Prompter) *ClassificationEngine {
+	config := DefaultConfig()
+	return NewWithConfig(storage, classifier, prompter, config)
 }
 
 // NewWithConfig creates a new classification engine with custom configuration.
-func NewWithConfig(storage service.Storage, llm service.LLMClassifier, prompter service.UserPrompter, config EngineConfig) *ClassificationEngine {
+func NewWithConfig(storage service.Storage, classifier Classifier, prompter Prompter, config Config) *ClassificationEngine {
 	return &ClassificationEngine{
 		storage:     storage,
-		llm:         llm,
+		classifier:  classifier,
 		prompter:    prompter,
 		vendorCache: make(map[string]*model.Vendor),
 		batchSize:   config.BatchSize,
@@ -79,8 +79,8 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 	}
 
 	// Warm up vendor cache
-	if err := e.warmVendorCache(ctx); err != nil {
-		slog.Warn("Failed to warm vendor cache", "error", err)
+	if warmErr := e.warmVendorCache(ctx); warmErr != nil {
+		slog.Warn("Failed to warm vendor cache", "error", warmErr)
 	}
 
 	// Get unclassified transactions
@@ -143,8 +143,8 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 
 			// Update vendor use count
 			vendor.UseCount += len(txns)
-			if err := e.storage.SaveVendor(ctx, vendor); err != nil {
-				slog.Warn("Failed to update vendor use count", "error", err)
+			if saveErr := e.storage.SaveVendor(ctx, vendor); saveErr != nil {
+				slog.Warn("Failed to update vendor use count", "error", saveErr)
 			}
 		} else {
 			// Need classification
@@ -210,7 +210,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	err := common.WithRetry(ctx, func() error {
 		var err error
-		category, confidence, err = e.llm.SuggestCategory(ctx, representative)
+		category, confidence, err = e.classifier.SuggestCategory(ctx, representative)
 		if err != nil {
 			return &common.RetryableError{Err: err, Retryable: true}
 		}
@@ -276,12 +276,12 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 }
 
 // reviewIndividually handles high-variance merchants by reviewing each transaction.
-func (e *ClassificationEngine) reviewIndividually(ctx context.Context, merchant string, txns []model.Transaction) ([]model.Classification, error) {
+func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction) ([]model.Classification, error) {
 	classifications := make([]model.Classification, 0, len(txns))
 
 	for _, txn := range txns {
 		// Get AI suggestion for each transaction
-		category, confidence, err := e.llm.SuggestCategory(ctx, txn)
+		category, confidence, err := e.classifier.SuggestCategory(ctx, txn)
 		if err != nil {
 			slog.Warn("Failed to get AI suggestion",
 				"transaction_id", txn.ID,

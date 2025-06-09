@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 )
 
 // MockClient is a mock implementation of PlaidClient for testing.
@@ -67,4 +66,4 @@ func (m *MockClient) Reset() {
 }
 
 // Ensure MockClient implements PlaidClient interface.
-var _ service.PlaidClient = (*MockClient)(nil)
+var _ TransactionFetcher = (*MockClient)(nil)

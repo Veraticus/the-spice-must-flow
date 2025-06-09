@@ -451,7 +451,7 @@ func TestCLIPrompter_TimeSavingsCalculation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prompter := &CLIPrompter{}
+			prompter := &Prompter{}
 			timeSaved := prompter.calculateTimeSaved(tt.stats)
 			assert.Equal(t, tt.expectedOutput, timeSaved)
 		})

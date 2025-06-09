@@ -9,10 +9,6 @@ import (
 )
 
 // PlaidClient defines the contract for fetching data from Plaid.
-type PlaidClient interface {
-	GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error)
-	GetAccounts(ctx context.Context) ([]string, error)
-}
 
 // Storage defines the contract for our persistence layer.
 type Storage interface {
@@ -48,10 +44,6 @@ type Transaction interface {
 }
 
 // LLMClassifier defines the contract for AI-based categorization.
-type LLMClassifier interface {
-	SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error)
-	BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]LLMSuggestion, error)
-}
 
 // LLMSuggestion represents a single classification suggestion.
 type LLMSuggestion struct {
@@ -61,11 +53,6 @@ type LLMSuggestion struct {
 }
 
 // UserPrompter defines the contract for user interaction.
-type UserPrompter interface {
-	ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error)
-	BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error)
-	GetCompletionStats() CompletionStats
-}
 
 // CompletionStats shows the results of a classification run.
 type CompletionStats struct {
@@ -77,9 +64,6 @@ type CompletionStats struct {
 }
 
 // ReportWriter defines the contract for output generation.
-type ReportWriter interface {
-	WriteReport(ctx context.Context, classifications []model.Classification, summary ReportSummary) error
-}
 
 // ReportSummary contains aggregate information for the report.
 type ReportSummary struct {
@@ -102,9 +86,6 @@ type CategorySummary struct {
 }
 
 // Retryable defines a common interface for retryable operations.
-type Retryable interface {
-	Retry(ctx context.Context, fn func() error, opts RetryOptions) error
-}
 
 // RetryOptions configures retry behavior for operations.
 type RetryOptions struct {

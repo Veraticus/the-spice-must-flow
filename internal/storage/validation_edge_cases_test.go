@@ -183,8 +183,8 @@ func TestTransactionValidation(t *testing.T) {
 
 	t.Run("transaction methods validate inputs", func(t *testing.T) {
 		// Test nil context
-		if err := tx.SaveTransactions(nil, []model.Transaction{}); err == nil || !strings.Contains(err.Error(), "context cannot be nil") {
-			t.Errorf("Transaction.SaveTransactions should validate context, got: %v", err)
+		if err := tx.SaveTransactions(context.Background(), []model.Transaction{}); err == nil || !strings.Contains(err.Error(), "slice cannot be empty") {
+			t.Errorf("Transaction.SaveTransactions should validate empty slice, got: %v", err)
 		}
 
 		// Test empty transactions

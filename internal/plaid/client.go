@@ -352,4 +352,4 @@ func extractPlaidError(err error) *plaid.PlaidError {
 }
 
 // Ensure Client implements PlaidClient interface.
-var _ service.PlaidClient = (*Client)(nil)
+var _ TransactionFetcher = (*Client)(nil)

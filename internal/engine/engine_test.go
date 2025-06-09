@@ -29,6 +29,7 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 		{
 			name: "classify new transactions with no existing vendors",
 			setupStorage: func(t *testing.T) service.Storage {
+				t.Helper()
 				db, err := storage.NewSQLiteStorage(":memory:")
 				require.NoError(t, err)
 				require.NoError(t, db.Migrate(context.Background()))
@@ -66,6 +67,7 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 		{
 			name: "apply existing vendor rules",
 			setupStorage: func(t *testing.T) service.Storage {
+				t.Helper()
 				db, err := storage.NewSQLiteStorage(":memory:")
 				require.NoError(t, err)
 				require.NoError(t, db.Migrate(context.Background()))
@@ -102,6 +104,7 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 		{
 			name: "resume from saved progress",
 			setupStorage: func(t *testing.T) service.Storage {
+				t.Helper()
 				db, err := storage.NewSQLiteStorage(":memory:")
 				require.NoError(t, err)
 				require.NoError(t, db.Migrate(context.Background()))
@@ -145,6 +148,7 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 		{
 			name: "high variance merchant detection",
 			setupStorage: func(t *testing.T) service.Storage {
+				t.Helper()
 				db, err := storage.NewSQLiteStorage(":memory:")
 				require.NoError(t, err)
 				require.NoError(t, db.Migrate(context.Background()))
@@ -209,6 +213,7 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 		{
 			name: "empty transaction list",
 			setupStorage: func(t *testing.T) service.Storage {
+				t.Helper()
 				db, err := storage.NewSQLiteStorage(":memory:")
 				require.NoError(t, err)
 				require.NoError(t, db.Migrate(context.Background()))
@@ -256,8 +261,8 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 			}
 
 			// Create mocks
-			llm := NewMockLLMClassifier()
-			prompter := NewMockUserPrompter(tt.llmAutoAccept)
+			llm := NewMockClassifier()
+			prompter := NewMockPrompter(tt.llmAutoAccept)
 
 			// Create engine
 			engine := New(storage, llm, prompter)
@@ -371,7 +376,11 @@ func TestClassificationEngine_VendorCache(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(ctx))
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			t.Logf("Failed to close database: %v", closeErr)
+		}
+	}()
 
 	// Add vendor to storage
 	vendor := &model.Vendor{
@@ -383,7 +392,7 @@ func TestClassificationEngine_VendorCache(t *testing.T) {
 	require.NoError(t, db.SaveVendor(ctx, vendor))
 
 	// Create engine
-	engine := New(db, NewMockLLMClassifier(), NewMockUserPrompter(true))
+	engine := New(db, NewMockClassifier(), NewMockPrompter(true))
 
 	// Warm cache
 	err = engine.warmVendorCache(ctx)
@@ -431,7 +440,11 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(context.Background()))
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			t.Logf("Failed to close database: %v", closeErr)
+		}
+	}()
 
 	// Add many transactions to ensure we can cancel mid-process
 	transactions := make([]model.Transaction, 100)
@@ -449,10 +462,10 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 	require.NoError(t, db.SaveTransactions(context.Background(), transactions))
 
 	// Create engine with slow prompter
-	llm := NewMockLLMClassifier()
+	llm := NewMockClassifier()
 	prompter := &slowMockPrompter{
-		MockUserPrompter: NewMockUserPrompter(true),
-		delay:            100 * time.Millisecond,
+		MockPrompter: NewMockPrompter(true),
+		delay:        100 * time.Millisecond,
 	}
 	engine := New(db, llm, prompter)
 
@@ -487,7 +500,7 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 
 // slowMockPrompter adds delay to simulate slow user interaction.
 type slowMockPrompter struct {
-	*MockUserPrompter
+	*MockPrompter
 	delay time.Duration
 }
 
@@ -496,7 +509,7 @@ func (s *slowMockPrompter) BatchConfirmClassifications(ctx context.Context, pend
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-time.After(s.delay):
-		return s.MockUserPrompter.BatchConfirmClassifications(ctx, pending)
+		return s.MockPrompter.BatchConfirmClassifications(ctx, pending)
 	}
 }
 
@@ -507,7 +520,11 @@ func TestClassificationEngine_RetryLogic(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(ctx))
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			t.Logf("Failed to close database: %v", closeErr)
+		}
+	}()
 
 	// Add test transaction
 	transaction := model.Transaction{
@@ -522,10 +539,10 @@ func TestClassificationEngine_RetryLogic(t *testing.T) {
 	require.NoError(t, db.SaveTransactions(ctx, []model.Transaction{transaction}))
 
 	// Create failing LLM classifier
-	llm := &failingLLMClassifier{
+	llm := &failingClassifier{
 		failCount: 2, // Fail first 2 attempts
 	}
-	prompter := NewMockUserPrompter(true)
+	prompter := NewMockPrompter(true)
 
 	// Create engine
 	engine := New(db, llm, prompter)
@@ -538,14 +555,14 @@ func TestClassificationEngine_RetryLogic(t *testing.T) {
 	assert.Equal(t, 3, llm.attempts) // 2 failures + 1 success
 }
 
-// failingLLMClassifier simulates transient failures.
-type failingLLMClassifier struct {
+// failingClassifier simulates transient failures.
+type failingClassifier struct {
 	failCount int
 	attempts  int
 	mu        sync.Mutex
 }
 
-func (f *failingLLMClassifier) SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error) {
+func (f *failingClassifier) SuggestCategory(_ context.Context, _ model.Transaction) (string, float64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -557,7 +574,7 @@ func (f *failingLLMClassifier) SuggestCategory(ctx context.Context, transaction 
 	return "Test Category", 0.85, nil
 }
 
-func (f *failingLLMClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
+func (f *failingClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 	for i, txn := range transactions {
 		category, confidence, err := f.SuggestCategory(ctx, txn)

@@ -325,7 +325,7 @@ func TestMockClient(t *testing.T) {
 			Amount: 10.50,
 		},
 	}
-	mock.GetTransactionsFn = func(_ context.Context, start, end time.Time) ([]model.Transaction, error) {
+	mock.GetTransactionsFn = func(_ context.Context, _, _ time.Time) ([]model.Transaction, error) {
 		return expectedTxs, nil
 	}
 

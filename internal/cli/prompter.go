@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -15,7 +16,8 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-type CLIPrompter struct {
+// Prompter implements the interactive CLI prompting interface for transaction classification.
+type Prompter struct {
 	writer            io.Writer
 	reader            *bufio.Reader
 	progressBar       *progressbar.ProgressBar
@@ -28,7 +30,8 @@ type CLIPrompter struct {
 	historyMutex      sync.RWMutex
 }
 
-func NewCLIPrompter(reader io.Reader, writer io.Writer) *CLIPrompter {
+// NewCLIPrompter creates a new CLI prompter with the given reader and writer.
+func NewCLIPrompter(reader io.Reader, writer io.Writer) *Prompter {
 	if reader == nil {
 		reader = os.Stdin
 	}
@@ -36,14 +39,15 @@ func NewCLIPrompter(reader io.Reader, writer io.Writer) *CLIPrompter {
 		writer = os.Stdout
 	}
 
-	return &CLIPrompter{
+	return &Prompter{
 		reader:          bufio.NewReader(reader),
 		writer:          writer,
 		categoryHistory: make(map[string][]string),
 	}
 }
 
-func (p *CLIPrompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
+// ConfirmClassification prompts the user to confirm or modify a single transaction classification.
+func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
 	select {
 	case <-ctx.Done():
 		return model.Classification{}, ctx.Err()
@@ -53,13 +57,25 @@ func (p *CLIPrompter) ConfirmClassification(ctx context.Context, pending model.P
 	p.updateProgress()
 
 	content := p.formatSingleTransaction(pending)
-	fmt.Fprintln(p.writer, RenderBox("Transaction Details", content))
+	if _, err := fmt.Fprintln(p.writer, RenderBox("Transaction Details", content)); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write transaction box: %w", err)
+	}
 
-	fmt.Fprintln(p.writer, FormatPrompt("Category options:"))
-	fmt.Fprintf(p.writer, "  [A] Accept AI suggestion: %s\n", SuccessStyle.Render(pending.SuggestedCategory))
-	fmt.Fprintln(p.writer, "  [C] Enter custom category")
-	fmt.Fprintln(p.writer, "  [S] Skip this transaction")
-	fmt.Fprintln(p.writer)
+	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Category options:")); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write category options: %w", err)
+	}
+	if _, err := fmt.Fprintf(p.writer, "  [A] Accept AI suggestion: %s\n", SuccessStyle.Render(pending.SuggestedCategory)); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write AI suggestion: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [C] Enter custom category"); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write custom option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [S] Skip this transaction"); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write skip option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
+	}
 
 	choice, err := p.promptChoice(ctx, "Choice [A/C/S]", []string{"a", "c", "s"})
 	if err != nil {
@@ -94,7 +110,8 @@ func (p *CLIPrompter) ConfirmClassification(ctx context.Context, pending model.P
 	return classification, nil
 }
 
-func (p *CLIPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+// BatchConfirmClassifications prompts the user to confirm or modify multiple transaction classifications.
+func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	if len(pending) == 0 {
 		return []model.Classification{}, nil
 	}
@@ -111,14 +128,28 @@ func (p *CLIPrompter) BatchConfirmClassifications(ctx context.Context, pending [
 	pattern := p.detectPattern(merchantName)
 
 	content := p.formatBatchSummary(pending, pattern)
-	fmt.Fprintln(p.writer, RenderBox("Batch Review", content))
+	if _, err := fmt.Fprintln(p.writer, RenderBox("Batch Review", content)); err != nil {
+		return nil, fmt.Errorf("failed to write batch review box: %w", err)
+	}
 
-	fmt.Fprintln(p.writer, FormatPrompt("Options:"))
-	fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending))
-	fmt.Fprintln(p.writer, "  [C] Set custom category for all")
-	fmt.Fprintln(p.writer, "  [R] Review each transaction individually")
-	fmt.Fprintln(p.writer, "  [S] Skip all transactions")
-	fmt.Fprintln(p.writer)
+	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Options:")); err != nil {
+		return nil, fmt.Errorf("failed to write options prompt: %w", err)
+	}
+	if _, err := fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending)); err != nil {
+		return nil, fmt.Errorf("failed to write batch accept option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [C] Set custom category for all"); err != nil {
+		return nil, fmt.Errorf("failed to write custom category option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [R] Review each transaction individually"); err != nil {
+		return nil, fmt.Errorf("failed to write review option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [S] Skip all transactions"); err != nil {
+		return nil, fmt.Errorf("failed to write skip all option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return nil, fmt.Errorf("failed to write newline: %w", err)
+	}
 
 	choice, err := p.promptChoice(ctx, "Choice [A/C/R/S]", []string{"a", "c", "r", "s"})
 	if err != nil {
@@ -139,21 +170,28 @@ func (p *CLIPrompter) BatchConfirmClassifications(ctx context.Context, pending [
 	return nil, fmt.Errorf("unexpected choice: %s", choice)
 }
 
-func (p *CLIPrompter) GetCompletionStats() service.CompletionStats {
+// GetCompletionStats returns statistics about the classification session.
+func (p *Prompter) GetCompletionStats() service.CompletionStats {
 	p.statsMutex.RLock()
 	defer p.statsMutex.RUnlock()
 	return p.stats
 }
 
-func (p *CLIPrompter) SetTotalTransactions(total int) {
+// SetTotalTransactions sets the total number of transactions to be processed.
+func (p *Prompter) SetTotalTransactions(total int) {
 	p.totalTransactions = total
 	p.initProgressBar()
 }
 
-func (p *CLIPrompter) ShowCompletion() {
+// ShowCompletion displays the completion summary to the user.
+func (p *Prompter) ShowCompletion() {
 	if p.progressBar != nil {
-		p.progressBar.Finish()
-		fmt.Fprintln(p.writer)
+		if err := p.progressBar.Finish(); err != nil {
+			slog.Warn("Failed to finish progress bar", "error", err)
+		}
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			slog.Warn("Failed to write newline", "error", err)
+		}
 	}
 
 	stats := p.GetCompletionStats()
@@ -169,10 +207,12 @@ func (p *CLIPrompter) ShowCompletion() {
 		fmt.Sprintf("  • Time taken: %s\n", stats.Duration.Round(time.Second)) +
 		fmt.Sprintf("  • Time saved: ~%s %s\n", timeSaved, RobotIcon)
 
-	fmt.Fprintln(p.writer, RenderBox("Classification Complete", summary))
+	if _, err := fmt.Fprintln(p.writer, RenderBox("Classification Complete", summary)); err != nil {
+		slog.Warn("Failed to write completion box", "error", err)
+	}
 }
 
-func (p *CLIPrompter) initProgressBar() {
+func (p *Prompter) initProgressBar() {
 	p.progressBar = progressbar.NewOptions(p.totalTransactions,
 		progressbar.OptionSetWriter(p.writer),
 		progressbar.OptionEnableColorCodes(true),
@@ -188,19 +228,23 @@ func (p *CLIPrompter) initProgressBar() {
 			BarEnd:        "]",
 		}),
 		progressbar.OptionOnCompletion(func() {
-			fmt.Fprintln(p.writer)
+			if _, err := fmt.Fprintln(p.writer); err != nil {
+				slog.Warn("Failed to write newline after progress bar", "error", err)
+			}
 		}),
 	)
 }
 
-func (p *CLIPrompter) updateProgress() {
+func (p *Prompter) updateProgress() {
 	p.processedCount++
 	if p.progressBar != nil {
-		p.progressBar.Add(1)
+		if err := p.progressBar.Add(1); err != nil {
+			slog.Warn("Failed to update progress bar", "error", err)
+		}
 	}
 }
 
-func (p *CLIPrompter) formatSingleTransaction(pending model.PendingClassification) string {
+func (p *Prompter) formatSingleTransaction(pending model.PendingClassification) string {
 	t := pending.Transaction
 
 	header := TitleStyle.Render(fmt.Sprintf("Transaction Review: %s", t.MerchantName))
@@ -222,7 +266,7 @@ func (p *CLIPrompter) formatSingleTransaction(pending model.PendingClassificatio
 	return header + "\n\n" + details + suggestion
 }
 
-func (p *CLIPrompter) formatBatchSummary(pending []model.PendingClassification, pattern string) string {
+func (p *Prompter) formatBatchSummary(pending []model.PendingClassification, pattern string) string {
 	merchantName := pending[0].Transaction.MerchantName
 	suggestedCategory := pending[0].SuggestedCategory
 
@@ -261,7 +305,7 @@ func (p *CLIPrompter) formatBatchSummary(pending []model.PendingClassification, 
 	return header + summary + suggestion + samples
 }
 
-func (p *CLIPrompter) formatTransactionSamples(pending []model.PendingClassification) string {
+func (p *Prompter) formatTransactionSamples(pending []model.PendingClassification) string {
 	if len(pending) <= 3 {
 		return ""
 	}
@@ -282,7 +326,7 @@ func (p *CLIPrompter) formatTransactionSamples(pending []model.PendingClassifica
 	return samples
 }
 
-func (p *CLIPrompter) detectPattern(merchantName string) string {
+func (p *Prompter) detectPattern(merchantName string) string {
 	p.historyMutex.RLock()
 	defer p.historyMutex.RUnlock()
 
@@ -304,7 +348,7 @@ func (p *CLIPrompter) detectPattern(merchantName string) string {
 	return ""
 }
 
-func (p *CLIPrompter) trackCategorization(merchantName, category string) {
+func (p *Prompter) trackCategorization(merchantName, category string) {
 	p.historyMutex.Lock()
 	defer p.historyMutex.Unlock()
 
@@ -316,7 +360,7 @@ func (p *CLIPrompter) trackCategorization(merchantName, category string) {
 	}
 }
 
-func (p *CLIPrompter) promptChoice(ctx context.Context, prompt string, validChoices []string) (string, error) {
+func (p *Prompter) promptChoice(ctx context.Context, prompt string, validChoices []string) (string, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -324,7 +368,9 @@ func (p *CLIPrompter) promptChoice(ctx context.Context, prompt string, validChoi
 		default:
 		}
 
-		fmt.Fprintf(p.writer, "%s: ", FormatPrompt(prompt))
+		if _, err := fmt.Fprintf(p.writer, "%s: ", FormatPrompt(prompt)); err != nil {
+			return "", fmt.Errorf("failed to write prompt: %w", err)
+		}
 
 		input, err := p.reader.ReadString('\n')
 		if err != nil {
@@ -342,23 +388,33 @@ func (p *CLIPrompter) promptChoice(ctx context.Context, prompt string, validChoi
 			}
 		}
 
-		fmt.Fprintln(p.writer, FormatError("Invalid choice. Please try again."))
+		if _, err := fmt.Fprintln(p.writer, FormatError("Invalid choice. Please try again.")); err != nil {
+			slog.Warn("Failed to write error message", "error", err)
+		}
 	}
 }
 
-func (p *CLIPrompter) promptCustomCategory(ctx context.Context) (string, error) {
-	fmt.Fprintln(p.writer)
+func (p *Prompter) promptCustomCategory(ctx context.Context) (string, error) {
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
+	}
 
 	if len(p.recentCategories) > 0 {
-		fmt.Fprintln(p.writer, FormatInfo("Recent categories:"))
+		if _, err := fmt.Fprintln(p.writer, FormatInfo("Recent categories:")); err != nil {
+			return "", fmt.Errorf("failed to write recent categories header: %w", err)
+		}
 		seen := make(map[string]bool)
 		for _, cat := range p.recentCategories {
 			if !seen[cat] {
-				fmt.Fprintf(p.writer, "  • %s\n", cat)
+				if _, err := fmt.Fprintf(p.writer, "  • %s\n", cat); err != nil {
+					slog.Warn("Failed to write recent category", "error", err)
+				}
 				seen[cat] = true
 			}
 		}
-		fmt.Fprintln(p.writer)
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return "", fmt.Errorf("failed to write newline after categories: %w", err)
+		}
 	}
 
 	for {
@@ -368,7 +424,9 @@ func (p *CLIPrompter) promptCustomCategory(ctx context.Context) (string, error) 
 		default:
 		}
 
-		fmt.Fprint(p.writer, FormatPrompt("Enter category: "))
+		if _, err := fmt.Fprint(p.writer, FormatPrompt("Enter category: ")); err != nil {
+			return "", fmt.Errorf("failed to write category prompt: %w", err)
+		}
 
 		input, err := p.reader.ReadString('\n')
 		if err != nil {
@@ -377,7 +435,9 @@ func (p *CLIPrompter) promptCustomCategory(ctx context.Context) (string, error) 
 
 		category := strings.TrimSpace(input)
 		if category == "" {
-			fmt.Fprintln(p.writer, FormatError("Category cannot be empty. Please try again."))
+			if _, err := fmt.Fprintln(p.writer, FormatError("Category cannot be empty. Please try again.")); err != nil {
+				slog.Warn("Failed to write empty category error", "error", err)
+			}
 			continue
 		}
 
@@ -385,7 +445,7 @@ func (p *CLIPrompter) promptCustomCategory(ctx context.Context) (string, error) 
 	}
 }
 
-func (p *CLIPrompter) acceptAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
+func (p *Prompter) acceptAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
 	classifications := make([]model.Classification, len(pending))
 
 	for i, pc := range pending {
@@ -400,13 +460,15 @@ func (p *CLIPrompter) acceptAllClassifications(pending []model.PendingClassifica
 	}
 
 	p.incrementStats(false, true)
-	fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
-		len(pending), pending[0].SuggestedCategory)))
+	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
+		len(pending), pending[0].SuggestedCategory))); err != nil {
+		slog.Warn("Failed to write success message", "error", err)
+	}
 
 	return classifications, nil
 }
 
-func (p *CLIPrompter) customCategoryForAll(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	category, err := p.promptCustomCategory(ctx)
 	if err != nil {
 		return nil, err
@@ -426,19 +488,25 @@ func (p *CLIPrompter) customCategoryForAll(ctx context.Context, pending []model.
 	}
 
 	p.incrementStats(true, true)
-	fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
-		len(pending), category)))
+	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
+		len(pending), category))); err != nil {
+		slog.Warn("Failed to write custom category success", "error", err)
+	}
 
 	return classifications, nil
 }
 
-func (p *CLIPrompter) reviewEachTransaction(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
-	fmt.Fprintln(p.writer, FormatInfo(fmt.Sprintf("Reviewing %d transactions individually...", len(pending))))
+func (p *Prompter) reviewEachTransaction(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+	if _, err := fmt.Fprintln(p.writer, FormatInfo(fmt.Sprintf("Reviewing %d transactions individually...", len(pending)))); err != nil {
+		return nil, fmt.Errorf("failed to write review info: %w", err)
+	}
 
 	classifications := make([]model.Classification, 0, len(pending))
 
 	for i, pc := range pending {
-		fmt.Fprintf(p.writer, "\n[%d/%d] ", i+1, len(pending))
+		if _, err := fmt.Fprintf(p.writer, "\n[%d/%d] ", i+1, len(pending)); err != nil {
+			slog.Warn("Failed to write progress", "error", err)
+		}
 
 		classification, err := p.ConfirmClassification(ctx, pc)
 		if err != nil {
@@ -451,7 +519,7 @@ func (p *CLIPrompter) reviewEachTransaction(ctx context.Context, pending []model
 	return classifications, nil
 }
 
-func (p *CLIPrompter) skipAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
+func (p *Prompter) skipAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
 	classifications := make([]model.Classification, len(pending))
 
 	for i, pc := range pending {
@@ -462,12 +530,14 @@ func (p *CLIPrompter) skipAllClassifications(pending []model.PendingClassificati
 		}
 	}
 
-	fmt.Fprintln(p.writer, FormatWarning(fmt.Sprintf("⚠ Skipped %d transactions", len(pending))))
+	if _, err := fmt.Fprintln(p.writer, FormatWarning(fmt.Sprintf("⚠ Skipped %d transactions", len(pending)))); err != nil {
+		slog.Warn("Failed to write skip warning", "error", err)
+	}
 
 	return classifications, nil
 }
 
-func (p *CLIPrompter) incrementStats(userModified bool, isVendorRule bool) {
+func (p *Prompter) incrementStats(userModified bool, isVendorRule bool) {
 	p.statsMutex.Lock()
 	defer p.statsMutex.Unlock()
 
@@ -484,18 +554,19 @@ func (p *CLIPrompter) incrementStats(userModified bool, isVendorRule bool) {
 	}
 }
 
-func (p *CLIPrompter) calculateTimeSaved(stats service.CompletionStats) string {
+func (p *Prompter) calculateTimeSaved(stats service.CompletionStats) string {
 	avgSecondsPerTransaction := 5.0
 
 	timeSavedSeconds := float64(stats.AutoClassified) * avgSecondsPerTransaction
 
-	if timeSavedSeconds < 60 {
+	switch {
+	case timeSavedSeconds < 60:
 		return fmt.Sprintf("%.0f seconds", timeSavedSeconds)
-	} else if timeSavedSeconds < 3600 {
+	case timeSavedSeconds < 3600:
 		return fmt.Sprintf("%.1f minutes", timeSavedSeconds/60)
-	} else {
+	default:
 		return fmt.Sprintf("%.1f hours", timeSavedSeconds/3600)
 	}
 }
 
-var _ service.UserPrompter = (*CLIPrompter)(nil)
+// Prompter implements the UserPrompter interface.

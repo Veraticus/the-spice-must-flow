@@ -10,9 +10,9 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 )
 
-// MockLLMClassifier is a test implementation of the LLMClassifier interface.
+// MockClassifier is a test implementation of the Classifier interface.
 // It returns deterministic suggestions based on merchant name for testing.
-type MockLLMClassifier struct {
+type MockClassifier struct {
 	calls []MockLLMCall
 	mu    sync.Mutex
 }
@@ -25,15 +25,15 @@ type MockLLMCall struct {
 	Confidence  float64
 }
 
-// NewMockLLMClassifier creates a new mock LLM classifier.
-func NewMockLLMClassifier() *MockLLMClassifier {
-	return &MockLLMClassifier{
+// NewMockClassifier creates a new mock LLM classifier.
+func NewMockClassifier() *MockClassifier {
+	return &MockClassifier{
 		calls: make([]MockLLMCall, 0),
 	}
 }
 
 // SuggestCategory provides deterministic category suggestions based on merchant name.
-func (m *MockLLMClassifier) SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error) {
+func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Transaction) (string, float64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -52,13 +52,14 @@ func (m *MockLLMClassifier) SuggestCategory(ctx context.Context, transaction mod
 		confidence = 0.92
 	case strings.Contains(merchantLower, "amazon"):
 		// Amazon has variable confidence based on amount
-		if transaction.Amount < 50 {
+		switch {
+		case transaction.Amount < 50:
 			category = "Office Supplies"
 			confidence = 0.75
-		} else if transaction.Amount < 200 {
+		case transaction.Amount < 200:
 			category = "Shopping"
 			confidence = 0.80
-		} else {
+		default:
 			category = "Computer & Electronics"
 			confidence = 0.85
 		}
@@ -79,13 +80,14 @@ func (m *MockLLMClassifier) SuggestCategory(ctx context.Context, transaction mod
 		confidence = 0.88
 	default:
 		// Default categorization based on amount
-		if transaction.Amount < 25 {
+		switch {
+		case transaction.Amount < 25:
 			category = "Miscellaneous"
 			confidence = 0.60
-		} else if transaction.Amount < 100 {
+		case transaction.Amount < 100:
 			category = "Shopping"
 			confidence = 0.65
-		} else {
+		default:
 			category = "Other Expenses"
 			confidence = 0.55
 		}
@@ -104,7 +106,7 @@ func (m *MockLLMClassifier) SuggestCategory(ctx context.Context, transaction mod
 }
 
 // BatchSuggestCategories provides batch suggestions for multiple transactions.
-func (m *MockLLMClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
+func (m *MockClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 
 	for i, txn := range transactions {
@@ -124,7 +126,7 @@ func (m *MockLLMClassifier) BatchSuggestCategories(ctx context.Context, transact
 }
 
 // GetCalls returns all recorded calls for verification in tests.
-func (m *MockLLMClassifier) GetCalls() []MockLLMCall {
+func (m *MockClassifier) GetCalls() []MockLLMCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -135,14 +137,14 @@ func (m *MockLLMClassifier) GetCalls() []MockLLMCall {
 }
 
 // CallCount returns the number of times SuggestCategory was called.
-func (m *MockLLMClassifier) CallCount() int {
+func (m *MockClassifier) CallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.calls)
 }
 
 // Reset clears all recorded calls.
-func (m *MockLLMClassifier) Reset() {
+func (m *MockClassifier) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = make([]MockLLMCall, 0)
