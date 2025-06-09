@@ -49,7 +49,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// Client implements the PlaidClient interface.
+// Client implements the TransactionFetcher interface.
 type Client struct {
 	client      *plaid.APIClient
 	logger      *slog.Logger
@@ -351,5 +351,5 @@ func extractPlaidError(err error) *plaid.PlaidError {
 	return &plaidErr
 }
 
-// Ensure Client implements PlaidClient interface.
+// Ensure Client implements TransactionFetcher interface.
 var _ TransactionFetcher = (*Client)(nil)

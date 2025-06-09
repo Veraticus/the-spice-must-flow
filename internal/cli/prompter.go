@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 	"github.com/schollz/progressbar/v3"
@@ -18,6 +19,7 @@ import (
 
 // Prompter implements the interactive CLI prompting interface for transaction classification.
 type Prompter struct {
+	startTime         time.Time
 	writer            io.Writer
 	reader            *bufio.Reader
 	progressBar       *progressbar.ProgressBar
@@ -43,6 +45,7 @@ func NewCLIPrompter(reader io.Reader, writer io.Writer) *Prompter {
 		reader:          bufio.NewReader(reader),
 		writer:          writer,
 		categoryHistory: make(map[string][]string),
+		startTime:       time.Now(),
 	}
 }
 
@@ -174,7 +177,10 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 func (p *Prompter) GetCompletionStats() service.CompletionStats {
 	p.statsMutex.RLock()
 	defer p.statsMutex.RUnlock()
-	return p.stats
+
+	stats := p.stats
+	stats.Duration = time.Since(p.startTime)
+	return stats
 }
 
 // SetTotalTransactions sets the total number of transactions to be processed.
@@ -459,7 +465,7 @@ func (p *Prompter) acceptAllClassifications(pending []model.PendingClassificatio
 		p.trackCategorization(pc.Transaction.MerchantName, pc.SuggestedCategory)
 	}
 
-	p.incrementStats(false, true)
+	p.incrementBatchStats(len(pending), false, true)
 	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
 		len(pending), pending[0].SuggestedCategory))); err != nil {
 		slog.Warn("Failed to write success message", "error", err)
@@ -487,7 +493,7 @@ func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.Pen
 		p.trackCategorization(pc.Transaction.MerchantName, category)
 	}
 
-	p.incrementStats(true, true)
+	p.incrementBatchStats(len(pending), true, true)
 	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
 		len(pending), category))); err != nil {
 		slog.Warn("Failed to write custom category success", "error", err)
@@ -554,6 +560,23 @@ func (p *Prompter) incrementStats(userModified bool, isVendorRule bool) {
 	}
 }
 
+func (p *Prompter) incrementBatchStats(count int, userModified bool, isVendorRule bool) {
+	p.statsMutex.Lock()
+	defer p.statsMutex.Unlock()
+
+	p.stats.TotalTransactions += count
+
+	if userModified {
+		p.stats.UserClassified += count
+	} else {
+		p.stats.AutoClassified += count
+	}
+
+	if isVendorRule {
+		p.stats.NewVendorRules++
+	}
+}
+
 func (p *Prompter) calculateTimeSaved(stats service.CompletionStats) string {
 	avgSecondsPerTransaction := 5.0
 
@@ -569,4 +592,5 @@ func (p *Prompter) calculateTimeSaved(stats service.CompletionStats) string {
 	}
 }
 
-// Prompter implements the UserPrompter interface.
+// Ensure Prompter implements the engine.Prompter interface.
+var _ engine.Prompter = (*Prompter)(nil)

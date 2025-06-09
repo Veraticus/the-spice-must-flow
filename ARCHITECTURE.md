@@ -106,8 +106,8 @@ import (
     "thespicemustflow/internal/model"
 )
 
-// PlaidClient defines the contract for fetching data from Plaid.
-type PlaidClient interface {
+// TransactionFetcher defines the contract for fetching data from Plaid.
+type TransactionFetcher interface {
     GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error)
     GetAccounts(ctx context.Context) ([]string, error) // For account filtering
 }

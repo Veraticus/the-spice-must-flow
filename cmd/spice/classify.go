@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
 	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
@@ -48,6 +49,10 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	resume := viper.GetBool("classification.resume")
 	dryRun := viper.GetBool("classification.dry_run")
 
+	// Set up interrupt handling
+	interruptHandler := cli.NewInterruptHandler(nil)
+	ctx = interruptHandler.HandleInterrupts(ctx, true)
+
 	slog.Info("Starting transaction categorization")
 
 	// Initialize storage
@@ -62,20 +67,19 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer func() {
-		if err := db.Close(); err != nil {
-			slog.Error("Failed to close database", "error", err)
+		if closeErr := db.Close(); closeErr != nil {
+			slog.Error("Failed to close database", "error", closeErr)
 		}
 	}()
 
 	// Run migrations
-	if err := db.Migrate(ctx); err != nil {
-		return fmt.Errorf("failed to run migrations: %w", err)
+	if migrateErr := db.Migrate(ctx); migrateErr != nil {
+		return fmt.Errorf("failed to run migrations: %w", migrateErr)
 	}
 
 	slog.Info("Connected to database successfully")
 
-	// For now, use mock implementations
-	// TODO: Replace with real implementations in later phases
+	// Initialize components
 	var classifier engine.Classifier
 	var prompter engine.Prompter
 
@@ -84,10 +88,12 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		classifier = engine.NewMockClassifier()
 		prompter = engine.NewMockPrompter(true) // Auto-accept in dry-run
 	} else {
-		// TODO: Initialize real LLM and prompter
-		slog.Warn("Using mock components (real implementations coming soon)")
+		// Use real prompter for interactive classification
+		prompter = cli.NewCLIPrompter(nil, nil)
+
+		// TODO: Initialize real LLM classifier
+		slog.Warn("Using mock LLM classifier (real implementation coming soon)")
 		classifier = engine.NewMockClassifier()
-		prompter = engine.NewMockPrompter(false)
 	}
 
 	// Create classification engine
@@ -98,9 +104,9 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	if !resume {
 		if month != "" {
 			// Parse month
-			parsedMonth, err := time.Parse("2006-01", month)
-			if err != nil {
-				return fmt.Errorf("invalid month format (use YYYY-MM): %w", err)
+			parsedMonth, parseErr := time.Parse("2006-01", month)
+			if parseErr != nil {
+				return fmt.Errorf("invalid month format (use YYYY-MM): %w", parseErr)
 			}
 			startDate := parsedMonth
 			fromDate = &startDate
@@ -109,6 +115,17 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 			startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 			fromDate = &startDate
 		}
+	}
+
+	// Get transaction count for progress tracking
+	txns, err := db.GetTransactionsToClassify(ctx, fromDate)
+	if err != nil {
+		return fmt.Errorf("failed to count transactions: %w", err)
+	}
+
+	// Set total for progress tracking
+	if cliPrompter, ok := prompter.(*cli.Prompter); ok {
+		cliPrompter.SetTotalTransactions(len(txns))
 	}
 
 	// Run classification
@@ -122,8 +139,12 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Show completion stats
-	stats := prompter.GetCompletionStats()
-	showCompletionStats(stats)
+	if cliPrompter, ok := prompter.(*cli.Prompter); ok {
+		cliPrompter.ShowCompletion()
+	} else {
+		stats := prompter.GetCompletionStats()
+		showCompletionStats(stats)
+	}
 
 	return nil
 }

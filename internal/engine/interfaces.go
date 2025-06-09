@@ -7,8 +7,6 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 )
 
-// PlaidClient defines the contract for fetching data from Plaid.
-
 // Classifier defines the contract for transaction categorization.
 type Classifier interface {
 	SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error)

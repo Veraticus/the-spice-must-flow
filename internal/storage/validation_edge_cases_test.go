@@ -16,25 +16,27 @@ func TestStorageValidation(t *testing.T) {
 
 	t.Run("nil context validation", func(t *testing.T) {
 		// Test all methods with nil context
+		// These tests intentionally pass nil to verify validation
+		//nolint:staticcheck
 		txns := []model.Transaction{{ID: "test", Date: time.Now(), Name: "Test", AccountID: "acc1"}}
 
-		if err := store.SaveTransactions(nil, txns); err == nil || !strings.Contains(err.Error(), "context cannot be nil") {
+		if err := store.SaveTransactions(nil, txns); err == nil || !strings.Contains(err.Error(), "context cannot be nil") { //nolint:staticcheck
 			t.Errorf("SaveTransactions should fail with nil context, got: %v", err)
 		}
 
-		if _, err := store.GetTransactionsToClassify(nil, nil); err == nil || !strings.Contains(err.Error(), "context cannot be nil") {
+		if _, err := store.GetTransactionsToClassify(nil, nil); err == nil || !strings.Contains(err.Error(), "context cannot be nil") { //nolint:staticcheck
 			t.Errorf("GetTransactionsToClassify should fail with nil context, got: %v", err)
 		}
 
-		if _, err := store.GetTransactionByID(nil, "id"); err == nil || !strings.Contains(err.Error(), "context cannot be nil") {
+		if _, err := store.GetTransactionByID(nil, "id"); err == nil || !strings.Contains(err.Error(), "context cannot be nil") { //nolint:staticcheck
 			t.Errorf("GetTransactionByID should fail with nil context, got: %v", err)
 		}
 
-		if _, err := store.BeginTx(nil); err == nil || !strings.Contains(err.Error(), "context cannot be nil") {
+		if _, err := store.BeginTx(nil); err == nil || !strings.Contains(err.Error(), "context cannot be nil") { //nolint:staticcheck
 			t.Errorf("BeginTx should fail with nil context, got: %v", err)
 		}
 
-		if err := store.Migrate(nil); err == nil || !strings.Contains(err.Error(), "context cannot be nil") {
+		if err := store.Migrate(nil); err == nil || !strings.Contains(err.Error(), "context cannot be nil") { //nolint:staticcheck
 			t.Errorf("Migrate should fail with nil context, got: %v", err)
 		}
 	})

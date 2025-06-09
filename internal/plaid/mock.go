@@ -8,7 +8,7 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
-// MockClient is a mock implementation of PlaidClient for testing.
+// MockClient is a mock implementation of TransactionFetcher for testing.
 type MockClient struct {
 	// Functions that can be set by tests to control behavior
 	GetTransactionsFn func(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error)
@@ -32,7 +32,7 @@ func NewMockClient() *MockClient {
 	}
 }
 
-// GetTransactions implements PlaidClient.GetTransactions.
+// GetTransactions implements TransactionFetcher.GetTransactions.
 func (m *MockClient) GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error) {
 	m.GetTransactionsCalls = append(m.GetTransactionsCalls, GetTransactionsCall{
 		StartDate: startDate,
@@ -47,7 +47,7 @@ func (m *MockClient) GetTransactions(ctx context.Context, startDate, endDate tim
 	return []model.Transaction{}, nil
 }
 
-// GetAccounts implements PlaidClient.GetAccounts.
+// GetAccounts implements TransactionFetcher.GetAccounts.
 func (m *MockClient) GetAccounts(ctx context.Context) ([]string, error) {
 	m.GetAccountsCalls++
 
@@ -65,5 +65,5 @@ func (m *MockClient) Reset() {
 	m.GetAccountsCalls = 0
 }
 
-// Ensure MockClient implements PlaidClient interface.
+// Ensure MockClient implements TransactionFetcher interface.
 var _ TransactionFetcher = (*MockClient)(nil)

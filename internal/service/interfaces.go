@@ -8,8 +8,6 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
-// PlaidClient defines the contract for fetching data from Plaid.
-
 // Storage defines the contract for our persistence layer.
 type Storage interface {
 	// Transaction operations
@@ -43,16 +41,12 @@ type Transaction interface {
 	Storage
 }
 
-// LLMClassifier defines the contract for AI-based categorization.
-
 // LLMSuggestion represents a single classification suggestion.
 type LLMSuggestion struct {
 	TransactionID string
 	Category      string
 	Confidence    float64
 }
-
-// UserPrompter defines the contract for user interaction.
 
 // CompletionStats shows the results of a classification run.
 type CompletionStats struct {
@@ -62,8 +56,6 @@ type CompletionStats struct {
 	NewVendorRules    int
 	Duration          time.Duration
 }
-
-// ReportWriter defines the contract for output generation.
 
 // ReportSummary contains aggregate information for the report.
 type ReportSummary struct {
@@ -84,8 +76,6 @@ type CategorySummary struct {
 	Count  int
 	Amount float64
 }
-
-// Retryable defines a common interface for retryable operations.
 
 // RetryOptions configures retry behavior for operations.
 type RetryOptions struct {
