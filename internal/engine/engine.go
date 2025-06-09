@@ -177,7 +177,7 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 		}
 	}
 
-	// Check if we were cancelled before clearing progress
+	// Check if we were canceled before clearing progress
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

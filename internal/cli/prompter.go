@@ -1,0 +1,501 @@
+package cli
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/schollz/progressbar/v3"
+)
+
+type CLIPrompter struct {
+	writer            io.Writer
+	reader            *bufio.Reader
+	progressBar       *progressbar.ProgressBar
+	categoryHistory   map[string][]string
+	recentCategories  []string
+	stats             service.CompletionStats
+	totalTransactions int
+	processedCount    int
+	statsMutex        sync.RWMutex
+	historyMutex      sync.RWMutex
+}
+
+func NewCLIPrompter(reader io.Reader, writer io.Writer) *CLIPrompter {
+	if reader == nil {
+		reader = os.Stdin
+	}
+	if writer == nil {
+		writer = os.Stdout
+	}
+
+	return &CLIPrompter{
+		reader:          bufio.NewReader(reader),
+		writer:          writer,
+		categoryHistory: make(map[string][]string),
+	}
+}
+
+func (p *CLIPrompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
+	select {
+	case <-ctx.Done():
+		return model.Classification{}, ctx.Err()
+	default:
+	}
+
+	p.updateProgress()
+
+	content := p.formatSingleTransaction(pending)
+	fmt.Fprintln(p.writer, RenderBox("Transaction Details", content))
+
+	fmt.Fprintln(p.writer, FormatPrompt("Category options:"))
+	fmt.Fprintf(p.writer, "  [A] Accept AI suggestion: %s\n", SuccessStyle.Render(pending.SuggestedCategory))
+	fmt.Fprintln(p.writer, "  [C] Enter custom category")
+	fmt.Fprintln(p.writer, "  [S] Skip this transaction")
+	fmt.Fprintln(p.writer)
+
+	choice, err := p.promptChoice(ctx, "Choice [A/C/S]", []string{"a", "c", "s"})
+	if err != nil {
+		return model.Classification{}, err
+	}
+
+	classification := model.Classification{
+		Transaction:  pending.Transaction,
+		Confidence:   pending.Confidence,
+		ClassifiedAt: time.Now(),
+	}
+
+	switch choice {
+	case "a":
+		classification.Category = pending.SuggestedCategory
+		classification.Status = model.StatusClassifiedByAI
+		p.trackCategorization(pending.Transaction.MerchantName, pending.SuggestedCategory)
+		p.incrementStats(false, false)
+	case "c":
+		category, err := p.promptCustomCategory(ctx)
+		if err != nil {
+			return model.Classification{}, err
+		}
+		classification.Category = category
+		classification.Status = model.StatusUserModified
+		p.trackCategorization(pending.Transaction.MerchantName, category)
+		p.incrementStats(true, false)
+	case "s":
+		classification.Status = model.StatusUnclassified
+	}
+
+	return classification, nil
+}
+
+func (p *CLIPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+	if len(pending) == 0 {
+		return []model.Classification{}, nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	p.updateProgress()
+
+	merchantName := pending[0].Transaction.MerchantName
+	pattern := p.detectPattern(merchantName)
+
+	content := p.formatBatchSummary(pending, pattern)
+	fmt.Fprintln(p.writer, RenderBox("Batch Review", content))
+
+	fmt.Fprintln(p.writer, FormatPrompt("Options:"))
+	fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending))
+	fmt.Fprintln(p.writer, "  [C] Set custom category for all")
+	fmt.Fprintln(p.writer, "  [R] Review each transaction individually")
+	fmt.Fprintln(p.writer, "  [S] Skip all transactions")
+	fmt.Fprintln(p.writer)
+
+	choice, err := p.promptChoice(ctx, "Choice [A/C/R/S]", []string{"a", "c", "r", "s"})
+	if err != nil {
+		return nil, err
+	}
+
+	switch choice {
+	case "a":
+		return p.acceptAllClassifications(pending)
+	case "c":
+		return p.customCategoryForAll(ctx, pending)
+	case "r":
+		return p.reviewEachTransaction(ctx, pending)
+	case "s":
+		return p.skipAllClassifications(pending)
+	}
+
+	return nil, fmt.Errorf("unexpected choice: %s", choice)
+}
+
+func (p *CLIPrompter) GetCompletionStats() service.CompletionStats {
+	p.statsMutex.RLock()
+	defer p.statsMutex.RUnlock()
+	return p.stats
+}
+
+func (p *CLIPrompter) SetTotalTransactions(total int) {
+	p.totalTransactions = total
+	p.initProgressBar()
+}
+
+func (p *CLIPrompter) ShowCompletion() {
+	if p.progressBar != nil {
+		p.progressBar.Finish()
+		fmt.Fprintln(p.writer)
+	}
+
+	stats := p.GetCompletionStats()
+	timeSaved := p.calculateTimeSaved(stats)
+
+	summary := fmt.Sprintf("%s Classification Complete!\n\n", SpiceIcon) +
+		"📊 Statistics:\n" +
+		fmt.Sprintf("  • Total transactions: %d\n", stats.TotalTransactions) +
+		fmt.Sprintf("  • Auto-classified: %d (%.1f%%)\n", stats.AutoClassified,
+			float64(stats.AutoClassified)/float64(stats.TotalTransactions)*100) +
+		fmt.Sprintf("  • User-classified: %d\n", stats.UserClassified) +
+		fmt.Sprintf("  • New vendor rules: %d\n", stats.NewVendorRules) +
+		fmt.Sprintf("  • Time taken: %s\n", stats.Duration.Round(time.Second)) +
+		fmt.Sprintf("  • Time saved: ~%s %s\n", timeSaved, RobotIcon)
+
+	fmt.Fprintln(p.writer, RenderBox("Classification Complete", summary))
+}
+
+func (p *CLIPrompter) initProgressBar() {
+	p.progressBar = progressbar.NewOptions(p.totalTransactions,
+		progressbar.OptionSetWriter(p.writer),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowElapsedTimeOnFinish(),
+		progressbar.OptionSetWidth(40),
+		progressbar.OptionSetDescription("[cyan][bold]Classifying transactions...[reset]"),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "[green]=[reset]",
+			SaucerHead:    "[green]>[reset]",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}),
+		progressbar.OptionOnCompletion(func() {
+			fmt.Fprintln(p.writer)
+		}),
+	)
+}
+
+func (p *CLIPrompter) updateProgress() {
+	p.processedCount++
+	if p.progressBar != nil {
+		p.progressBar.Add(1)
+	}
+}
+
+func (p *CLIPrompter) formatSingleTransaction(pending model.PendingClassification) string {
+	t := pending.Transaction
+
+	header := TitleStyle.Render(fmt.Sprintf("Transaction Review: %s", t.MerchantName))
+
+	details := fmt.Sprintf("%s Details:\n", InfoIcon) +
+		fmt.Sprintf("  Date: %s\n", t.Date.Format("Jan 2, 2006")) +
+		fmt.Sprintf("  Amount: $%.2f\n", t.Amount) +
+		fmt.Sprintf("  Description: %s\n", t.Name)
+
+	suggestion := fmt.Sprintf("\n%s AI Suggestion: %s (%.0f%% confidence)",
+		RobotIcon,
+		SuccessStyle.Render(pending.SuggestedCategory),
+		pending.Confidence*100)
+
+	if pending.SimilarCount > 0 {
+		suggestion += fmt.Sprintf("\n  %s Similar transactions: %d", InfoIcon, pending.SimilarCount)
+	}
+
+	return header + "\n\n" + details + suggestion
+}
+
+func (p *CLIPrompter) formatBatchSummary(pending []model.PendingClassification, pattern string) string {
+	merchantName := pending[0].Transaction.MerchantName
+	suggestedCategory := pending[0].SuggestedCategory
+
+	var totalAmount float64
+	var minDate, maxDate time.Time
+
+	for i, pc := range pending {
+		totalAmount += pc.Transaction.Amount
+		if i == 0 || pc.Transaction.Date.Before(minDate) {
+			minDate = pc.Transaction.Date
+		}
+		if i == 0 || pc.Transaction.Date.After(maxDate) {
+			maxDate = pc.Transaction.Date
+		}
+	}
+
+	header := TitleStyle.Render(fmt.Sprintf("Batch Review: %s", merchantName))
+
+	summary := fmt.Sprintf("\n%s Summary:\n", InfoIcon) +
+		fmt.Sprintf("  Transactions: %d\n", len(pending)) +
+		fmt.Sprintf("  Total: $%.2f\n", totalAmount) +
+		fmt.Sprintf("  Date range: %s to %s\n",
+			minDate.Format("Jan 2"),
+			maxDate.Format("Jan 2, 2006"))
+
+	suggestion := fmt.Sprintf("\n%s AI suggests: %s",
+		RobotIcon,
+		SuccessStyle.Render(suggestedCategory))
+
+	if pattern != "" {
+		suggestion += fmt.Sprintf("\n%s Pattern detected: %s", CheckIcon, pattern)
+	}
+
+	samples := p.formatTransactionSamples(pending)
+
+	return header + summary + suggestion + samples
+}
+
+func (p *CLIPrompter) formatTransactionSamples(pending []model.PendingClassification) string {
+	if len(pending) <= 3 {
+		return ""
+	}
+
+	samples := fmt.Sprintf("\n\n%s Sample transactions:\n", InfoIcon)
+
+	for i := 0; i < 3 && i < len(pending); i++ {
+		t := pending[i].Transaction
+		samples += fmt.Sprintf("  • %s - $%.2f\n",
+			t.Date.Format("Jan 2"),
+			t.Amount)
+	}
+
+	if len(pending) > 3 {
+		samples += fmt.Sprintf("  • ... and %d more\n", len(pending)-3)
+	}
+
+	return samples
+}
+
+func (p *CLIPrompter) detectPattern(merchantName string) string {
+	p.historyMutex.RLock()
+	defer p.historyMutex.RUnlock()
+
+	history, exists := p.categoryHistory[merchantName]
+	if !exists || len(history) < 3 {
+		return ""
+	}
+
+	lastCategory := history[len(history)-1]
+	count := 0
+	for i := len(history) - 1; i >= 0 && history[i] == lastCategory; i-- {
+		count++
+	}
+
+	if count >= 3 {
+		return fmt.Sprintf("Last %d were categorized as %s", count, lastCategory)
+	}
+
+	return ""
+}
+
+func (p *CLIPrompter) trackCategorization(merchantName, category string) {
+	p.historyMutex.Lock()
+	defer p.historyMutex.Unlock()
+
+	p.categoryHistory[merchantName] = append(p.categoryHistory[merchantName], category)
+
+	p.recentCategories = append([]string{category}, p.recentCategories...)
+	if len(p.recentCategories) > 10 {
+		p.recentCategories = p.recentCategories[:10]
+	}
+}
+
+func (p *CLIPrompter) promptChoice(ctx context.Context, prompt string, validChoices []string) (string, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		fmt.Fprintf(p.writer, "%s: ", FormatPrompt(prompt))
+
+		input, err := p.reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				return "", fmt.Errorf("input terminated")
+			}
+			return "", err
+		}
+
+		choice := strings.ToLower(strings.TrimSpace(input))
+
+		for _, valid := range validChoices {
+			if choice == valid {
+				return choice, nil
+			}
+		}
+
+		fmt.Fprintln(p.writer, FormatError("Invalid choice. Please try again."))
+	}
+}
+
+func (p *CLIPrompter) promptCustomCategory(ctx context.Context) (string, error) {
+	fmt.Fprintln(p.writer)
+
+	if len(p.recentCategories) > 0 {
+		fmt.Fprintln(p.writer, FormatInfo("Recent categories:"))
+		seen := make(map[string]bool)
+		for _, cat := range p.recentCategories {
+			if !seen[cat] {
+				fmt.Fprintf(p.writer, "  • %s\n", cat)
+				seen[cat] = true
+			}
+		}
+		fmt.Fprintln(p.writer)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		fmt.Fprint(p.writer, FormatPrompt("Enter category: "))
+
+		input, err := p.reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+
+		category := strings.TrimSpace(input)
+		if category == "" {
+			fmt.Fprintln(p.writer, FormatError("Category cannot be empty. Please try again."))
+			continue
+		}
+
+		return category, nil
+	}
+}
+
+func (p *CLIPrompter) acceptAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
+	classifications := make([]model.Classification, len(pending))
+
+	for i, pc := range pending {
+		classifications[i] = model.Classification{
+			Transaction:  pc.Transaction,
+			Category:     pc.SuggestedCategory,
+			Status:       model.StatusClassifiedByAI,
+			Confidence:   pc.Confidence,
+			ClassifiedAt: time.Now(),
+		}
+		p.trackCategorization(pc.Transaction.MerchantName, pc.SuggestedCategory)
+	}
+
+	p.incrementStats(false, true)
+	fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
+		len(pending), pending[0].SuggestedCategory)))
+
+	return classifications, nil
+}
+
+func (p *CLIPrompter) customCategoryForAll(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+	category, err := p.promptCustomCategory(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	classifications := make([]model.Classification, len(pending))
+
+	for i, pc := range pending {
+		classifications[i] = model.Classification{
+			Transaction:  pc.Transaction,
+			Category:     category,
+			Status:       model.StatusUserModified,
+			Confidence:   1.0,
+			ClassifiedAt: time.Now(),
+		}
+		p.trackCategorization(pc.Transaction.MerchantName, category)
+	}
+
+	p.incrementStats(true, true)
+	fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
+		len(pending), category)))
+
+	return classifications, nil
+}
+
+func (p *CLIPrompter) reviewEachTransaction(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+	fmt.Fprintln(p.writer, FormatInfo(fmt.Sprintf("Reviewing %d transactions individually...", len(pending))))
+
+	classifications := make([]model.Classification, 0, len(pending))
+
+	for i, pc := range pending {
+		fmt.Fprintf(p.writer, "\n[%d/%d] ", i+1, len(pending))
+
+		classification, err := p.ConfirmClassification(ctx, pc)
+		if err != nil {
+			return nil, err
+		}
+
+		classifications = append(classifications, classification)
+	}
+
+	return classifications, nil
+}
+
+func (p *CLIPrompter) skipAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
+	classifications := make([]model.Classification, len(pending))
+
+	for i, pc := range pending {
+		classifications[i] = model.Classification{
+			Transaction:  pc.Transaction,
+			Status:       model.StatusUnclassified,
+			ClassifiedAt: time.Now(),
+		}
+	}
+
+	fmt.Fprintln(p.writer, FormatWarning(fmt.Sprintf("⚠ Skipped %d transactions", len(pending))))
+
+	return classifications, nil
+}
+
+func (p *CLIPrompter) incrementStats(userModified bool, isVendorRule bool) {
+	p.statsMutex.Lock()
+	defer p.statsMutex.Unlock()
+
+	p.stats.TotalTransactions++
+
+	if userModified {
+		p.stats.UserClassified++
+	} else {
+		p.stats.AutoClassified++
+	}
+
+	if isVendorRule {
+		p.stats.NewVendorRules++
+	}
+}
+
+func (p *CLIPrompter) calculateTimeSaved(stats service.CompletionStats) string {
+	avgSecondsPerTransaction := 5.0
+
+	timeSavedSeconds := float64(stats.AutoClassified) * avgSecondsPerTransaction
+
+	if timeSavedSeconds < 60 {
+		return fmt.Sprintf("%.0f seconds", timeSavedSeconds)
+	} else if timeSavedSeconds < 3600 {
+		return fmt.Sprintf("%.1f minutes", timeSavedSeconds/60)
+	} else {
+		return fmt.Sprintf("%.1f hours", timeSavedSeconds/3600)
+	}
+}
+
+var _ service.UserPrompter = (*CLIPrompter)(nil)

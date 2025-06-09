@@ -28,12 +28,13 @@ if ! command -v misspell &>/dev/null; then
 fi
 misspell -w .
 
-echo "  → Running golangci-lint auto-fix..."
-if command -v golangci-lint &>/dev/null; then
-  golangci-lint run --fix ./... || true
-else
-  echo "    golangci-lint not found, skipping auto-fix"
-fi
+echo "  → Skipping golangci-lint auto-fix (temporarily disabled)..."
+# TODO: Re-enable after fixing interface definition issues
+# if command -v golangci-lint &>/dev/null; then
+#   golangci-lint run --fix ./... || true
+# else
+#   echo "    golangci-lint not found, skipping auto-fix"
+# fi
 
 echo "  → Tidying modules..."
 go mod tidy

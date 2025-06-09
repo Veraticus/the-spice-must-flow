@@ -49,7 +49,7 @@ type Transaction interface {
 
 // LLMClassifier defines the contract for AI-based categorization.
 type LLMClassifier interface {
-	SuggestCategory(ctx context.Context, transaction model.Transaction) (category string, confidence float64, err error)
+	SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error)
 	BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]LLMSuggestion, error)
 }
 
@@ -79,7 +79,6 @@ type CompletionStats struct {
 // ReportWriter defines the contract for output generation.
 type ReportWriter interface {
 	WriteReport(ctx context.Context, classifications []model.Classification, summary ReportSummary) error
-	ExportToSheets(ctx context.Context, sheetID string, data []model.Classification) error
 }
 
 // ReportSummary contains aggregate information for the report.
@@ -104,8 +103,7 @@ type CategorySummary struct {
 
 // Retryable defines a common interface for retryable operations.
 type Retryable interface {
-	IsRetryable() bool
-	RetryAfter() time.Duration
+	Retry(ctx context.Context, fn func() error, opts RetryOptions) error
 }
 
 // RetryOptions configures retry behavior for operations.

@@ -479,7 +479,7 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("Failed to get progress: %v", err)
 	}
-	// Progress may not be saved if cancelled too quickly
+	// Progress may not be saved if canceled too quickly
 	if progress != nil {
 		assert.Greater(t, progress.TotalProcessed, 0)
 	}

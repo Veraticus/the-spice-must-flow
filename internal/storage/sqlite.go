@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
@@ -19,6 +20,7 @@ type SQLiteStorage struct {
 	db          *sql.DB
 	vendorCache map[string]*model.Vendor
 	cacheExpiry time.Time
+	cacheMutex  sync.RWMutex
 }
 
 // NewSQLiteStorage creates a new SQLite storage instance.

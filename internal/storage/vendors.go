@@ -171,16 +171,32 @@ func (s *SQLiteStorage) DeleteVendor(ctx context.Context, merchantName string) e
 
 // getCachedVendor retrieves a vendor from the cache.
 func (s *SQLiteStorage) getCachedVendor(name string) *model.Vendor {
+	s.cacheMutex.RLock()
+
 	if time.Now().After(s.cacheExpiry) {
-		// Cache expired, clear it
-		s.vendorCache = make(map[string]*model.Vendor)
+		// Cache expired, needs to be cleared
+		// Upgrade to write lock
+		s.cacheMutex.RUnlock()
+		s.cacheMutex.Lock()
+		defer s.cacheMutex.Unlock()
+
+		// Double-check after acquiring write lock
+		if time.Now().After(s.cacheExpiry) {
+			s.vendorCache = make(map[string]*model.Vendor)
+		}
 		return nil
 	}
-	return s.vendorCache[name]
+
+	vendor := s.vendorCache[name]
+	s.cacheMutex.RUnlock()
+	return vendor
 }
 
 // cacheVendor adds a vendor to the cache.
 func (s *SQLiteStorage) cacheVendor(vendor *model.Vendor) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+
 	if len(s.vendorCache) == 0 {
 		// Set cache expiry on first entry
 		s.cacheExpiry = time.Now().Add(5 * time.Minute)
@@ -197,6 +213,9 @@ func (s *SQLiteStorage) WarmVendorCache(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
 
 	s.vendorCache = make(map[string]*model.Vendor)
 	for i := range vendors {
