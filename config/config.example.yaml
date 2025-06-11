@@ -1,0 +1,86 @@
+# Spice Configuration File
+# Copy this file to ~/.config/spice/config.yaml and update with your values
+# 
+# Environment variables override these settings:
+# - Prefix all keys with SPICE_ and use uppercase with underscores
+# - Example: plaid.client_id becomes SPICE_PLAID_CLIENT_ID
+
+# Database configuration
+database:
+  # Path to SQLite database file (defaults to ~/.local/share/spice/spice.db)
+  path: "~/.local/share/spice/spice.db"
+
+# Plaid configuration for bank connections
+plaid:
+  client_id: "your-plaid-client-id"
+  secret: "your-plaid-secret"
+  environment: "sandbox" # Options: sandbox, development, production
+  # access_token is set after linking accounts
+
+# LLM configuration for AI categorization
+llm:
+  # Provider: openai, anthropic, or claudecode
+  provider: "openai"
+  
+  # API keys (can also use OPENAI_API_KEY or ANTHROPIC_API_KEY env vars)
+  openai_api_key: "your-openai-api-key"
+  anthropic_api_key: "your-anthropic-api-key"
+  
+  # Model configuration
+  model: "gpt-4" # or "claude-3-opus-20240229"
+  temperature: 0.0
+  max_tokens: 150
+  
+  # Rate limiting
+  rate_limit: 1000 # requests per minute
+  
+  # Cache settings
+  cache_ttl: "24h" # Duration string (e.g., "1h", "30m", "24h")
+
+# Google Sheets configuration
+sheets:
+  # Option 1: Service Account (recommended)
+  service_account_path: "/path/to/service-account-key.json"
+  
+  # Option 2: OAuth2 (use one method only)
+  # client_id: "your-client-id"
+  # client_secret: "your-client-secret"
+  # refresh_token: "your-refresh-token"
+  
+  # Spreadsheet configuration
+  spreadsheet_id: "your-spreadsheet-id" # Optional - creates new if not specified
+  spreadsheet_name: "Finance Report"
+
+# Classification settings
+classification:
+  # Default batch size for processing
+  batch_size: 50
+  
+  # Auto-approve threshold (0.0-1.0)
+  # Transactions with confidence above this are auto-approved
+  auto_approve_threshold: 0.95
+
+# Import settings
+import:
+  # Default number of days to import
+  days: 30
+  
+  # Account filtering (leave empty to import all)
+  accounts: []
+  # Example:
+  # accounts:
+  #   - "Chase Checking (...1234)"
+  #   - "Capital One (...5678)"
+
+# Export settings
+export:
+  # Default format: sheets or csv
+  format: "sheets"
+  
+  # Include pending transactions
+  include_pending: false
+
+# Logging configuration
+logging:
+  level: "info" # Options: debug, info, warn, error
+  format: "console" # Options: console, json

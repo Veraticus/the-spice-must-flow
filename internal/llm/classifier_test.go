@@ -357,4 +357,3 @@ func TestClassifier_BuildPrompt(t *testing.T) {
 		})
 	}
 }
-

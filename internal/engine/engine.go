@@ -71,7 +71,6 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 			"total_processed", progress.TotalProcessed)
 	}
 
-
 	// Get unclassified transactions
 	transactions, err := e.storage.GetTransactionsToClassify(ctx, fromDate)
 	if err != nil {
@@ -398,12 +397,10 @@ func (e *ClassificationEngine) sortMerchantsByVolume(groups map[string][]model.T
 	return merchants
 }
 
-
 // getVendor retrieves a vendor from storage (which has its own cache).
 func (e *ClassificationEngine) getVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
 	return e.storage.GetVendor(ctx, merchantName)
 }
-
 
 // saveProgress saves the current classification progress.
 func (e *ClassificationEngine) saveProgress(ctx context.Context, lastID string, lastDate time.Time, totalProcessed int) error {

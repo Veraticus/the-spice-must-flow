@@ -24,7 +24,7 @@ type Classifier struct {
 
 // Config holds configuration for the LLM classifier.
 type Config struct {
-	Provider    string // "openai" or "anthropic"
+	Provider    string // "openai", "anthropic", or "claudecode"
 	APIKey      string
 	Model       string
 	MaxRetries  int
@@ -45,6 +45,8 @@ func NewClassifier(cfg Config, logger *slog.Logger) (*Classifier, error) {
 		client, err = newOpenAIClient(cfg)
 	case "anthropic":
 		client, err = newAnthropicClient(cfg)
+	case "claudecode":
+		client, err = newClaudeCodeClient(cfg)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider)
 	}
@@ -238,7 +240,6 @@ Consider the merchant name, amount, and context to make the most accurate classi
 		txn.Name,
 		txn.PlaidCategory)
 }
-
 
 // Close stops background goroutines and cleans up resources.
 func (c *Classifier) Close() error {

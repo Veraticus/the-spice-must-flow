@@ -16,9 +16,9 @@ type cacheEntry struct {
 // suggestionCache provides thread-safe caching for LLM suggestions.
 type suggestionCache struct {
 	entries map[string]cacheEntry
-	mu      sync.RWMutex
-	ttl     time.Duration
 	stopCh  chan struct{}
+	ttl     time.Duration
+	mu      sync.RWMutex
 }
 
 // newSuggestionCache creates a new cache with the specified TTL.

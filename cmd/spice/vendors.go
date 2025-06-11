@@ -34,7 +34,7 @@ func vendorsListCmd() *cobra.Command {
 		Long:  `List all vendor categorization rules with their usage statistics.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			
+
 			// Get database connection
 			db, cleanup, err := getDatabase()
 			if err != nil {
@@ -57,7 +57,7 @@ func vendorsListCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "MERCHANT\tCATEGORY\tUSE COUNT\tLAST UPDATED")
 			fmt.Fprintln(w, "────────\t────────\t─────────\t────────────")
-			
+
 			for _, vendor := range vendors {
 				fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
 					vendor.Name,
@@ -65,7 +65,7 @@ func vendorsListCmd() *cobra.Command {
 					vendor.UseCount,
 					vendor.LastUpdated.Format("2006-01-02"))
 			}
-			
+
 			return w.Flush()
 		},
 	}
@@ -97,7 +97,7 @@ func vendorsSearchCmd() *cobra.Command {
 			// Filter vendors matching the query
 			var found bool
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			
+
 			for _, vendor := range vendors {
 				if strings.Contains(strings.ToLower(vendor.Name), query) {
 					if !found {
@@ -107,7 +107,7 @@ func vendorsSearchCmd() *cobra.Command {
 						fmt.Fprintln(w, "────────\t────────\t─────────\t────────────")
 						found = true
 					}
-					
+
 					fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
 						vendor.Name,
 						vendor.Category,
@@ -120,7 +120,7 @@ func vendorsSearchCmd() *cobra.Command {
 				slog.Info("No vendors found matching query", "query", query)
 				return nil
 			}
-			
+
 			return w.Flush()
 		},
 	}
@@ -150,7 +150,7 @@ func vendorsEditCmd() *cobra.Command {
 			}
 
 			// Show current vendor info
-			slog.Info(fmt.Sprintf("Current vendor rule:"))
+			slog.Info("Current vendor rule:")
 			fmt.Printf("  Merchant: %s\n", vendor.Name)
 			fmt.Printf("  Category: %s\n", vendor.Category)
 			fmt.Printf("  Use Count: %d\n", vendor.UseCount)
@@ -162,7 +162,7 @@ func vendorsEditCmd() *cobra.Command {
 				fmt.Print("Enter new category (or press Enter to cancel): ")
 				fmt.Scanln(&newCategory)
 				if newCategory == "" {
-					slog.Info("Edit cancelled")
+					slog.Info("Edit canceled")
 					return nil
 				}
 			}
@@ -170,7 +170,7 @@ func vendorsEditCmd() *cobra.Command {
 			// Update vendor
 			vendor.Category = newCategory
 			vendor.LastUpdated = time.Now()
-			
+
 			if err := db.SaveVendor(ctx, vendor); err != nil {
 				return fmt.Errorf("failed to update vendor: %w", err)
 			}
@@ -178,7 +178,7 @@ func vendorsEditCmd() *cobra.Command {
 			slog.Info("Vendor rule updated successfully",
 				"merchant", merchant,
 				"new_category", newCategory)
-			
+
 			return nil
 		},
 	}
@@ -223,7 +223,7 @@ func vendorsDeleteCmd() *cobra.Command {
 				var response string
 				fmt.Scanln(&response)
 				if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
-					slog.Info("Deletion cancelled")
+					slog.Info("Deletion canceled")
 					return nil
 				}
 			}

@@ -139,20 +139,20 @@ func TestSuggestionCache(t *testing.T) {
 	t.Run("goroutine cleanup", func(t *testing.T) {
 		// Create cache and get initial goroutine count
 		cache := newSuggestionCache(5 * time.Minute)
-		
+
 		// Add some entries to ensure the cache is active
 		cache.set("test1", service.LLMSuggestion{
 			TransactionID: "test-cleanup",
 			Category:      "Test",
 			Confidence:    0.9,
 		})
-		
+
 		// Close the cache
 		cache.Close()
-		
+
 		// Give time for goroutine to shut down
 		time.Sleep(50 * time.Millisecond)
-		
+
 		// The test passes if Close() didn't panic and returned quickly
 		// In a real test environment, we could use runtime.NumGoroutine()
 		// to verify the goroutine count decreased

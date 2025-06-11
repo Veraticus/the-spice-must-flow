@@ -11,14 +11,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-// getDatabase returns a database connection and a cleanup function
+// getDatabase returns a database connection and a cleanup function.
 func getDatabase() (*storage.SQLiteStorage, func(), error) {
 	// Get database path from config
 	dbPath := viper.GetString("database.path")
 	if dbPath == "" {
 		dbPath = "~/.local/share/spice/spice.db"
 	}
-	
+
 	// Expand ~ to home directory
 	if strings.HasPrefix(dbPath, "~") {
 		home, err := os.UserHomeDir()

@@ -313,7 +313,7 @@ func TestSQLiteStorage_VendorSorting(t *testing.T) {
 	}
 }
 
-// TestSQLiteStorage_DeleteVendorRaceCondition tests that vendor deletion is thread-safe
+// TestSQLiteStorage_DeleteVendorRaceCondition tests that vendor deletion is thread-safe.
 func TestSQLiteStorage_DeleteVendorRaceCondition(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()

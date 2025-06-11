@@ -10,11 +10,11 @@ import (
 // rateLimiter implements a simple token bucket rate limiter.
 type rateLimiter struct {
 	lastRefill time.Time
+	stopCh     chan struct{}
 	tokens     int
 	capacity   int
 	refillRate int
 	mu         sync.Mutex
-	stopCh     chan struct{}
 }
 
 // newRateLimiter creates a new rate limiter with the specified requests per minute.
