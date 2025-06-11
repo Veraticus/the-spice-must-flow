@@ -89,6 +89,25 @@ var migrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version:     3,
+		Description: "Optimize database indexes",
+		Up: func(tx *sql.Tx) error {
+			queries := []string{
+				// Add missing index for foreign key lookups
+				`CREATE INDEX IF NOT EXISTS idx_classification_history_transaction_id ON classification_history(transaction_id)`,
+				// Drop redundant index (UNIQUE constraint already creates an index)
+				`DROP INDEX IF EXISTS idx_transactions_hash`,
+			}
+
+			for _, query := range queries {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("failed to execute query '%s': %w", query, err)
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.

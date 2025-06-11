@@ -313,6 +313,96 @@ func TestSQLiteStorage_VendorSorting(t *testing.T) {
 	}
 }
 
+// TestSQLiteStorage_DeleteVendorRaceCondition tests that vendor deletion is thread-safe
+func TestSQLiteStorage_DeleteVendorRaceCondition(t *testing.T) {
+	store, cleanup := createTestStorage(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create multiple vendors
+	vendorCount := 20
+	for i := 0; i < vendorCount; i++ {
+		vendor := &model.Vendor{
+			Name:     makeTestName("RaceVendor", i),
+			Category: "TestCategory",
+			UseCount: i,
+		}
+		if err := store.SaveVendor(ctx, vendor); err != nil {
+			t.Fatalf("Failed to save vendor: %v", err)
+		}
+	}
+
+	// Warm the cache
+	if err := store.WarmVendorCache(ctx); err != nil {
+		t.Fatalf("Failed to warm cache: %v", err)
+	}
+
+	// Run concurrent operations
+	var wg sync.WaitGroup
+	errors := make(chan error, 100)
+
+	// Goroutines that delete vendors
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			vendorName := makeTestName("RaceVendor", id)
+			if err := store.DeleteVendor(ctx, vendorName); err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	// Goroutines that read from cache
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				vendorName := makeTestName("RaceVendor", id%vendorCount)
+				// This should not panic even if vendor is being deleted
+				_ = store.getCachedVendor(vendorName)
+			}
+		}(i)
+	}
+
+	// Goroutines that save/update vendors
+	for i := 10; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			vendor := &model.Vendor{
+				Name:     makeTestName("RaceVendor", id),
+				Category: "UpdatedCategory",
+				UseCount: id * 2,
+			}
+			if err := store.SaveVendor(ctx, vendor); err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	errorCount := 0
+	for err := range errors {
+		if err != nil {
+			errorCount++
+			t.Logf("Concurrent operation error: %v", err)
+		}
+	}
+
+	// Some errors are expected (deleting non-existent vendors), but should be minimal
+	if errorCount > vendorCount/2 {
+		t.Errorf("Too many errors during concurrent operations: %d", errorCount)
+	}
+
+	// The test passes if we didn't panic (which would happen with the race condition)
+	t.Logf("Successfully completed concurrent vendor operations without panic")
+}
+
 // Helper function to create a consistent test time.
 func makeTestTime() time.Time {
 	return time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)

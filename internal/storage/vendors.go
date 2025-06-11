@@ -163,8 +163,10 @@ func (s *SQLiteStorage) DeleteVendor(ctx context.Context, merchantName string) e
 		return common.ErrNotFound
 	}
 
-	// Remove from cache
+	// Remove from cache with proper locking
+	s.cacheMutex.Lock()
 	delete(s.vendorCache, merchantName)
+	s.cacheMutex.Unlock()
 
 	return nil
 }

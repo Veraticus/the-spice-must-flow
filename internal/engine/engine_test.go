@@ -369,7 +369,7 @@ func TestClassificationEngine_HasHighVariance(t *testing.T) {
 	}
 }
 
-func TestClassificationEngine_VendorCache(t *testing.T) {
+func TestClassificationEngine_VendorRetrieval(t *testing.T) {
 	ctx := context.Background()
 
 	// Create in-memory storage
@@ -394,17 +394,13 @@ func TestClassificationEngine_VendorCache(t *testing.T) {
 	// Create engine
 	engine := New(db, NewMockClassifier(), NewMockPrompter(true))
 
-	// Warm cache
-	err = engine.warmVendorCache(ctx)
+	// Test vendor retrieval (storage layer handles caching)
+	retrievedVendor, err := engine.getVendor(ctx, "Test Vendor")
 	require.NoError(t, err)
+	assert.Equal(t, vendor.Name, retrievedVendor.Name)
+	assert.Equal(t, vendor.Category, retrievedVendor.Category)
 
-	// Test cache hit
-	cachedVendor, err := engine.getVendor(ctx, "Test Vendor")
-	require.NoError(t, err)
-	assert.Equal(t, vendor.Name, cachedVendor.Name)
-	assert.Equal(t, vendor.Category, cachedVendor.Category)
-
-	// Test cache miss
+	// Test vendor not found
 	notFound, err := engine.getVendor(ctx, "Nonexistent Vendor")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, sql.ErrNoRows))

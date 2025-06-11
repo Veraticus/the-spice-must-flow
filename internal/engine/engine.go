@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/common"
@@ -19,19 +18,15 @@ import (
 
 // ClassificationEngine orchestrates the classification of transactions.
 type ClassificationEngine struct {
-	cacheExpiry time.Time
-	storage     service.Storage
-	classifier  Classifier
-	prompter    Prompter
-	vendorCache map[string]*model.Vendor
-	batchSize   int
-	cacheMu     sync.RWMutex
+	storage    service.Storage
+	classifier Classifier
+	prompter   Prompter
+	batchSize  int
 }
 
 // Config holds configuration options for the classification engine.
 type Config struct {
 	BatchSize         int
-	VendorCacheTTL    time.Duration
 	VarianceThreshold float64
 }
 
@@ -39,7 +34,6 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		BatchSize:         50,
-		VendorCacheTTL:    5 * time.Minute,
 		VarianceThreshold: 10.0,
 	}
 }
@@ -53,11 +47,10 @@ func New(storage service.Storage, classifier Classifier, prompter Prompter) *Cla
 // NewWithConfig creates a new classification engine with custom configuration.
 func NewWithConfig(storage service.Storage, classifier Classifier, prompter Prompter, config Config) *ClassificationEngine {
 	return &ClassificationEngine{
-		storage:     storage,
-		classifier:  classifier,
-		prompter:    prompter,
-		vendorCache: make(map[string]*model.Vendor),
-		batchSize:   config.BatchSize,
+		storage:    storage,
+		classifier: classifier,
+		prompter:   prompter,
+		batchSize:  config.BatchSize,
 	}
 }
 
@@ -78,10 +71,6 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 			"total_processed", progress.TotalProcessed)
 	}
 
-	// Warm up vendor cache
-	if warmErr := e.warmVendorCache(ctx); warmErr != nil {
-		slog.Warn("Failed to warm vendor cache", "error", warmErr)
-	}
 
 	// Get unclassified transactions
 	transactions, err := e.storage.GetTransactionsToClassify(ctx, fromDate)
@@ -265,7 +254,6 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 				"merchant", merchant,
 				"error", err)
 		} else {
-			e.cacheVendor(vendor)
 			slog.Info("Created vendor rule",
 				"merchant", merchant,
 				"category", vendor.Category)
@@ -410,59 +398,12 @@ func (e *ClassificationEngine) sortMerchantsByVolume(groups map[string][]model.T
 	return merchants
 }
 
-// warmVendorCache loads all vendors into memory for fast lookups.
-func (e *ClassificationEngine) warmVendorCache(ctx context.Context) error {
-	vendors, err := e.storage.GetAllVendors(ctx)
-	if err != nil {
-		return err
-	}
 
-	e.cacheMu.Lock()
-	defer e.cacheMu.Unlock()
-
-	e.vendorCache = make(map[string]*model.Vendor)
-	for i := range vendors {
-		e.vendorCache[vendors[i].Name] = &vendors[i]
-	}
-
-	e.cacheExpiry = time.Now().Add(5 * time.Minute)
-	slog.Info("Warmed vendor cache", "vendor_count", len(vendors))
-
-	return nil
-}
-
-// getVendor retrieves a vendor from cache or storage.
+// getVendor retrieves a vendor from storage (which has its own cache).
 func (e *ClassificationEngine) getVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
-	// Check cache first
-	e.cacheMu.RLock()
-	vendor, found := e.vendorCache[merchantName]
-	expired := time.Now().After(e.cacheExpiry)
-	e.cacheMu.RUnlock()
-
-	if found && !expired {
-		return vendor, nil
-	}
-
-	// Cache miss or expired, fetch from storage
-	vendor, err := e.storage.GetVendor(ctx, merchantName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Update cache
-	if vendor != nil {
-		e.cacheVendor(vendor)
-	}
-
-	return vendor, nil
+	return e.storage.GetVendor(ctx, merchantName)
 }
 
-// cacheVendor adds or updates a vendor in the cache.
-func (e *ClassificationEngine) cacheVendor(vendor *model.Vendor) {
-	e.cacheMu.Lock()
-	defer e.cacheMu.Unlock()
-	e.vendorCache[vendor.Name] = vendor
-}
 
 // saveProgress saves the current classification progress.
 func (e *ClassificationEngine) saveProgress(ctx context.Context, lastID string, lastDate time.Time, totalProcessed int) error {

@@ -195,3 +195,8 @@ func (t *sqliteTransaction) BeginTx(_ context.Context) (service.Transaction, err
 	// Nested transactions not supported
 	return nil, fmt.Errorf("nested transactions not supported")
 }
+
+func (t *sqliteTransaction) Close() error {
+	// Transactions should be committed or rolled back, not closed
+	return fmt.Errorf("transactions must be committed or rolled back, not closed")
+}

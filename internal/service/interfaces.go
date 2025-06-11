@@ -31,6 +31,7 @@ type Storage interface {
 	// Database management
 	Migrate(ctx context.Context) error
 	BeginTx(ctx context.Context) (Transaction, error)
+	Close() error
 }
 
 // Transaction represents a database transaction.

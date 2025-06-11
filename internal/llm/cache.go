@@ -18,6 +18,7 @@ type suggestionCache struct {
 	entries map[string]cacheEntry
 	mu      sync.RWMutex
 	ttl     time.Duration
+	stopCh  chan struct{}
 }
 
 // newSuggestionCache creates a new cache with the specified TTL.
@@ -29,6 +30,7 @@ func newSuggestionCache(ttl time.Duration) *suggestionCache {
 	cache := &suggestionCache{
 		entries: make(map[string]cacheEntry),
 		ttl:     ttl,
+		stopCh:  make(chan struct{}),
 	}
 
 	// Start cleanup goroutine
@@ -70,15 +72,20 @@ func (c *suggestionCache) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		c.mu.Lock()
-		now := time.Now()
-		for key, entry := range c.entries {
-			if now.After(entry.expiry) {
-				delete(c.entries, key)
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		case <-ticker.C:
+			c.mu.Lock()
+			now := time.Now()
+			for key, entry := range c.entries {
+				if now.After(entry.expiry) {
+					delete(c.entries, key)
+				}
 			}
+			c.mu.Unlock()
 		}
-		c.mu.Unlock()
 	}
 }
 
@@ -94,4 +101,9 @@ func (c *suggestionCache) size() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.entries)
+}
+
+// Close stops the cleanup goroutine.
+func (c *suggestionCache) Close() {
+	close(c.stopCh)
 }

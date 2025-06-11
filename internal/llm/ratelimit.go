@@ -14,6 +14,7 @@ type rateLimiter struct {
 	capacity   int
 	refillRate int
 	mu         sync.Mutex
+	stopCh     chan struct{}
 }
 
 // newRateLimiter creates a new rate limiter with the specified requests per minute.
@@ -27,6 +28,7 @@ func newRateLimiter(requestsPerMinute int) *rateLimiter {
 		capacity:   requestsPerMinute,
 		refillRate: requestsPerMinute,
 		lastRefill: time.Now(),
+		stopCh:     make(chan struct{}),
 	}
 
 	// Start refill goroutine
@@ -71,12 +73,17 @@ func (rl *rateLimiter) refill() {
 	ticker := time.NewTicker(time.Minute / time.Duration(rl.refillRate))
 	defer ticker.Stop()
 
-	for range ticker.C {
-		rl.mu.Lock()
-		if rl.tokens < rl.capacity {
-			rl.tokens++
+	for {
+		select {
+		case <-rl.stopCh:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			if rl.tokens < rl.capacity {
+				rl.tokens++
+			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
@@ -86,4 +93,9 @@ func (rl *rateLimiter) reset() {
 	defer rl.mu.Unlock()
 	rl.tokens = rl.capacity
 	rl.lastRefill = time.Now()
+}
+
+// Close stops the refill goroutine.
+func (rl *rateLimiter) Close() {
+	close(rl.stopCh)
 }

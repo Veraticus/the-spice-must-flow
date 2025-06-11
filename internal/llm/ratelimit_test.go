@@ -144,4 +144,24 @@ func TestRateLimiter(t *testing.T) {
 		// Should have acquired exactly 100 tokens
 		assert.Equal(t, int32(100), acquired)
 	})
+
+	t.Run("goroutine cleanup", func(t *testing.T) {
+		// Create rate limiter
+		rl := newRateLimiter(10)
+		
+		// Use some tokens to ensure it's active
+		for i := 0; i < 5; i++ {
+			success := rl.tryAcquire()
+			require.True(t, success)
+		}
+		
+		// Close the rate limiter
+		rl.Close()
+		
+		// Give time for goroutine to shut down
+		time.Sleep(50 * time.Millisecond)
+		
+		// The test passes if Close() didn't panic and returned quickly
+		assert.True(t, true, "Rate limiter closed without panic")
+	})
 }

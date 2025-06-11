@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/joshsymonds/the-spice-must-flow/internal/common"
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
 )
@@ -95,50 +96,31 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 
 	var category string
 	var confidence float64
-	var lastErr error
 
-	// Retry logic
-	delay := c.retryOpts.InitialDelay
-	for attempt := 1; attempt <= c.retryOpts.MaxAttempts; attempt++ {
+	// Use common retry logic
+	err := common.WithRetry(ctx, func() error {
 		c.logger.Debug("attempting LLM classification",
-			"attempt", attempt,
-			"max_attempts", c.retryOpts.MaxAttempts,
 			"transaction_id", transaction.ID)
 
 		response, err := c.client.Classify(ctx, prompt)
-		if err == nil {
-			category = response.Category
-			confidence = response.Confidence
-			lastErr = nil // Clear any previous error
-			c.logger.Debug("classification succeeded",
-				"attempt", attempt,
-				"category", category,
-				"confidence", confidence)
-			break
+		if err != nil {
+			c.logger.Warn("LLM classification attempt failed",
+				"error", err,
+				"transaction_id", transaction.ID)
+			// All LLM errors are considered retryable
+			return &common.RetryableError{Err: err, Retryable: true}
 		}
 
-		lastErr = err
-		c.logger.Warn("LLM classification attempt failed",
-			"attempt", attempt,
-			"max_attempts", c.retryOpts.MaxAttempts,
-			"error", err,
-			"transaction_id", transaction.ID)
+		category = response.Category
+		confidence = response.Confidence
+		c.logger.Debug("classification succeeded",
+			"category", category,
+			"confidence", confidence)
+		return nil
+	}, c.retryOpts)
 
-		if attempt < c.retryOpts.MaxAttempts {
-			c.logger.Debug("waiting before retry",
-				"delay", delay,
-				"attempt", attempt)
-			select {
-			case <-ctx.Done():
-				return "", 0, ctx.Err()
-			case <-time.After(delay):
-				delay = c.calculateBackoff(delay)
-			}
-		}
-	}
-
-	if lastErr != nil {
-		return "", 0, fmt.Errorf("classification failed after %d attempts: %w", c.retryOpts.MaxAttempts, lastErr)
+	if err != nil {
+		return "", 0, fmt.Errorf("classification failed: %w", err)
 	}
 
 	// Cache the result
@@ -257,11 +239,14 @@ Consider the merchant name, amount, and context to make the most accurate classi
 		txn.PlaidCategory)
 }
 
-// calculateBackoff calculates the next retry delay with exponential backoff.
-func (c *Classifier) calculateBackoff(current time.Duration) time.Duration {
-	next := time.Duration(float64(current) * c.retryOpts.Multiplier)
-	if next > c.retryOpts.MaxDelay {
-		return c.retryOpts.MaxDelay
+
+// Close stops background goroutines and cleans up resources.
+func (c *Classifier) Close() error {
+	if c.cache != nil {
+		c.cache.Close()
 	}
-	return next
+	if c.rateLimiter != nil {
+		c.rateLimiter.Close()
+	}
+	return nil
 }
