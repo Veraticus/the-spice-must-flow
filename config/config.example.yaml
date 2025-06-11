@@ -14,10 +14,10 @@ database:
 plaid:
   client_id: "your-plaid-client-id"
   secret: "your-plaid-secret"
-  environment: "sandbox" # Options: sandbox, development, production
+  environment: "production" # Options: sandbox, production
   
   # Primary access token (set by 'spice auth plaid' or manually)
-  # access_token: "access-sandbox-xxxxxxxx"
+  # access_token: "access-production-xxxxxxxx"
   
   # Multiple bank connections (managed by 'spice auth plaid')
   # connections:

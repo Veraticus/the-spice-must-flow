@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/joshsymonds/the-spice-must-flow/internal/certs"
 	"github.com/joshsymonds/the-spice-must-flow/internal/plaid"
 	"github.com/joshsymonds/the-spice-must-flow/internal/sheets"
 	"github.com/spf13/cobra"
@@ -46,7 +48,7 @@ You can run this multiple times to add more accounts.`,
 		RunE: runAuthPlaid,
 	}
 
-	cmd.Flags().String("env", "", "Plaid environment (sandbox/development/production)")
+	cmd.Flags().String("env", "", "Plaid environment (sandbox/production)")
 	cmd.Flags().Bool("update-primary", false, "Update the primary account after linking")
 
 	return cmd
@@ -75,7 +77,7 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
 	if environment == "" {
 		environment = os.Getenv("PLAID_ENV")
 		if environment == "" {
-			environment = "sandbox" // default
+			environment = "production" // default - for real bank data
 		}
 	}
 
@@ -141,6 +143,9 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
     const linkHandler = Plaid.create({
         token: '%s',
         onSuccess: (public_token, metadata) => {
+            document.getElementById('message').innerHTML = 
+                '<div class="success">🔄 Processing connection...</div>';
+            
             fetch('/exchange', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -151,11 +156,21 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
                 if (data.success) {
                     document.getElementById('message').innerHTML = 
                         '<div class="success">✅ Account connected successfully! You can close this window.</div>';
-                    setTimeout(() => window.close(), 3000);
+                    // For desktop flow, give user time to see the message
+                    setTimeout(() => {
+                        if (!window.closed) {
+                            document.getElementById('message').innerHTML += 
+                                '<div class="success">You can now close this browser tab.</div>';
+                        }
+                    }, 3000);
                 } else {
                     document.getElementById('message').innerHTML = 
                         '<div class="error">❌ ' + (data.error || 'Connection failed') + '</div>';
                 }
+            })
+            .catch(error => {
+                document.getElementById('message').innerHTML = 
+                    '<div class="error">❌ Network error: ' + error + '</div>';
             });
         },
         onExit: (err, metadata) => {
@@ -226,20 +241,70 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
 		})
 	})
 
-	// Start server in background
-	go func() {
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			errorChan <- fmt.Errorf("failed to start server: %w", err)
+	// Configure HTTPS for production environment
+	var browserURL string
+	if environment == "production" {
+		// Get certificate directory
+		configDir := os.Getenv("XDG_CONFIG_HOME")
+		if configDir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("failed to get home directory: %w", err)
+			}
+			configDir = filepath.Join(home, ".config")
 		}
-	}()
+		certDir := filepath.Join(configDir, "spice", "certs")
 
-	// Open browser
-	slog.Info("🏦 Plaid Account Connection")
+		// Get or create certificate
+		certManager := certs.NewFileManager(certDir)
+		cert, err := certManager.GetOrCreateCertificate()
+		if err != nil {
+			return fmt.Errorf("failed to get/create certificate: %w", err)
+		}
+
+		// Configure TLS
+		server.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+
+		browserURL = "https://localhost:8080"
+
+		// Start HTTPS server
+		go func() {
+			if err := server.ListenAndServeTLS("", ""); err != http.ErrServerClosed {
+				errorChan <- fmt.Errorf("failed to start HTTPS server: %w", err)
+			}
+		}()
+
+		slog.Info("🏦 Plaid Account Connection (Production)")
+		slog.Info("Starting secure HTTPS server...")
+		slog.Info("")
+		slog.Info("⚠️  BROWSER SECURITY WARNING EXPECTED")
+		slog.Info("Your browser will show a security warning about the certificate.")
+		slog.Info("This is normal for local development. To proceed:")
+		slog.Info("  1. Click 'Advanced' or 'Show Details'")
+		slog.Info("  2. Click 'Proceed to localhost' or 'Visit this website'")
+		slog.Info("")
+	} else {
+		// Sandbox mode uses HTTP
+		browserURL = "http://localhost:8080"
+
+		go func() {
+			if err := server.ListenAndServe(); err != http.ErrServerClosed {
+				errorChan <- fmt.Errorf("failed to start server: %w", err)
+			}
+		}()
+
+		slog.Info("🏦 Plaid Account Connection (Sandbox)")
+		slog.Info("Starting server...")
+	}
+
 	slog.Info("Opening your browser to connect bank accounts...")
-	slog.Info("If the browser doesn't open, visit: http://localhost:8080")
+	slog.Info("If the browser doesn't open, visit:", "url", browserURL)
 
 	// Try to open browser
-	openBrowser("http://localhost:8080")
+	openBrowser(browserURL)
 
 	// Wait for result
 	var result plaidLinkSuccess

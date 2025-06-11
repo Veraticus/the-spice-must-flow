@@ -38,12 +38,11 @@ func (c *Config) Validate() error {
 	}
 
 	validEnvs := map[string]bool{
-		"sandbox":     true,
-		"development": true,
-		"production":  true,
+		"sandbox":    true,
+		"production": true,
 	}
 	if !validEnvs[c.Environment] {
-		return fmt.Errorf("invalid Plaid environment: must be sandbox, development, or production")
+		return fmt.Errorf("invalid Plaid environment: must be sandbox or production")
 	}
 
 	return nil
@@ -55,6 +54,7 @@ type Client struct {
 	logger      *slog.Logger
 	retryOpts   *service.RetryOptions
 	accessToken string
+	environment string
 }
 
 // NewClient creates a new Plaid client with the given configuration.
@@ -71,12 +71,11 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 
 	validEnvs := map[string]bool{
-		"sandbox":     true,
-		"development": true,
-		"production":  true,
+		"sandbox":    true,
+		"production": true,
 	}
 	if !validEnvs[cfg.Environment] {
-		return nil, fmt.Errorf("invalid Plaid environment: must be sandbox, development, or production")
+		return nil, fmt.Errorf("invalid Plaid environment: must be sandbox or production")
 	}
 
 	// Configure Plaid client based on environment
@@ -87,8 +86,6 @@ func NewClient(cfg Config) (*Client, error) {
 	switch cfg.Environment {
 	case "sandbox":
 		configuration.UseEnvironment(plaid.Sandbox)
-	case "development":
-		configuration.UseEnvironment(plaid.Development)
 	case "production":
 		configuration.UseEnvironment(plaid.Production)
 	}
@@ -98,6 +95,7 @@ func NewClient(cfg Config) (*Client, error) {
 	return &Client{
 		client:      client,
 		accessToken: cfg.AccessToken,
+		environment: cfg.Environment,
 		logger:      slog.Default().With("component", "plaid"),
 		retryOpts: &service.RetryOptions{
 			MaxAttempts:  3,
@@ -383,8 +381,12 @@ func (c *Client) CreateLinkToken(ctx context.Context) (string, error) {
 	// Set products - we want transactions
 	request.SetProducts([]plaid.Products{plaid.PRODUCTS_TRANSACTIONS})
 
-	// Set redirect URI for OAuth
-	request.SetRedirectUri("http://localhost:8080/")
+	// Set redirect URI - use HTTPS in production
+	if c.environment == "production" {
+		request.SetRedirectUri("https://localhost:8080/")
+	} else {
+		request.SetRedirectUri("http://localhost:8080/")
+	}
 
 	resp, _, err := c.client.PlaidApi.LinkTokenCreate(ctx).LinkTokenCreateRequest(*request).Execute()
 	if err != nil {

@@ -262,11 +262,17 @@ spice auth plaid
 # Connect additional banks (e.g., Ally checking)
 spice auth plaid
 
+# For testing with fake data (optional):
+spice auth plaid --env sandbox
+
 # This will:
 # - Open your browser to Plaid Link
+# - Automatically set up HTTPS with a self-signed certificate (for production)
 # - Let you securely connect your bank
 # - Save the access token for future use
 ```
+
+**HTTPS Certificate Note**: When using production mode, the tool automatically generates a self-signed certificate for secure OAuth flows. You'll see a browser security warning on first use - this is normal and expected. Simply click "Advanced" and "Proceed to localhost" to continue.
 
 **Multi-Bank Support**: Connect as many banks as you need. When you run `spice import`, it automatically fetches transactions from ALL connected banks seamlessly.
 

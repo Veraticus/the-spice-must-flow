@@ -80,16 +80,6 @@ func TestConfig_Validate(t *testing.T) {
 			errMsg:  "invalid Plaid environment",
 		},
 		{
-			name: "valid development environment",
-			config: Config{
-				ClientID:    "test-client-id",
-				Secret:      "test-secret",
-				Environment: "development",
-				AccessToken: "test-token",
-			},
-			wantErr: false,
-		},
-		{
 			name: "valid production environment",
 			config: Config{
 				ClientID:    "test-client-id",
