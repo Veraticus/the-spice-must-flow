@@ -43,6 +43,7 @@ func init() {
 	rootCmd.AddCommand(vendorsCmd())
 	rootCmd.AddCommand(flowCmd())
 	rootCmd.AddCommand(migrateCmd())
+	rootCmd.AddCommand(institutionsCmd())
 	rootCmd.AddCommand(versionCmd())
 }
 

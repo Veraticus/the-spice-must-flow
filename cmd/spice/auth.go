@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/certs"
@@ -100,6 +101,22 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
 	// Create link token
 	linkToken, err := plaidClient.CreateLinkToken(ctx)
 	if err != nil {
+		// If it fails due to redirect URI, provide helpful message
+		if strings.Contains(err.Error(), "redirect") || strings.Contains(err.Error(), "OAuth") {
+			slog.Error("OAuth configuration required")
+			slog.Info("")
+			slog.Info("This error occurs when the redirect URI isn't configured in Plaid Dashboard")
+			slog.Info("")
+			slog.Info("To fix this:")
+			slog.Info("1. Log into https://dashboard.plaid.com")
+			slog.Info("2. Go to Team Settings → API")
+			slog.Info("3. Add to Allowed redirect URIs: https://localhost:8080/")
+			slog.Info("4. Save changes")
+			slog.Info("")
+			slog.Info("Until then, you can:")
+			slog.Info("• Use sandbox mode: spice auth plaid --env sandbox")
+			slog.Info("• Search for non-OAuth banks: spice institutions search [bank]")
+		}
 		return fmt.Errorf("failed to create link token: %w", err)
 	}
 

@@ -381,11 +381,10 @@ func (c *Client) CreateLinkToken(ctx context.Context) (string, error) {
 	// Set products - we want transactions
 	request.SetProducts([]plaid.Products{plaid.PRODUCTS_TRANSACTIONS})
 
-	// Set redirect URI - use HTTPS in production
+	// Set redirect URI only in production (OAuth banks require it)
+	// This must match what's configured in your Plaid dashboard
 	if c.environment == "production" {
 		request.SetRedirectUri("https://localhost:8080/")
-	} else {
-		request.SetRedirectUri("http://localhost:8080/")
 	}
 
 	resp, _, err := c.client.PlaidApi.LinkTokenCreate(ctx).LinkTokenCreateRequest(*request).Execute()
@@ -411,6 +410,66 @@ func (c *Client) ExchangePublicToken(ctx context.Context, publicToken string) (s
 	}
 
 	return resp.GetAccessToken(), resp.GetItemId(), nil
+}
+
+// Institution represents a bank or financial institution.
+type Institution struct {
+	ID                   string
+	Name                 string
+	OAuth                bool
+	SupportsTransactions bool
+}
+
+// SearchInstitutions searches for financial institutions by name.
+func (c *Client) SearchInstitutions(ctx context.Context, query string, limit int) ([]Institution, error) {
+	// Create request with query and country codes
+	request := plaid.NewInstitutionsSearchRequest(
+		query,
+		[]plaid.CountryCode{plaid.COUNTRYCODE_US},
+	)
+	
+	// Set products filter to only get institutions that support transactions
+	request.SetProducts([]plaid.Products{plaid.PRODUCTS_TRANSACTIONS})
+	
+	// Set options
+	options := plaid.InstitutionsSearchRequestOptions{
+		IncludeOptionalMetadata: plaid.PtrBool(true),
+	}
+	request.SetOptions(options)
+
+	resp, _, err := c.client.PlaidApi.InstitutionsSearch(ctx).InstitutionsSearchRequest(*request).Execute()
+	if err != nil {
+		if plaidError := extractPlaidError(err); plaidError != nil {
+			return nil, fmt.Errorf("plaid API error: %s - %s", plaidError.ErrorCode, plaidError.ErrorMessage)
+		}
+		return nil, fmt.Errorf("failed to search institutions: %w", err)
+	}
+
+	// Apply limit on our side since API doesn't support it
+	institutions := make([]Institution, 0, limit)
+	for i, inst := range resp.GetInstitutions() {
+		if i >= limit {
+			break
+		}
+		
+		// Check if institution supports transactions
+		supportsTransactions := false
+		for _, product := range inst.GetProducts() {
+			if product == plaid.PRODUCTS_TRANSACTIONS {
+				supportsTransactions = true
+				break
+			}
+		}
+
+		institutions = append(institutions, Institution{
+			ID:                   inst.GetInstitutionId(),
+			Name:                 inst.GetName(),
+			OAuth:                inst.GetOauth(),
+			SupportsTransactions: supportsTransactions,
+		})
+	}
+
+	return institutions, nil
 }
 
 // Ensure Client implements TransactionFetcher interface.

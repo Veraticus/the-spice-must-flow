@@ -274,6 +274,27 @@ spice auth plaid --env sandbox
 
 **HTTPS Certificate Note**: When using production mode, the tool automatically generates a self-signed certificate for secure OAuth flows. You'll see a browser security warning on first use - this is normal and expected. Simply click "Advanced" and "Proceed to localhost" to continue.
 
+**OAuth vs Non-OAuth Banks**:
+- **Non-OAuth banks**: Work immediately! Use username/password directly in Plaid Link
+- **OAuth banks** (like Chase): Require extra setup in Plaid Dashboard
+
+To check which banks require OAuth:
+```bash
+spice institutions search "bank name"
+```
+
+**Setting up for Production**:
+1. Get production access from Plaid
+2. In Plaid Dashboard → Team Settings → API → Allowed redirect URIs
+3. Add: `https://localhost:8080/`
+4. Save changes
+
+Once configured, ALL banks (OAuth and non-OAuth) will work seamlessly!
+
+Until then, you can:
+- Use sandbox mode for testing: `spice auth plaid --env sandbox`
+- Search for specific banks: `spice institutions search [bank name]`
+
 **Multi-Bank Support**: Connect as many banks as you need. When you run `spice import`, it automatically fetches transactions from ALL connected banks seamlessly.
 
 ### 2. Import Transactions
@@ -345,6 +366,9 @@ spice vendors remove "Starbucks"      # Remove rule
 # Database operations
 spice migrate                         # Run database migrations
 spice flow                           # Run full workflow (import → classify → export)
+
+# Bank information
+spice institutions search "bank name" # Search for banks and see OAuth requirements
 
 # Help
 spice help                           # Show all commands
