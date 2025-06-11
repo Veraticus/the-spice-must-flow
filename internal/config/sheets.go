@@ -12,7 +12,7 @@ import (
 // It follows this precedence:
 // 1. Viper configuration (from config file or SPICE_ env vars)
 // 2. Direct environment variables (GOOGLE_SHEETS_*)
-// 3. Default values
+// 3. Default values.
 func LoadSheetsConfig() (*sheets.Config, error) {
 	config := sheets.DefaultConfig()
 

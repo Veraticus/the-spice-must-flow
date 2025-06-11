@@ -15,7 +15,16 @@ plaid:
   client_id: "your-plaid-client-id"
   secret: "your-plaid-secret"
   environment: "sandbox" # Options: sandbox, development, production
-  # access_token is set after linking accounts
+  
+  # Primary access token (set by 'spice auth plaid' or manually)
+  # access_token: "access-sandbox-xxxxxxxx"
+  
+  # Multiple bank connections (managed by 'spice auth plaid')
+  # connections:
+  #   item_id_1:
+  #     access_token: "access-sandbox-xxxxxxxx"
+  #     institution_name: "Chase"
+  #     connected_at: "2024-01-15T10:30:00Z"
 
 # LLM configuration for AI categorization
 llm:
@@ -39,13 +48,17 @@ llm:
 
 # Google Sheets configuration
 sheets:
-  # Option 1: Service Account (recommended)
-  service_account_path: "/path/to/service-account-key.json"
+  # Choose ONE authentication method:
   
-  # Option 2: OAuth2 (use one method only)
-  # client_id: "your-client-id"
-  # client_secret: "your-client-secret"
-  # refresh_token: "your-refresh-token"
+  # Option 1: Service Account (if you can create service account keys)
+  # service_account_path: "/path/to/service-account-key.json"
+  
+  # Option 2: OAuth2 (recommended for Google Workspace users)
+  # Step 1: Add your OAuth2 credentials here
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+  # Step 2: Run 'spice sheets auth' to get refresh_token
+  # refresh_token: "will-be-added-by-spice-sheets-auth"
   
   # Spreadsheet configuration
   spreadsheet_id: "your-spreadsheet-id" # Optional - creates new if not specified

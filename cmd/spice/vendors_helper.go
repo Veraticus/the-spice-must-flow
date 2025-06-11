@@ -37,7 +37,7 @@ func getDatabase() (*storage.SQLiteStorage, func(), error) {
 	// Run migrations
 	ctx := context.Background()
 	if err := db.Migrate(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 

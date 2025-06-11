@@ -94,15 +94,15 @@ llm:
   model: "gpt-4"
   temperature: 0.0
 
-# Google Sheets
+# Google Sheets (choose one auth method)
 sheets:
-  # Option 1: Service Account (Recommended)
-  service_account_path: "/path/to/service-account-key.json"
+  # For OAuth2 (recommended for Google Workspace):
+  client_id: "your-client-id"
+  client_secret: "your-client-secret"
+  # refresh_token will be added by 'spice sheets auth'
   
-  # Option 2: OAuth2
-  # client_id: "your-client-id"
-  # client_secret: "your-client-secret"
-  # refresh_token: "your-refresh-token"
+  # For Service Account (if allowed by your org):
+  # service_account_path: "/path/to/service-account-key.json"
   
   spreadsheet_id: "your-spreadsheet-id"  # Optional
   spreadsheet_name: "My Finance Tracker"
@@ -161,25 +161,59 @@ export GOOGLE_SHEETS_SPREADSHEET_ID="your-spreadsheet-id"
 
 #### Option 2: OAuth2 Authentication
 
-This method requires initial user authorization and is more complex to set up. Use this if you can't use service accounts.
+Use this method if you can't create service account keys (common in Google Workspace accounts).
 
 1. **Create OAuth2 Credentials:**
    - Go to [Google Cloud Console](https://console.cloud.google.com)
    - Go to "APIs & Services" → "Credentials"
    - Click "Create Credentials" → "OAuth client ID"
    - Choose "Desktop app" as the application type
-   - Download the credentials
+   - Note down the Client ID and Client Secret
 
-2. **Get a Refresh Token:**
-   - You'll need to implement an OAuth2 flow to get the refresh token
-   - This typically involves authorizing the app once to get the token
-
-3. **Configure the Application:**
+2. **Configure and Authenticate:**
    ```bash
+   # Add to your config.yaml or use environment variables
    export GOOGLE_SHEETS_CLIENT_ID="your-client-id"
    export GOOGLE_SHEETS_CLIENT_SECRET="your-client-secret"
-   export GOOGLE_SHEETS_REFRESH_TOKEN="your-refresh-token"
+   
+   # Run the authentication flow
+   spice auth sheets
    ```
+
+3. **Complete Authentication:**
+   - The command will open your browser
+   - Log in to your Google account
+   - Grant access to Google Sheets
+   - The refresh token will be saved automatically
+
+**Note:** The refresh token is saved to `~/.config/spice/sheets-token.json` and your config file. Google refresh tokens don't expire unless:
+- You explicitly revoke access
+- The token hasn't been used for 6 months
+- You change your Google password
+- Your Google account has 2FA changes
+
+#### Quick Start for Google Workspace Users
+
+If your organization blocks service account key creation, here's the fastest way to get started:
+
+1. **Create OAuth2 credentials in Google Cloud Console** (one-time setup):
+   ```
+   Project → APIs & Services → Credentials → Create Credentials → OAuth client ID → Desktop app
+   ```
+
+2. **Update your config.yaml**:
+   ```yaml
+   sheets:
+     client_id: "paste-your-client-id-here"
+     client_secret: "paste-your-client-secret-here"
+   ```
+
+3. **Run the auth command**:
+   ```bash
+   spice auth sheets
+   ```
+
+4. **You're done!** The refresh token is saved and you won't need to authenticate again.
 
 ### Optional Configuration
 
@@ -219,31 +253,46 @@ export SPICE_LOGGING_LEVEL="debug"
 
 ### 1. Connect Your Bank Accounts
 
-First, set up Plaid integration to connect your bank accounts:
+Connect your bank accounts using Plaid:
 
 ```bash
-# Initialize Plaid connection
-spice plaid setup
+# Connect your first bank (e.g., Chase credit card)
+spice auth plaid
 
-# Follow the interactive prompts to connect accounts
+# Connect additional banks (e.g., Ally checking)
+spice auth plaid
+
+# This will:
+# - Open your browser to Plaid Link
+# - Let you securely connect your bank
+# - Save the access token for future use
 ```
 
-For detailed Plaid setup instructions, see [docs/plaid-setup.md](docs/plaid-setup.md).
+**Multi-Bank Support**: Connect as many banks as you need. When you run `spice import`, it automatically fetches transactions from ALL connected banks seamlessly.
 
 ### 2. Import Transactions
 
-Import recent transactions from your connected accounts:
+Import transactions from ALL your connected accounts automatically:
 
 ```bash
-# Import last 30 days of transactions
+# Import last 30 days from all banks
 spice import
 
-# Import specific date range
+# Import specific date range from all banks
 spice import --from 2024-01-01 --to 2024-01-31
 
-# Import from specific account
-spice import --account "Chase Checking (...1234)"
+# List all accounts across all banks
+spice import --list-accounts
+
+# Import from specific accounts only
+spice import --account "Chase Credit (...1234)" --account "Ally Checking (...5678)"
 ```
+
+The import command automatically:
+- Fetches from all connected banks in parallel
+- Shows progress for each bank
+- Merges transactions seamlessly
+- Handles errors gracefully (if one bank fails, others still import)
 
 ### 3. Classify Transactions
 
@@ -278,6 +327,10 @@ spice export --from 2024-01-01 --to 2024-03-31
 ### Additional Commands
 
 ```bash
+# Authentication
+spice auth plaid                      # Connect bank accounts via Plaid
+spice auth sheets                     # Authenticate with Google Sheets
+
 # Manage vendor rules
 spice vendors list                    # List all vendor rules
 spice vendors add "Starbucks" "Food"  # Add manual rule

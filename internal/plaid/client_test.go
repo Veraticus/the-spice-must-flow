@@ -142,7 +142,7 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewClient(tt.config)
+			client, err := NewClient(*tt.config)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Nil(t, client)

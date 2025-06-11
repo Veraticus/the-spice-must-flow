@@ -58,9 +58,25 @@ type Client struct {
 }
 
 // NewClient creates a new Plaid client with the given configuration.
-func NewClient(cfg *Config) (*Client, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+func NewClient(cfg Config) (*Client, error) {
+	// Don't validate access token for Link flow
+	if cfg.ClientID == "" {
+		return nil, fmt.Errorf("plaid client ID is required")
+	}
+	if cfg.Secret == "" {
+		return nil, fmt.Errorf("plaid secret is required")
+	}
+	if cfg.Environment == "" {
+		return nil, fmt.Errorf("plaid environment is required")
+	}
+
+	validEnvs := map[string]bool{
+		"sandbox":     true,
+		"development": true,
+		"production":  true,
+	}
+	if !validEnvs[cfg.Environment] {
+		return nil, fmt.Errorf("invalid Plaid environment: must be sandbox, development, or production")
 	}
 
 	// Configure Plaid client based on environment
@@ -349,6 +365,50 @@ func extractPlaidError(err error) *plaid.PlaidError {
 		return nil
 	}
 	return &plaidErr
+}
+
+// CreateLinkToken creates a Link token for Plaid Link initialization.
+func (c *Client) CreateLinkToken(ctx context.Context) (string, error) {
+	user := plaid.LinkTokenCreateRequestUser{
+		ClientUserId: "spice-user-" + time.Now().Format("20060102150405"),
+	}
+
+	request := plaid.NewLinkTokenCreateRequest(
+		"Spice Financial Manager",
+		"en",
+		[]plaid.CountryCode{plaid.COUNTRYCODE_US},
+		user,
+	)
+
+	// Set products - we want transactions
+	request.SetProducts([]plaid.Products{plaid.PRODUCTS_TRANSACTIONS})
+
+	// Set redirect URI for OAuth
+	request.SetRedirectUri("http://localhost:8080/")
+
+	resp, _, err := c.client.PlaidApi.LinkTokenCreate(ctx).LinkTokenCreateRequest(*request).Execute()
+	if err != nil {
+		if plaidError := extractPlaidError(err); plaidError != nil {
+			return "", fmt.Errorf("plaid API error: %s - %s", plaidError.ErrorCode, plaidError.ErrorMessage)
+		}
+		return "", fmt.Errorf("failed to create link token: %w", err)
+	}
+
+	return resp.GetLinkToken(), nil
+}
+
+// ExchangePublicToken exchanges a public token from Link for an access token.
+func (c *Client) ExchangePublicToken(ctx context.Context, publicToken string) (string, string, error) {
+	request := plaid.NewItemPublicTokenExchangeRequest(publicToken)
+	resp, _, err := c.client.PlaidApi.ItemPublicTokenExchange(ctx).ItemPublicTokenExchangeRequest(*request).Execute()
+	if err != nil {
+		if plaidError := extractPlaidError(err); plaidError != nil {
+			return "", "", fmt.Errorf("plaid API error: %s - %s", plaidError.ErrorCode, plaidError.ErrorMessage)
+		}
+		return "", "", fmt.Errorf("failed to exchange public token: %w", err)
+	}
+
+	return resp.GetAccessToken(), resp.GetItemId(), nil
 }
 
 // Ensure Client implements TransactionFetcher interface.

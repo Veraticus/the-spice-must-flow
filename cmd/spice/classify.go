@@ -93,9 +93,10 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		prompter = cli.NewCLIPrompter(nil, nil)
 
 		// Initialize real LLM classifier
-		llmClient, err := createLLMClient()
-		if err != nil {
-			return fmt.Errorf("failed to create LLM client: %w", err)
+		var llmErr error
+		llmClient, llmErr := createLLMClient()
+		if llmErr != nil {
+			return fmt.Errorf("failed to create LLM client: %w", llmErr)
 		}
 		classifier = llmClient
 	}
@@ -235,7 +236,7 @@ func createLLMClient() (engine.Classifier, error) {
 			return nil, fmt.Errorf("OpenAI API key not found in config or OPENAI_API_KEY environment variable")
 		}
 		config.APIKey = apiKey
-		
+
 		// Set default model if not specified
 		if config.Model == "" {
 			config.Model = "gpt-4-turbo-preview"
@@ -248,10 +249,10 @@ func createLLMClient() (engine.Classifier, error) {
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
 		if apiKey == "" {
-			return nil, fmt.Errorf("Anthropic API key not found in config or ANTHROPIC_API_KEY environment variable")
+			return nil, fmt.Errorf("anthropic API key not found in config or ANTHROPIC_API_KEY environment variable")
 		}
 		config.APIKey = apiKey
-		
+
 		// Set default model if not specified
 		if config.Model == "" {
 			config.Model = "claude-3-sonnet-20240229"
@@ -273,7 +274,7 @@ func createLLMClient() (engine.Classifier, error) {
 		return nil, fmt.Errorf("failed to create LLM classifier: %w", err)
 	}
 
-	slog.Info("Initialized LLM classifier", 
+	slog.Info("Initialized LLM classifier",
 		"provider", provider,
 		"model", config.Model,
 		"cache_ttl", config.CacheTTL,

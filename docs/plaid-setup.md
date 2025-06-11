@@ -52,9 +52,23 @@ plaid:
 
 ### 3. Access Token
 
-You'll need to use Plaid Link to obtain an access token for each financial institution. The access token represents your authorization to access a specific account.
+The easiest way to connect your bank accounts is using the built-in authentication command:
 
-For testing in sandbox mode, you can use Plaid's quickstart tool to generate a test access token.
+```bash
+spice auth plaid
+```
+
+This command will:
+1. Open Plaid Link in your browser
+2. Let you securely connect to your bank
+3. Save the access token automatically
+4. Update your configuration
+
+You can run this command multiple times to connect multiple banks.
+
+#### Alternative: Manual Setup
+
+For testing in sandbox mode, you can also use Plaid's quickstart tool to generate a test access token and add it manually to your config.
 
 ## Usage
 

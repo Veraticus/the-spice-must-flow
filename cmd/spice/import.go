@@ -53,28 +53,27 @@ for later categorization. Transactions are deduplicated automatically.`,
 func runImport(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	// Get Plaid configuration
-	plaidConfig := &plaid.Config{
+	// Get base Plaid configuration
+	baseConfig := plaid.Config{
 		ClientID:    viper.GetString("plaid.client_id"),
 		Secret:      viper.GetString("plaid.secret"),
 		Environment: viper.GetString("plaid.environment"),
-		AccessToken: viper.GetString("plaid.access_token"),
 	}
 
 	// Set defaults if not provided
-	if plaidConfig.Environment == "" {
-		plaidConfig.Environment = "sandbox"
+	if baseConfig.Environment == "" {
+		baseConfig.Environment = "sandbox"
 	}
 
-	// Create Plaid client
-	plaidClient, err := plaid.NewClient(plaidConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create Plaid client: %w", err)
+	// Get all connected banks
+	connections := getAllPlaidConnections()
+	if len(connections) == 0 {
+		return fmt.Errorf("no banks connected. Run 'spice auth plaid' to connect a bank account")
 	}
 
-	// Handle list-accounts flag
+	// Handle list-accounts flag (list from all banks)
 	if viper.GetBool("import.list_accounts") {
-		return listAccounts(ctx, plaidClient)
+		return listAccountsFromAllBanks(ctx, baseConfig, connections)
 	}
 
 	// Parse date range
@@ -83,17 +82,40 @@ func runImport(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	slog.Info(cli.FormatTitle("Importing transactions from Plaid"))
+	slog.Info(cli.FormatTitle("Importing transactions from all connected banks"))
 	slog.Info("Date range", "start", startDate.Format("2006-01-02"), "end", endDate.Format("2006-01-02"))
+	slog.Info(fmt.Sprintf("Connected banks: %d", len(connections)))
 
-	// Fetch transactions
-	slog.Info("🔄 Fetching transactions...")
-	transactions, err := plaidClient.GetTransactions(ctx, startDate, endDate)
-	if err != nil {
-		return fmt.Errorf("failed to fetch transactions: %w", err)
+	// Fetch transactions from all banks
+	var allTransactions []model.Transaction
+	totalFetched := 0
+
+	for _, conn := range connections {
+		slog.Info(fmt.Sprintf("🏦 Fetching from %s...", conn.InstitutionName))
+
+		// Create client for this bank
+		config := baseConfig
+		config.AccessToken = conn.AccessToken
+		plaidClient, clientErr := plaid.NewClient(config)
+		if clientErr != nil {
+			slog.Error("Failed to create Plaid client", "bank", conn.InstitutionName, "error", clientErr)
+			continue
+		}
+
+		// Fetch transactions
+		transactions, txnErr := plaidClient.GetTransactions(ctx, startDate, endDate)
+		if txnErr != nil {
+			slog.Error("Failed to fetch transactions", "bank", conn.InstitutionName, "error", txnErr)
+			continue
+		}
+
+		allTransactions = append(allTransactions, transactions...)
+		totalFetched += len(transactions)
+		slog.Info(cli.FormatSuccess(fmt.Sprintf("  ✓ Fetched %d transactions from %s", len(transactions), conn.InstitutionName)))
 	}
 
-	slog.Info(cli.FormatSuccess(fmt.Sprintf("✓ Fetched %d transactions", len(transactions))))
+	slog.Info(cli.FormatSuccess(fmt.Sprintf("✓ Total: %d transactions from %d banks", totalFetched, len(connections))))
+	transactions := allTransactions
 
 	// Filter by accounts if specified
 	accountFilter := viper.GetStringSlice("import.accounts")
@@ -126,28 +148,6 @@ func runImport(cmd *cobra.Command, _ []string) error {
 	slog.Info(cli.FormatSuccess("✓ Import complete!"))
 	displayTransactionSummary(transactions)
 
-	return nil
-}
-
-func listAccounts(ctx context.Context, client *plaid.Client) error {
-	slog.Info(cli.FormatTitle("Fetching accounts from Plaid"))
-
-	accounts, err := client.GetAccounts(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to fetch accounts: %w", err)
-	}
-
-	if len(accounts) == 0 {
-		slog.Info(cli.FormatWarning("No accounts found"))
-		return nil
-	}
-
-	content := fmt.Sprintf("Found %d accounts:\n\n", len(accounts))
-	for i, accountID := range accounts {
-		content += fmt.Sprintf("%d. %s\n", i+1, accountID)
-	}
-
-	slog.Info(cli.RenderBox("Available Accounts", content))
 	return nil
 }
 
@@ -234,6 +234,79 @@ Top merchants:
 type merchantCount struct {
 	name  string
 	count int
+}
+
+// PlaidConnection represents a connected bank.
+type PlaidConnection struct {
+	AccessToken     string
+	InstitutionName string
+	ItemID          string
+}
+
+// getAllPlaidConnections retrieves all connected banks from config.
+func getAllPlaidConnections() []PlaidConnection {
+	var connections []PlaidConnection
+
+	// Check for primary/legacy access token
+	if token := viper.GetString("plaid.access_token"); token != "" {
+		connections = append(connections, PlaidConnection{
+			AccessToken:     token,
+			InstitutionName: "Primary Bank",
+			ItemID:          "primary",
+		})
+	}
+
+	// Get all connections from config
+	connectionsMap := viper.GetStringMap("plaid.connections")
+	for itemID, connData := range connectionsMap {
+		if connMap, ok := connData.(map[string]any); ok {
+			conn := PlaidConnection{
+				ItemID: itemID,
+			}
+
+			if token, ok := connMap["access_token"].(string); ok {
+				conn.AccessToken = token
+			}
+			if name, ok := connMap["institution_name"].(string); ok {
+				conn.InstitutionName = name
+			}
+
+			if conn.AccessToken != "" {
+				connections = append(connections, conn)
+			}
+		}
+	}
+
+	return connections
+}
+
+// listAccountsFromAllBanks lists accounts from all connected banks.
+func listAccountsFromAllBanks(ctx context.Context, baseConfig plaid.Config, connections []PlaidConnection) error {
+	slog.Info(cli.FormatTitle("Listing accounts from all connected banks"))
+
+	for _, conn := range connections {
+		slog.Info(fmt.Sprintf("\n🏦 %s:", conn.InstitutionName))
+
+		config := baseConfig
+		config.AccessToken = conn.AccessToken
+		plaidClient, clientErr := plaid.NewClient(config)
+		if clientErr != nil {
+			slog.Error("Failed to create Plaid client", "bank", conn.InstitutionName, "error", clientErr)
+			continue
+		}
+
+		accounts, err := plaidClient.GetAccounts(ctx)
+		if err != nil {
+			slog.Error("Failed to fetch accounts", "bank", conn.InstitutionName, "error", err)
+			continue
+		}
+
+		for _, account := range accounts {
+			slog.Info(fmt.Sprintf("  - %s", account))
+		}
+	}
+
+	return nil
 }
 
 func getTopMerchants(merchants map[string]int, limit int) []merchantCount {
