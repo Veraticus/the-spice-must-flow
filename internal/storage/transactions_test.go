@@ -189,13 +189,13 @@ func TestSQLiteStorage_TransactionBatchOperations(t *testing.T) {
 
 	for i := 0; i < batchSize; i++ {
 		txns[i] = model.Transaction{
-			ID:            makeTestID("batch", i+1),
-			Date:          time.Now().Add(time.Duration(i) * time.Minute),
-			Name:          makeTestName("Batch Transaction", i+1),
-			MerchantName:  makeTestName("Batch Merchant", (i%10)+1),
-			Amount:        float64(i+1) * 1.50,
-			AccountID:     "acc1",
-			PlaidCategory: "Batch > Test",
+			ID:           makeTestID("batch", i+1),
+			Date:         time.Now().Add(time.Duration(i) * time.Minute),
+			Name:         makeTestName("Batch Transaction", i+1),
+			MerchantName: makeTestName("Batch Merchant", (i%10)+1),
+			Amount:       float64(i+1) * 1.50,
+			AccountID:    "acc1",
+			Category:     []string{"Batch", "Test"},
 		}
 		txns[i].Hash = txns[i].GenerateHash()
 	}
@@ -329,7 +329,7 @@ func TestSQLiteStorage_TransactionClassificationState(t *testing.T) {
 	// Seed required categories
 	categories := []string{"Food", "Transport", "Shopping"}
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
 	}

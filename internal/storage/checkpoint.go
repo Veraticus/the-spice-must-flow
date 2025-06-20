@@ -13,26 +13,26 @@ import (
 	"time"
 )
 
-// CheckpointManager handles database checkpoint operations
+// CheckpointManager handles database checkpoint operations.
 type CheckpointManager struct {
 	db             *sql.DB
 	dbPath         string
 	checkpointsDir string
 }
 
-// CheckpointMetadata contains metadata about a checkpoint
+// CheckpointMetadata contains metadata about a checkpoint.
 type CheckpointMetadata struct {
-	ID               string         `json:"id"`
 	CreatedAt        time.Time      `json:"created_at"`
+	RowCounts        map[string]int `json:"row_counts"`
+	ParentCheckpoint *string        `json:"parent_checkpoint,omitempty"`
+	ID               string         `json:"id"`
 	Description      string         `json:"description"`
 	FileSize         int64          `json:"file_size"`
-	RowCounts        map[string]int `json:"row_counts"`
 	SchemaVersion    int            `json:"schema_version"`
 	IsAuto           bool           `json:"is_auto"`
-	ParentCheckpoint *string        `json:"parent_checkpoint,omitempty"`
 }
 
-// CheckpointInfo represents information about a checkpoint for listing
+// CheckpointInfo represents information about a checkpoint for listing.
 type CheckpointInfo struct {
 	ID            string
 	CreatedAt     time.Time
@@ -45,7 +45,7 @@ type CheckpointInfo struct {
 	IsAuto        bool
 }
 
-// Common errors
+// Common errors.
 var (
 	ErrCheckpointNotFound  = errors.New("checkpoint not found")
 	ErrCheckpointCorrupted = errors.New("checkpoint integrity check failed")
@@ -53,7 +53,7 @@ var (
 	ErrCheckpointExists    = errors.New("checkpoint already exists")
 )
 
-// NewCheckpointManager creates a new checkpoint manager
+// NewCheckpointManager creates a new checkpoint manager.
 func NewCheckpointManager(db *sql.DB, dbPath string) (*CheckpointManager, error) {
 	// Determine checkpoints directory
 	dir := filepath.Dir(dbPath)
@@ -71,7 +71,7 @@ func NewCheckpointManager(db *sql.DB, dbPath string) (*CheckpointManager, error)
 	}, nil
 }
 
-// Create creates a new checkpoint with the given tag and description
+// Create creates a new checkpoint with the given tag and description.
 func (cm *CheckpointManager) Create(ctx context.Context, tag, description string) (*CheckpointInfo, error) {
 	// Generate checkpoint ID if not provided
 	if tag == "" {
@@ -160,7 +160,7 @@ func (cm *CheckpointManager) Create(ctx context.Context, tag, description string
 	}, nil
 }
 
-// List returns a list of all checkpoints
+// List returns a list of all checkpoints.
 func (cm *CheckpointManager) List(ctx context.Context) ([]CheckpointInfo, error) {
 	entries, err := os.ReadDir(cm.checkpointsDir)
 	if err != nil {
@@ -205,7 +205,7 @@ func (cm *CheckpointManager) List(ctx context.Context) ([]CheckpointInfo, error)
 	return checkpoints, nil
 }
 
-// Restore restores the database from a checkpoint
+// Restore restores the database from a checkpoint.
 func (cm *CheckpointManager) Restore(ctx context.Context, checkpointID string) error {
 	// Validate checkpoint ID
 	if strings.Contains(checkpointID, "/") || strings.Contains(checkpointID, "\\") || strings.Contains(checkpointID, "..") {
@@ -258,7 +258,7 @@ func (cm *CheckpointManager) Restore(ctx context.Context, checkpointID string) e
 	return nil
 }
 
-// Delete removes a checkpoint
+// Delete removes a checkpoint.
 func (cm *CheckpointManager) Delete(ctx context.Context, checkpointID string) error {
 	// Validate checkpoint ID
 	if strings.Contains(checkpointID, "/") || strings.Contains(checkpointID, "\\") || strings.Contains(checkpointID, "..") {
@@ -293,7 +293,7 @@ func (cm *CheckpointManager) Delete(ctx context.Context, checkpointID string) er
 	return nil
 }
 
-// GetCheckpointInfo retrieves information about a specific checkpoint
+// GetCheckpointInfo retrieves information about a specific checkpoint.
 func (cm *CheckpointManager) GetCheckpointInfo(ctx context.Context, checkpointID string) (*CheckpointInfo, error) {
 	metadataPath := filepath.Join(cm.checkpointsDir, checkpointID+".meta.json")
 
@@ -481,7 +481,7 @@ func (cm *CheckpointManager) storeMetadataInDB(ctx context.Context, metadata Che
 	return err
 }
 
-// AutoCheckpoint creates an automatic checkpoint with a generated name
+// AutoCheckpoint creates an automatic checkpoint with a generated name.
 func (cm *CheckpointManager) AutoCheckpoint(ctx context.Context, prefix string) error {
 	tag := fmt.Sprintf("auto-%s-%s", prefix, time.Now().Format("2006-01-02-1504"))
 	description := fmt.Sprintf("Automatic checkpoint before %s", prefix)

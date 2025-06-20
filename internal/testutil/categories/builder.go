@@ -57,7 +57,7 @@ func (c CategoryName) String() string {
 	return string(c)
 }
 
-// Common category names used across tests
+// Common category names used across tests.
 const (
 	CategoryGroceries          CategoryName = "Groceries"
 	CategoryFoodDining         CategoryName = "Food & Dining"
@@ -79,7 +79,7 @@ const (
 	CategoryBankingFees        CategoryName = "Banking & Fees"
 )
 
-// Test-specific category names
+// Test-specific category names.
 const (
 	CategoryTest1         CategoryName = "Test Category 1"
 	CategoryTest2         CategoryName = "Test Category 2"
@@ -225,7 +225,7 @@ func (b *categoryBuilder) Build(ctx context.Context, storage service.Storage) (C
 	var result Categories
 
 	for _, name := range names {
-		createdCat, err := storage.CreateCategory(ctx, name.String())
+		createdCat, err := storage.CreateCategory(ctx, name.String(), "Test description for "+name.String())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create category %q: %w", name, err)
 		}

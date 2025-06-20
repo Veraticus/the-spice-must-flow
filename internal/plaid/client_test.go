@@ -284,13 +284,13 @@ func TestMapPlaidTransaction(t *testing.T) {
 
 	// We'll create a manual transaction to test the mapping
 	tx := model.Transaction{
-		Date:          time.Now().Truncate(24 * time.Hour),
-		ID:            "test-transaction-id",
-		Name:          "STARBUCKS STORE #123",
-		MerchantName:  "Starbucks Store #123",
-		AccountID:     "test-account-id",
-		PlaidCategory: "Food and Drink > Restaurants > Coffee Shop",
-		Amount:        5.50,
+		Date:         time.Now().Truncate(24 * time.Hour),
+		ID:           "test-transaction-id",
+		Name:         "STARBUCKS STORE #123",
+		MerchantName: "Starbucks Store #123",
+		AccountID:    "test-account-id",
+		Category:     []string{"Food and Drink", "Restaurants", "Coffee Shop"},
+		Amount:       5.50,
 	}
 
 	// Verify hash is generated

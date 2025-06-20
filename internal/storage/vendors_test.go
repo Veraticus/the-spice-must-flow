@@ -167,7 +167,7 @@ func TestSQLiteStorage_DeleteVendor(t *testing.T) {
 	ctx := context.Background()
 
 	// Create required category
-	if _, err := store.CreateCategory(ctx, "Test"); err != nil {
+	if _, err := store.CreateCategory(ctx, "Test", "Test category description"); err != nil {
 		t.Fatalf("Failed to create Test category: %v", err)
 	}
 
@@ -224,7 +224,7 @@ func TestSQLiteStorage_VendorConcurrency(t *testing.T) {
 	// Pre-create categories for concurrent test
 	for i := 0; i < 5; i++ {
 		categoryName := makeTestName("Category", i)
-		if _, err := store.CreateCategory(ctx, categoryName); err != nil {
+		if _, err := store.CreateCategory(ctx, categoryName, "Test description for "+categoryName); err != nil {
 			t.Fatalf("Failed to create category %q: %v", categoryName, err)
 		}
 	}
@@ -296,7 +296,7 @@ func TestSQLiteStorage_VendorSorting(t *testing.T) {
 	// Create required categories
 	categories := []string{"Cat1", "Cat2", "Cat3", "Cat4"}
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
 	}
@@ -343,7 +343,7 @@ func TestSQLiteStorage_DeleteVendorRaceCondition(t *testing.T) {
 	// Create required categories
 	categories := []string{"TestCategory", "UpdatedCategory"}
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
 	}

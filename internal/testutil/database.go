@@ -15,8 +15,8 @@ import (
 // TestDB represents a test database with associated test utilities.
 type TestDB struct {
 	Storage    service.Storage
-	Categories categories.Categories
 	t          *testing.T
+	Categories categories.Categories
 }
 
 // SetupTestDB creates a new in-memory test database with the specified categories.
@@ -47,7 +47,7 @@ func SetupTestDB(t *testing.T, cats categories.Categories) *TestDB {
 	// Seed categories if provided
 	if len(cats) > 0 {
 		for _, cat := range cats {
-			if _, err := storage.CreateCategory(ctx, cat.Name); err != nil {
+			if _, err := storage.CreateCategory(ctx, cat.Name, cat.Description); err != nil {
 				t.Fatalf("failed to seed category %q: %v", cat.Name, err)
 			}
 		}
@@ -138,14 +138,9 @@ func (db *TestDB) WithTransaction(fn func(tx service.Transaction) error) error {
 
 // TestDBOptions provides configuration options for test database setup.
 type TestDBOptions struct {
-	// SkipMigrations skips running database migrations
+	CustomSetup    func(context.Context, service.Storage) error
+	Categories     categories.Categories
 	SkipMigrations bool
-
-	// Categories to seed in the database
-	Categories categories.Categories
-
-	// CustomSetup allows for additional setup after migrations
-	CustomSetup func(context.Context, service.Storage) error
 }
 
 // SetupTestDBWithOptions creates a test database with custom options.
@@ -169,7 +164,7 @@ func SetupTestDBWithOptions(t *testing.T, opts TestDBOptions) *TestDB {
 	// Seed categories
 	if len(opts.Categories) > 0 {
 		for _, cat := range opts.Categories {
-			if _, err := storage.CreateCategory(ctx, cat.Name); err != nil {
+			if _, err := storage.CreateCategory(ctx, cat.Name, cat.Description); err != nil {
 				t.Fatalf("failed to seed category %q: %v", cat.Name, err)
 			}
 		}

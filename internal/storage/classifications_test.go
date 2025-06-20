@@ -16,7 +16,7 @@ func createTestStorageWithCategories(t *testing.T, categories ...string) (*SQLit
 
 	// Seed categories
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
 			cleanup()
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}

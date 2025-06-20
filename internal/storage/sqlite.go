@@ -17,10 +17,10 @@ import (
 
 // SQLiteStorage implements the Storage interface using SQLite.
 type SQLiteStorage struct {
-	db          *sql.DB
-	dbPath      string
-	vendorCache map[string]*model.Vendor
 	cacheExpiry time.Time
+	db          *sql.DB
+	vendorCache map[string]*model.Vendor
+	dbPath      string
 	cacheMutex  sync.RWMutex
 }
 

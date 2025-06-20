@@ -12,15 +12,15 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
-// Parser implements OFX/QFX file parsing
+// Parser implements OFX/QFX file parsing.
 type Parser struct{}
 
-// NewParser creates a new OFX parser
+// NewParser creates a new OFX parser.
 func NewParser() *Parser {
 	return &Parser{}
 }
 
-// preprocessOFX fixes common formatting issues in OFX files
+// preprocessOFX fixes common formatting issues in OFX files.
 func (p *Parser) preprocessOFX(content string) string {
 	// Trim any leading whitespace or blank lines before the header
 	content = strings.TrimLeft(content, " \t\r\n")
@@ -40,7 +40,7 @@ func (p *Parser) preprocessOFX(content string) string {
 	return content
 }
 
-// ParseFile parses an OFX/QFX file and returns transactions
+// ParseFile parses an OFX/QFX file and returns transactions.
 func (p *Parser) ParseFile(ctx context.Context, reader io.Reader) ([]model.Transaction, error) {
 	// Read and preprocess the content
 	content, err := io.ReadAll(reader)
@@ -97,7 +97,7 @@ func (p *Parser) ParseFile(ctx context.Context, reader io.Reader) ([]model.Trans
 	return transactions, nil
 }
 
-// processBankStatement converts OFX bank transactions to our model
+// processBankStatement converts OFX bank transactions to our model.
 func (p *Parser) processBankStatement(stmt *ofxgo.StatementResponse) ([]model.Transaction, error) {
 	if stmt.BankTranList == nil {
 		return nil, nil
@@ -114,7 +114,7 @@ func (p *Parser) processBankStatement(stmt *ofxgo.StatementResponse) ([]model.Tr
 	return transactions, nil
 }
 
-// processCreditCardStatement converts OFX credit card transactions to our model
+// processCreditCardStatement converts OFX credit card transactions to our model.
 func (p *Parser) processCreditCardStatement(stmt *ofxgo.CCStatementResponse) ([]model.Transaction, error) {
 	if stmt.BankTranList == nil {
 		return nil, nil
@@ -131,7 +131,7 @@ func (p *Parser) processCreditCardStatement(stmt *ofxgo.CCStatementResponse) ([]
 	return transactions, nil
 }
 
-// convertTransaction converts an OFX transaction to our model
+// convertTransaction converts an OFX transaction to our model.
 func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) model.Transaction {
 	// Extract clean merchant name
 	merchantName := p.extractMerchantName(ofxTx)
@@ -152,7 +152,7 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 		MerchantName: merchantName,
 		Amount:       amount,
 		AccountID:    accountID,
-		Type:         string(ofxTx.TrnType), // e.g., DEBIT, CHECK, PAYMENT, ATM
+		Type:         fmt.Sprintf("%v", ofxTx.TrnType), // e.g., DEBIT, CHECK, PAYMENT, ATM
 	}
 
 	// Add check number if present
@@ -177,7 +177,7 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 	return tx
 }
 
-// extractMerchantName tries to get a clean merchant name from OFX data
+// extractMerchantName tries to get a clean merchant name from OFX data.
 func (p *Parser) extractMerchantName(tx ofxgo.Transaction) string {
 	// Prefer PAYEE if available (cleaner merchant name)
 	if tx.Payee != nil && tx.Payee.Name != "" {
@@ -223,7 +223,7 @@ func (p *Parser) extractMerchantName(tx ofxgo.Transaction) string {
 	return name
 }
 
-// isGenericDescription checks if a transaction name is too generic
+// isGenericDescription checks if a transaction name is too generic.
 func isGenericDescription(name string) bool {
 	generic := []string{
 		"DEBIT",
@@ -243,7 +243,7 @@ func isGenericDescription(name string) bool {
 	return false
 }
 
-// GetAccounts extracts unique account IDs from the OFX file
+// GetAccounts extracts unique account IDs from the OFX file.
 func (p *Parser) GetAccounts(ctx context.Context, reader io.Reader) ([]string, error) {
 	// Read and preprocess the content
 	content, err := io.ReadAll(reader)

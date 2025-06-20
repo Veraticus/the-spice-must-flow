@@ -15,13 +15,13 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
-// SimpleFINClient implements the TransactionFetcher interface for SimpleFIN
+// SimpleFINClient implements the TransactionFetcher interface for SimpleFIN.
 type SimpleFINClient struct {
-	accessURL  string
 	httpClient *http.Client
+	accessURL  string
 }
 
-// SimpleFIN API response types
+// SimpleFIN API response types.
 type accountSet struct {
 	Accounts []account `json:"accounts"`
 }
@@ -36,14 +36,14 @@ type account struct {
 
 type transaction struct {
 	ID          string `json:"id"`
-	Posted      int64  `json:"posted"`
 	Amount      string `json:"amount"`
 	Description string `json:"description"`
 	Payee       string `json:"payee"`
+	Posted      int64  `json:"posted"`
 	Pending     bool   `json:"pending"`
 }
 
-// NewClient creates a new SimpleFIN client, using saved auth if available
+// NewClient creates a new SimpleFIN client, using saved auth if available.
 func NewClient(token string) (*SimpleFINClient, error) {
 	// Load or claim auth
 	auth, err := LoadOrClaimAuth(token)
@@ -59,7 +59,7 @@ func NewClient(token string) (*SimpleFINClient, error) {
 	}, nil
 }
 
-// claimToken exchanges a claim token for an access URL
+// claimToken exchanges a claim token for an access URL.
 func claimToken(token string) (string, error) {
 	// SimpleFIN tokens are base64-encoded claim URLs
 	// Decode the token to get the claim URL
@@ -85,7 +85,7 @@ func claimToken(token string) (string, error) {
 	}
 
 	// Claim the access URL by POSTing to the claim URL
-	req, err := http.NewRequest("POST", claimURL, nil)
+	req, err := http.NewRequest(http.MethodPost, claimURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create claim request: %w", err)
 	}
@@ -115,7 +115,7 @@ func claimToken(token string) (string, error) {
 	return accessURL, nil
 }
 
-// GetTransactions fetches transactions from SimpleFIN
+// GetTransactions fetches transactions from SimpleFIN.
 func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error) {
 	// SimpleFIN uses the access URL with /accounts endpoint
 	baseURL := c.accessURL + "/accounts"
@@ -133,7 +133,7 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 	q.Set("end-date", fmt.Sprintf("%d", endDate.AddDate(0, 0, 1).Unix()))
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -210,11 +210,11 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 	return transactions, nil
 }
 
-// GetAccounts returns the list of account IDs
+// GetAccounts returns the list of account IDs.
 func (c *SimpleFINClient) GetAccounts(ctx context.Context) ([]string, error) {
 	// SimpleFIN uses the access URL with /accounts endpoint
 	accountsURL := c.accessURL + "/accounts"
-	req, err := http.NewRequestWithContext(ctx, "GET", accountsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, accountsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -243,7 +243,7 @@ func (c *SimpleFINClient) GetAccounts(ctx context.Context) ([]string, error) {
 	return accountIDs, nil
 }
 
-// parseAmount converts SimpleFIN amount string (in cents) to float64 dollars
+// parseAmount converts SimpleFIN amount string (in cents) to float64 dollars.
 func parseAmount(amountStr string) (float64, error) {
 	// SimpleFIN amounts are in cents as strings
 	// Negative amounts represent debits
@@ -261,7 +261,7 @@ func parseAmount(amountStr string) (float64, error) {
 	return amount, nil
 }
 
-// normalizeMerchant performs basic merchant name normalization
+// normalizeMerchant performs basic merchant name normalization.
 func normalizeMerchant(raw string) string {
 	// This is a simple implementation - we'll enhance it later
 	merchant := strings.TrimSpace(raw)
@@ -277,7 +277,7 @@ func normalizeMerchant(raw string) string {
 	return merchant
 }
 
-// inferTransactionType tries to guess transaction type from description/payee
+// inferTransactionType tries to guess transaction type from description/payee.
 func inferTransactionType(description, payee string) string {
 	combined := strings.ToLower(description + " " + payee)
 

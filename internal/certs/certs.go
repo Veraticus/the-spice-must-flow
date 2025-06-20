@@ -17,12 +17,6 @@ import (
 )
 
 // Manager defines the interface for certificate operations.
-type Manager interface {
-	// GetOrCreateCertificate returns an existing certificate or creates a new one.
-	GetOrCreateCertificate() (tls.Certificate, error)
-	// CertificateExists checks if a valid certificate already exists.
-	CertificateExists() (bool, error)
-}
 
 // FileManager implements Manager using the filesystem.
 type FileManager struct {

@@ -47,10 +47,10 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 			MerchantName:  "Starbucks Coffee",
 			Amount:        5.75,
 			Date:          time.Now(),
-			PlaidCategory: "FOOD_AND_DRINK",
+			Category: []string{"FOOD_AND_DRINK"},
 		}
 
-		category, confidence, err := classifier.SuggestCategory(ctx, txn)
+		category, confidence, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Coffee & Dining", "Shopping", "Groceries"})
 		require.NoError(t, err)
 		assert.NotEmpty(t, category)
 		assert.Greater(t, confidence, 0.0)
@@ -69,7 +69,7 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 				MerchantName:  "Amazon.com",
 				Amount:        125.99,
 				Date:          time.Now(),
-				PlaidCategory: "SHOPS",
+				Category: []string{"SHOPS"},
 			},
 			{
 				ID:            "test-openai-3",
@@ -77,7 +77,7 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 				MerchantName:  "Whole Foods Market",
 				Amount:        87.50,
 				Date:          time.Now(),
-				PlaidCategory: "FOOD_AND_DRINK",
+				Category: []string{"FOOD_AND_DRINK"},
 			},
 			{
 				ID:           "test-openai-4",
@@ -88,7 +88,7 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 			},
 		}
 
-		suggestions, err := classifier.BatchSuggestCategories(ctx, transactions)
+		suggestions, err := classifier.BatchSuggestCategories(ctx, transactions, []string{"Coffee & Dining", "Shopping", "Transportation", "Groceries"})
 		require.NoError(t, err)
 		require.Len(t, suggestions, 3)
 
@@ -166,10 +166,10 @@ func TestLLMIntegration_Anthropic(t *testing.T) {
 			MerchantName:  "Uber",
 			Amount:        25.50,
 			Date:          time.Now(),
-			PlaidCategory: "TRAVEL",
+			Category: []string{"TRAVEL"},
 		}
 
-		category, confidence, err := classifier.SuggestCategory(ctx, txn)
+		category, confidence, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Coffee & Dining", "Shopping", "Groceries"})
 		require.NoError(t, err)
 		assert.NotEmpty(t, category)
 		assert.Greater(t, confidence, 0.0)
@@ -199,7 +199,7 @@ func TestLLMIntegration_Anthropic(t *testing.T) {
 			},
 		}
 
-		suggestions, err := classifier.BatchSuggestCategories(ctx, transactions)
+		suggestions, err := classifier.BatchSuggestCategories(ctx, transactions, []string{"Coffee & Dining", "Shopping", "Transportation", "Groceries"})
 		require.NoError(t, err)
 		require.Len(t, suggestions, 2)
 
@@ -245,7 +245,7 @@ func TestLLMIntegration_RateLimiting(t *testing.T) {
 			Amount:       10.00,
 			Date:         time.Now(),
 		}
-		_, _, err := classifier.SuggestCategory(ctx, txn)
+		_, _, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Test Category"})
 		require.NoError(t, err)
 	}
 	duration := time.Since(start)

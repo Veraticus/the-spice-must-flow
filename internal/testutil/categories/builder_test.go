@@ -85,8 +85,8 @@ func TestBuilder_WithBasicCategories(t *testing.T) {
 
 func TestBuilder_WithFixture(t *testing.T) {
 	tests := []struct {
-		name    string
 		fixture categories.Fixture
+		name    string
 		minSize int
 	}{
 		{

@@ -27,11 +27,11 @@ type Classification struct {
 // PendingClassification represents a transaction awaiting user confirmation.
 type PendingClassification struct {
 	SuggestedCategory   string
+	CategoryDescription string
 	Transaction         Transaction
 	Confidence          float64
 	SimilarCount        int
-	IsNewCategory       bool   // True if this is a new category suggestion
-	CategoryDescription string // Description for new categories
+	IsNewCategory       bool
 }
 
 // ClassificationProgress tracks where we are in a classification run.

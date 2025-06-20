@@ -222,7 +222,7 @@ func restoreCheckpointCmd() *cobra.Command {
 				var response string
 				fmt.Scanln(&response)
 				if !strings.HasPrefix(strings.ToLower(response), "y") {
-					fmt.Println(cli.SubtitleStyle.Render("Restore cancelled."))
+					fmt.Println(cli.SubtitleStyle.Render("Restore canceled."))
 					store.Close()
 					return nil
 				}
@@ -313,7 +313,7 @@ func deleteCheckpointCmd() *cobra.Command {
 				var response string
 				fmt.Scanln(&response)
 				if !strings.HasPrefix(strings.ToLower(response), "y") {
-					fmt.Println(cli.SubtitleStyle.Render("Deletion cancelled."))
+					fmt.Println(cli.SubtitleStyle.Render("Deletion canceled."))
 					return nil
 				}
 			}

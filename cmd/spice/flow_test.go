@@ -16,8 +16,8 @@ func TestValidateDataCoverageFromClassifications(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		transactions   []time.Time
 		expectedError  string
+		transactions   []time.Time
 		expectWarnings bool
 	}{
 		{
@@ -100,7 +100,7 @@ func TestValidateDataCoverageFromClassifications(t *testing.T) {
 	}
 }
 
-// generateMonthlyTransactions creates transactions for each day of the specified months
+// generateMonthlyTransactions creates transactions for each day of the specified months.
 func generateMonthlyTransactions(year, startMonth, endMonth int) []time.Time {
 	var dates []time.Time
 	for month := startMonth; month <= endMonth; month++ {
@@ -215,10 +215,10 @@ func TestUnclassifiedTransactionValidation(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		unclassifiedCount   int
-		unclassifiedInRange int
 		dateRange           string
 		expectedError       string
+		unclassifiedCount   int
+		unclassifiedInRange int
 	}{
 		{
 			name:                "no unclassified transactions",

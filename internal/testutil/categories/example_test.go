@@ -161,9 +161,9 @@ func TestComplexScenario(t *testing.T) {
 // TestTableDrivenWithCategories shows table-driven tests with different category requirements.
 func TestTableDrivenWithCategories(t *testing.T) {
 	tests := []struct {
+		test       func(t *testing.T, storage service.Storage)
 		name       string
 		categories []categories.CategoryName
-		test       func(t *testing.T, storage service.Storage)
 	}{
 		{
 			name: "groceries classification",
@@ -222,7 +222,7 @@ func TestParallelExecution(t *testing.T) {
 	testCases := []string{"test1", "test2", "test3", "test4"}
 
 	for _, tc := range testCases {
-		tc := tc // Capture range variable
+		// Capture range variable
 		t.Run(tc, func(t *testing.T) {
 			t.Parallel() // Safe to run in parallel
 
@@ -238,7 +238,7 @@ func TestParallelExecution(t *testing.T) {
 			}
 
 			// Modifications don't affect other tests
-			_, err = db.Storage.CreateCategory(ctx, tc+"-specific")
+			_, err = db.Storage.CreateCategory(ctx, tc+"-specific", "Test specific category")
 			if err != nil {
 				t.Fatalf("failed to create category: %v", err)
 			}
@@ -262,7 +262,7 @@ func TestWithTransaction(t *testing.T) {
 		ctx := context.Background()
 
 		// All operations within transaction
-		_, err := tx.CreateCategory(ctx, "Transaction Test Category")
+		_, err := tx.CreateCategory(ctx, "Transaction Test Category", "Test transaction category")
 		if err != nil {
 			return err
 		}

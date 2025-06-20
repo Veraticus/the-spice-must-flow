@@ -244,6 +244,13 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 				}
 			}()
 
+			// Create default categories required by the engine
+			defaultCategories := []string{"Groceries", "Transportation", "Entertainment", "Shopping", "Dining"}
+			for _, cat := range defaultCategories {
+				_, err := storage.CreateCategory(ctx, cat, "Test category: "+cat)
+				require.NoError(t, err)
+			}
+
 			// Insert test data
 			if len(tt.setupTransactions) > 0 {
 				err := storage.SaveTransactions(ctx, tt.setupTransactions)
@@ -382,6 +389,10 @@ func TestClassificationEngine_VendorRetrieval(t *testing.T) {
 		}
 	}()
 
+	// Create required category
+	_, err = db.CreateCategory(ctx, "Test Category", "Test category for vendor")
+	require.NoError(t, err)
+
 	// Add vendor to storage
 	vendor := &model.Vendor{
 		Name:        "Test Vendor",
@@ -441,6 +452,14 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 			t.Logf("Failed to close database: %v", closeErr)
 		}
 	}()
+
+	// Create default categories
+	ctx := context.Background()
+	defaultCategories := []string{"Groceries", "Transportation", "Entertainment"}
+	for _, cat := range defaultCategories {
+		_, err := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		require.NoError(t, err)
+	}
 
 	// Add many transactions to ensure we can cancel mid-process
 	transactions := make([]model.Transaction, 100)
@@ -522,6 +541,13 @@ func TestClassificationEngine_RetryLogic(t *testing.T) {
 		}
 	}()
 
+	// Create default categories
+	defaultCategories := []string{"Groceries", "Transportation", "Test Category"}
+	for _, cat := range defaultCategories {
+		_, err := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		require.NoError(t, err)
+	}
+
 	// Add test transaction
 	transaction := model.Transaction{
 		ID:           "1",
@@ -558,33 +584,38 @@ type failingClassifier struct {
 	mu        sync.Mutex
 }
 
-func (f *failingClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, error) {
+func (f *failingClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.attempts++
 	if f.attempts <= f.failCount {
-		return "", 0, false, errors.New("temporary failure")
+		return "", 0, false, "", errors.New("temporary failure")
 	}
 
-	return "Test Category", 0.85, false, nil
+	return "Test Category", 0.85, false, "", nil
 }
 
 func (f *failingClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 	for i, txn := range transactions {
-		category, confidence, isNew, err := f.SuggestCategory(ctx, txn, categories)
+		category, confidence, isNew, description, err := f.SuggestCategory(ctx, txn, categories)
 		if err != nil {
 			return nil, err
 		}
 		suggestions[i] = service.LLMSuggestion{
-			TransactionID: txn.ID,
-			Category:      category,
-			Confidence:    confidence,
-			IsNew:         isNew,
+			TransactionID:       txn.ID,
+			Category:            category,
+			Confidence:          confidence,
+			IsNew:               isNew,
+			CategoryDescription: description,
 		}
 	}
 	return suggestions, nil
+}
+
+func (f *failingClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
+	return "Test description for " + categoryName, nil
 }
 
 // TestNewCategoryFlow tests the flow when AI suggests a new category.
@@ -596,6 +627,13 @@ func TestNewCategoryFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(ctx))
 	defer db.Close()
+
+	// Create initial categories (the new category will be suggested by AI)
+	initialCategories := []string{"Entertainment", "Shopping", "Dining"}
+	for _, cat := range initialCategories {
+		_, err := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		require.NoError(t, err)
+	}
 
 	// Setup transactions
 	txns := []model.Transaction{
@@ -660,27 +698,40 @@ type newCategoryClassifier struct {
 	isNew             bool
 }
 
-func (n *newCategoryClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, error) {
-	return n.suggestedCategory, n.confidence, n.isNew, nil
+func (n *newCategoryClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, string, error) {
+	description := ""
+	if n.isNew {
+		description = "Description for " + n.suggestedCategory
+	}
+	return n.suggestedCategory, n.confidence, n.isNew, description, nil
 }
 
 func (n *newCategoryClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 	for i, txn := range transactions {
+		category, confidence, isNew, description, err := n.SuggestCategory(ctx, txn, categories)
+		if err != nil {
+			return nil, err
+		}
 		suggestions[i] = service.LLMSuggestion{
-			TransactionID: txn.ID,
-			Category:      n.suggestedCategory,
-			Confidence:    n.confidence,
-			IsNew:         n.isNew,
+			TransactionID:       txn.ID,
+			Category:            category,
+			Confidence:          confidence,
+			IsNew:               isNew,
+			CategoryDescription: description,
 		}
 	}
 	return suggestions, nil
 }
 
+func (n *newCategoryClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
+	return "Generated description for " + categoryName, nil
+}
+
 // newCategoryPrompter simulates user accepting a new category.
 type newCategoryPrompter struct {
-	acceptNewCategory bool
 	acceptedCategory  string
+	acceptNewCategory bool
 }
 
 func (n *newCategoryPrompter) ConfirmClassification(_ context.Context, pending model.PendingClassification) (model.Classification, error) {

@@ -120,11 +120,11 @@ func TestCheckpointManager_Create(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
+		errType     error
 		name        string
 		tag         string
 		description string
 		wantErr     bool
-		errType     error
 	}{
 		{
 			name:        "Create checkpoint with tag",

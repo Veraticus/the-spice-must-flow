@@ -24,16 +24,16 @@ type Classifier struct {
 
 // Config holds configuration for the LLM classifier.
 type Config struct {
-	Provider       string // "openai", "anthropic", or "claudecode"
+	Provider       string
 	APIKey         string
 	Model          string
+	ClaudeCodePath string
 	MaxRetries     int
 	RetryDelay     time.Duration
 	CacheTTL       time.Duration
-	RateLimit      int // requests per minute
+	RateLimit      int
 	Temperature    float64
 	MaxTokens      int
-	ClaudeCodePath string // Path to claude CLI binary (for claudecode provider)
 }
 
 // NewClassifier creates a new LLM-based classifier.

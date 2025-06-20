@@ -16,7 +16,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 	// Seed required categories for workflow test
 	categories := []string{"Coffee & Dining", "Online Shopping", "Shopping", "Groceries", "Transportation"}
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
 	}
@@ -25,40 +25,40 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 	t.Log("Step 1: Importing transactions")
 	transactions := []model.Transaction{
 		{
-			ID:            "workflow-1",
-			Date:          time.Now().Add(-48 * time.Hour),
-			Name:          "STARBUCKS STORE #1234",
-			MerchantName:  "Starbucks",
-			Amount:        5.75,
-			AccountID:     "checking",
-			PlaidCategory: "Food and Drink > Coffee Shop",
+			ID:           "workflow-1",
+			Date:         time.Now().Add(-48 * time.Hour),
+			Name:         "STARBUCKS STORE #1234",
+			MerchantName: "Starbucks",
+			Amount:       5.75,
+			AccountID:    "checking",
+			Category:     []string{"Food and Drink", "Coffee Shop"},
 		},
 		{
-			ID:            "workflow-2",
-			Date:          time.Now().Add(-36 * time.Hour),
-			Name:          "AMAZON.COM PURCHASE",
-			MerchantName:  "Amazon",
-			Amount:        49.99,
-			AccountID:     "credit",
-			PlaidCategory: "Shops > Digital Purchase",
+			ID:           "workflow-2",
+			Date:         time.Now().Add(-36 * time.Hour),
+			Name:         "AMAZON.COM PURCHASE",
+			MerchantName: "Amazon",
+			Amount:       49.99,
+			AccountID:    "credit",
+			Category:     []string{"Shops", "Digital Purchase"},
 		},
 		{
-			ID:            "workflow-3",
-			Date:          time.Now().Add(-24 * time.Hour),
-			Name:          "STARBUCKS STORE #5678",
-			MerchantName:  "Starbucks",
-			Amount:        6.25,
-			AccountID:     "checking",
-			PlaidCategory: "Food and Drink > Coffee Shop",
+			ID:           "workflow-3",
+			Date:         time.Now().Add(-24 * time.Hour),
+			Name:         "STARBUCKS STORE #5678",
+			MerchantName: "Starbucks",
+			Amount:       6.25,
+			AccountID:    "checking",
+			Category:     []string{"Food and Drink", "Coffee Shop"},
 		},
 		{
-			ID:            "workflow-4",
-			Date:          time.Now().Add(-12 * time.Hour),
-			Name:          "UBER TRIP",
-			MerchantName:  "Uber",
-			Amount:        15.50,
-			AccountID:     "credit",
-			PlaidCategory: "Travel > Taxi",
+			ID:           "workflow-4",
+			Date:         time.Now().Add(-12 * time.Hour),
+			Name:         "UBER TRIP",
+			MerchantName: "Uber",
+			Amount:       15.50,
+			AccountID:    "credit",
+			Category:     []string{"Travel", "Taxi"},
 		},
 	}
 
@@ -266,7 +266,7 @@ func TestSQLiteStorage_ResumableSession(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed required category
-	if _, err := store.CreateCategory(ctx, "Test Category"); err != nil {
+	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category"); err != nil {
 		t.Fatalf("Failed to create Test Category: %v", err)
 	}
 
@@ -396,7 +396,7 @@ func TestSQLiteStorage_DataIntegrity(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed required category
-	if _, err := store.CreateCategory(ctx, "Test Category"); err != nil {
+	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category"); err != nil {
 		t.Fatalf("Failed to create Test Category: %v", err)
 	}
 

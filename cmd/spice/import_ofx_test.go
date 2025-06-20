@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Sample OFX files for testing
+// Sample OFX files for testing.
 const testOFX1 = `OFXHEADER:100
 DATA:OFXSGML
 VERSION:102
@@ -128,7 +128,7 @@ NEWFILEUID:NONE
 </BANKMSGSRSV1>
 </OFX>`
 
-// Duplicate transaction in both files
+// Duplicate transaction in both files.
 const testOFXDuplicate = `OFXHEADER:100
 DATA:OFXSGML
 VERSION:102

@@ -14,10 +14,10 @@ import (
 // claudeCodeClient implements the Client interface using Claude Code CLI.
 type claudeCodeClient struct {
 	model       string
+	cliPath     string
 	temperature float64
 	maxTokens   int
 	maxTurns    int
-	cliPath     string
 }
 
 // newClaudeCodeClient creates a new Claude Code CLI client.

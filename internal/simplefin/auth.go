@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-// AuthState represents the saved SimpleFIN authentication state
+// AuthState represents the saved SimpleFIN authentication state.
 type AuthState struct {
 	AccessURL  string    `json:"access_url"`
 	ClaimedAt  time.Time `json:"claimed_at"`
 	ClaimToken string    `json:"claim_token_hash"` // Store hash for tracking
 }
 
-// LoadOrClaimAuth loads existing auth or claims a new token
+// LoadOrClaimAuth loads existing auth or claims a new token.
 func LoadOrClaimAuth(token string) (*AuthState, error) {
 	// Get state file path
 	stateFile, err := getStateFilePath()

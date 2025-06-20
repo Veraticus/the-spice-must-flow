@@ -57,6 +57,12 @@ func (m *mockClient) Classify(_ context.Context, prompt string) (ClassificationR
 	return ClassificationResponse{}, fmt.Errorf("no more mock responses (call %d, responses: %d)", callIdx, len(m.responses))
 }
 
+func (m *mockClient) GenerateDescription(_ context.Context, categoryName string) (DescriptionResponse, error) {
+	return DescriptionResponse{
+		Description: "Mock description for " + categoryName,
+	}, nil
+}
+
 func TestNewClassifier(t *testing.T) {
 	logger := slog.Default()
 
@@ -215,7 +221,7 @@ func TestClassifier_SuggestCategory(t *testing.T) {
 			}
 
 			// First call
-			category, confidence, err := classifier.SuggestCategory(ctx, txn)
+			category, confidence, isNew, description, err := classifier.SuggestCategory(ctx, txn, []string{"Groceries", "Entertainment"})
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -230,10 +236,12 @@ func TestClassifier_SuggestCategory(t *testing.T) {
 			// Test cache hit if applicable
 			if tt.name == "cache hit on second call" && !tt.expectError {
 				// Second call should hit cache
-				category2, confidence2, err2 := classifier.SuggestCategory(ctx, txn)
+				category2, confidence2, isNew2, description2, err2 := classifier.SuggestCategory(ctx, txn, []string{"Groceries", "Entertainment"})
 				require.NoError(t, err2)
 				assert.Equal(t, category, category2)
 				assert.Equal(t, confidence, confidence2)
+				assert.Equal(t, isNew, isNew2)
+				assert.Equal(t, description, description2)
 				assert.Equal(t, tt.expectedCalls, mock.calls) // No additional calls
 			}
 		})
@@ -289,7 +297,7 @@ func TestClassifier_BatchSuggestCategories(t *testing.T) {
 		},
 	}
 
-	suggestions, err := classifier.BatchSuggestCategories(ctx, transactions)
+	suggestions, err := classifier.BatchSuggestCategories(ctx, transactions, []string{"Coffee & Dining", "Shopping", "Transportation"})
 	require.NoError(t, err)
 	require.Len(t, suggestions, 3)
 
@@ -312,33 +320,33 @@ func TestClassifier_BuildPrompt(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		txn      model.Transaction
 		contains []string
+		txn      model.Transaction
 	}{
 		{
 			name: "with merchant name",
 			txn: model.Transaction{
-				MerchantName:  "Starbucks",
-				Name:          "STARBUCKS STORE #1234",
-				Amount:        5.75,
-				Date:          time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-				PlaidCategory: "FOOD_AND_DRINK",
+				MerchantName: "Starbucks",
+				Name:         "STARBUCKS STORE #1234",
+				Amount:       5.75,
+				Date:         time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+				Category:     []string{"FOOD_AND_DRINK"},
 			},
 			contains: []string{
 				"Merchant: Starbucks",
 				"Amount: $5.75",
 				"Date: 2024-01-15",
 				"Description: STARBUCKS STORE #1234",
-				"Plaid Category: FOOD_AND_DRINK",
+				"Category Hint: FOOD_AND_DRINK",
 			},
 		},
 		{
 			name: "without merchant name",
 			txn: model.Transaction{
-				Name:          "AMAZON MARKETPLACE",
-				Amount:        125.99,
-				Date:          time.Date(2024, 1, 20, 0, 0, 0, 0, time.UTC),
-				PlaidCategory: "SHOPS",
+				Name:     "AMAZON MARKETPLACE",
+				Amount:   125.99,
+				Date:     time.Date(2024, 1, 20, 0, 0, 0, 0, time.UTC),
+				Category: []string{"SHOPS"},
 			},
 			contains: []string{
 				"Merchant: AMAZON MARKETPLACE",
@@ -350,7 +358,7 @@ func TestClassifier_BuildPrompt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prompt := classifier.buildPrompt(tt.txn)
+			prompt := classifier.buildPrompt(tt.txn, []string{"Groceries", "Entertainment", "Coffee & Dining"})
 			for _, expected := range tt.contains {
 				assert.Contains(t, prompt, expected)
 			}

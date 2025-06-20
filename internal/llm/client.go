@@ -13,9 +13,9 @@ type Client interface {
 // ClassificationResponse contains the LLM's classification result.
 type ClassificationResponse struct {
 	Category            string
+	CategoryDescription string
 	Confidence          float64
-	IsNew               bool   // True if this is a new category suggestion
-	CategoryDescription string // Description for new categories
+	IsNew               bool
 }
 
 // DescriptionResponse contains the LLM's generated description.

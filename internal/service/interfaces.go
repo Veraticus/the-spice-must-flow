@@ -53,9 +53,9 @@ type Transaction interface {
 type LLMSuggestion struct {
 	TransactionID       string
 	Category            string
+	CategoryDescription string
 	Confidence          float64
-	IsNew               bool   // True if this is a new category suggestion
-	CategoryDescription string // Description for new categories
+	IsNew               bool
 }
 
 // CompletionStats shows the results of a classification run.

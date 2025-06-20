@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Sample OFX data for testing
+// Sample OFX data for testing.
 const sampleBankOFX = `OFXHEADER:100
 DATA:OFXSGML
 VERSION:102

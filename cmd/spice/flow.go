@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -111,7 +112,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 				errorMsg += fmt.Sprintf(" (e.g., %s)", strings.Join(exampleMerchants, ", "))
 			}
 			errorMsg += "\nRun 'spice classify' to categorize all transactions first"
-			return fmt.Errorf(errorMsg)
+			return errors.New(errorMsg)
 		}
 
 		// For full year exports, validate we have adequate data coverage
