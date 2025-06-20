@@ -120,6 +120,8 @@ func (c *anthropicClient) parseClassification(content string) (ClassificationRes
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	var category string
 	var confidence float64
+	var isNew bool
+	var description string
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -132,6 +134,11 @@ func (c *anthropicClient) parseClassification(content string) (ClassificationRes
 			if err != nil {
 				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
 			}
+		} else if strings.HasPrefix(line, "NEW:") {
+			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
+			isNew = strings.ToLower(newStr) == "true"
+		} else if strings.HasPrefix(line, "DESCRIPTION:") {
+			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
 		}
 	}
 
@@ -143,9 +150,16 @@ func (c *anthropicClient) parseClassification(content string) (ClassificationRes
 		confidence = 0.7 // Default confidence if not provided
 	}
 
+	// If confidence is below 0.85 and NEW wasn't explicitly set, assume it's a new category
+	if confidence < 0.85 && !isNew {
+		isNew = true
+	}
+
 	return ClassificationResponse{
-		Category:   category,
-		Confidence: confidence,
+		Category:            category,
+		Confidence:          confidence,
+		IsNew:               isNew,
+		CategoryDescription: description,
 	}, nil
 }
 
@@ -165,4 +179,62 @@ type anthropicResponse struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
+}
+
+// GenerateDescription generates a description for a category.
+func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
+	requestBody := map[string]any{
+		"model":      c.model,
+		"max_tokens": c.maxTokens,
+		"temperature": c.temperature,
+		"system":     "You are a financial category description generator. Respond only with the description text, no additional formatting.",
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return DescriptionResponse{}, fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response anthropicResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Content) == 0 {
+		return DescriptionResponse{}, fmt.Errorf("no content in response")
+	}
+
+	return DescriptionResponse{
+		Description: strings.TrimSpace(response.Content[0].Text),
+	}, nil
 }

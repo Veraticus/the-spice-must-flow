@@ -24,15 +24,16 @@ type Classifier struct {
 
 // Config holds configuration for the LLM classifier.
 type Config struct {
-	Provider    string // "openai", "anthropic", or "claudecode"
-	APIKey      string
-	Model       string
-	MaxRetries  int
-	RetryDelay  time.Duration
-	CacheTTL    time.Duration
-	RateLimit   int // requests per minute
-	Temperature float64
-	MaxTokens   int
+	Provider       string // "openai", "anthropic", or "claudecode"
+	APIKey         string
+	Model          string
+	MaxRetries     int
+	RetryDelay     time.Duration
+	CacheTTL       time.Duration
+	RateLimit      int // requests per minute
+	Temperature    float64
+	MaxTokens      int
+	ClaudeCodePath string // Path to claude CLI binary (for claudecode provider)
 }
 
 // NewClassifier creates a new LLM-based classifier.
@@ -79,18 +80,18 @@ func NewClassifier(cfg Config, logger *slog.Logger) (*Classifier, error) {
 }
 
 // SuggestCategory suggests a category for a single transaction.
-func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, error) {
+func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, string, error) {
 	// Check cache first
 	if suggestion, found := c.cache.get(transaction.Hash); found {
 		c.logger.Debug("cache hit for transaction",
 			"transaction_id", transaction.ID,
 			"merchant", transaction.MerchantName)
-		return suggestion.Category, suggestion.Confidence, suggestion.IsNew, nil
+		return suggestion.Category, suggestion.Confidence, suggestion.IsNew, suggestion.CategoryDescription, nil
 	}
 
 	// Rate limiting
 	if err := c.rateLimiter.wait(ctx); err != nil {
-		return "", 0, false, fmt.Errorf("rate limit error: %w", err)
+		return "", 0, false, "", fmt.Errorf("rate limit error: %w", err)
 	}
 
 	// Prepare the prompt
@@ -99,6 +100,7 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 	var category string
 	var confidence float64
 	var isNew bool
+	var description string
 
 	// Use common retry logic
 	err := common.WithRetry(ctx, func() error {
@@ -117,23 +119,26 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 		category = response.Category
 		confidence = response.Confidence
 		isNew = response.IsNew
+		description = response.CategoryDescription
 		c.logger.Debug("classification succeeded",
 			"category", category,
 			"confidence", confidence,
-			"isNew", isNew)
+			"isNew", isNew,
+			"description", description)
 		return nil
 	}, c.retryOpts)
 
 	if err != nil {
-		return "", 0, false, fmt.Errorf("classification failed: %w", err)
+		return "", 0, false, "", fmt.Errorf("classification failed: %w", err)
 	}
 
 	// Cache the result
 	c.cache.set(transaction.Hash, service.LLMSuggestion{
-		TransactionID: transaction.ID,
-		Category:      category,
-		Confidence:    confidence,
-		IsNew:         isNew,
+		TransactionID:       transaction.ID,
+		Category:            category,
+		Confidence:          confidence,
+		IsNew:               isNew,
+		CategoryDescription: description,
 	})
 
 	c.logger.Info("transaction classified",
@@ -143,7 +148,7 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 		"confidence", confidence,
 		"isNew", isNew)
 
-	return category, confidence, isNew, nil
+	return category, confidence, isNew, description, nil
 }
 
 // BatchSuggestCategories suggests categories for multiple transactions.
@@ -170,17 +175,18 @@ func (c *Classifier) BatchSuggestCategories(ctx context.Context, transactions []
 				return
 			}
 
-			category, confidence, isNew, err := c.SuggestCategory(ctx, transaction, categories)
+			category, confidence, isNew, description, err := c.SuggestCategory(ctx, transaction, categories)
 			if err != nil {
 				errors[idx] = err
 				return
 			}
 
 			suggestions[idx] = service.LLMSuggestion{
-				TransactionID: transaction.ID,
-				Category:      category,
-				Confidence:    confidence,
-				IsNew:         isNew,
+				TransactionID:       transaction.ID,
+				Category:            category,
+				Confidence:          confidence,
+				IsNew:               isNew,
+				CategoryDescription: description,
 			}
 		}(i, txn)
 	}
@@ -255,6 +261,7 @@ Instructions:
    CATEGORY: <new category suggestion>
    CONFIDENCE: <0.0-0.84>
    NEW: true
+   DESCRIPTION: <1-2 sentence description explaining what transactions belong in this category>
 
 Focus on WHAT the transaction is, not WHY it might have occurred.`,
 		categoryList,
@@ -270,4 +277,48 @@ func (c *Classifier) Close() error {
 		c.rateLimiter.Close()
 	}
 	return nil
+}
+
+// GenerateCategoryDescription generates a description for a category name.
+func (c *Classifier) GenerateCategoryDescription(ctx context.Context, categoryName string) (string, error) {
+	// Rate limiting
+	if err := c.rateLimiter.wait(ctx); err != nil {
+		return "", fmt.Errorf("rate limit error: %w", err)
+	}
+
+	prompt := fmt.Sprintf(`Generate a concise, helpful description for the financial category "%s".
+
+The description should:
+- Be 1-2 sentences maximum
+- Explain what types of transactions belong in this category
+- Be clear and specific without being overly technical
+- Help both humans and AI systems understand the category's purpose
+
+Respond with ONLY the description text, no additional formatting or explanation.`, categoryName)
+
+	var description string
+	
+	// Use common retry logic
+	err := common.WithRetry(ctx, func() error {
+		response, err := c.client.GenerateDescription(ctx, prompt)
+		if err != nil {
+			c.logger.Warn("description generation attempt failed",
+				"error", err,
+				"category", categoryName)
+			return &common.RetryableError{Err: err, Retryable: true}
+		}
+		
+		description = response.Description
+		return nil
+	}, c.retryOpts)
+
+	if err != nil {
+		return "", fmt.Errorf("description generation failed: %w", err)
+	}
+
+	c.logger.Info("generated category description",
+		"category", categoryName,
+		"description", description)
+
+	return description, nil
 }

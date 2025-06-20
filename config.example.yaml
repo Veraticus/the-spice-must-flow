@@ -1,0 +1,47 @@
+# Example configuration file for the-spice-must-flow
+# Copy this file to ~/.config/spice/config.yaml and update with your settings
+
+# Database configuration
+database:
+  # Path to SQLite database file (default: ~/.local/share/spice/spice.db)
+  # path: /custom/path/to/spice.db
+
+# LLM configuration for transaction classification and category descriptions
+llm:
+  # Provider: openai, anthropic, or claudecode
+  provider: openai
+  
+  # Model to use (provider-specific)
+  # OpenAI: gpt-4-turbo-preview, gpt-4, gpt-3.5-turbo
+  # Anthropic: claude-3-opus-20240229, claude-3-sonnet-20240229
+  # model: gpt-4-turbo-preview
+  
+  # API keys (can also be set via environment variables)
+  # openai_api_key: sk-...
+  # anthropic_api_key: sk-ant-...
+  
+  # Claude Code CLI path (optional, defaults to "claude")
+  # claude_code_path: /home/user/.npm-global/bin/claude
+  
+  # Optional advanced settings
+  # temperature: 0.3
+  # max_tokens: 150
+  # rate_limit: 1000  # requests per minute
+  # cache_ttl: 24h
+
+# Plaid configuration for importing bank transactions
+plaid:
+  # Get these from https://dashboard.plaid.com/
+  # client_id: your_client_id
+  # secret: your_secret
+  # environment: sandbox  # or development, production
+
+# Google Sheets configuration for exporting reports
+sheets:
+  # credentials_path: /path/to/credentials.json
+  # spreadsheet_id: your_spreadsheet_id
+
+# Logging configuration
+logging:
+  level: info  # debug, info, warn, error
+  format: console  # console or json

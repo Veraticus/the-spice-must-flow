@@ -17,7 +17,7 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	}
 
 	query := `
-		SELECT id, name, created_at, is_active
+		SELECT id, name, description, created_at, is_active
 		FROM categories
 		WHERE is_active = 1
 		ORDER BY name`
@@ -31,7 +31,7 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	var categories []model.Category
 	for rows.Next() {
 		var cat model.Category
-		if err := rows.Scan(&cat.ID, &cat.Name, &cat.CreatedAt, &cat.IsActive); err != nil {
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive); err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
 		categories = append(categories, cat)
@@ -56,13 +56,13 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 	}
 
 	query := `
-		SELECT id, name, created_at, is_active
+		SELECT id, name, description, created_at, is_active
 		FROM categories
 		WHERE name = ? AND is_active = 1`
 
 	var cat model.Category
 	err := s.db.QueryRowContext(ctx, query, name).Scan(
-		&cat.ID, &cat.Name, &cat.CreatedAt, &cat.IsActive,
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive,
 	)
 
 	if err == sql.ErrNoRows {
@@ -76,7 +76,7 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 }
 
 // CreateCategory creates a new category.
-func (s *SQLiteStorage) CreateCategory(ctx context.Context, name string) (*model.Category, error) {
+func (s *SQLiteStorage) CreateCategory(ctx context.Context, name, description string) (*model.Category, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
 	}
@@ -87,13 +87,13 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name string) (*model
 
 	// Check if category already exists (including inactive ones)
 	existingQuery := `
-		SELECT id, name, created_at, is_active
+		SELECT id, name, description, created_at, is_active
 		FROM categories
 		WHERE name = ?`
 
 	var existing model.Category
 	err := s.db.QueryRowContext(ctx, existingQuery, name).Scan(
-		&existing.ID, &existing.Name, &existing.CreatedAt, &existing.IsActive,
+		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive,
 	)
 
 	if err == nil {
@@ -114,11 +114,11 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name string) (*model
 
 	// Create new category
 	insertQuery := `
-		INSERT INTO categories (name, created_at, is_active)
-		VALUES (?, ?, 1)`
+		INSERT INTO categories (name, description, created_at, is_active)
+		VALUES (?, ?, ?, 1)`
 
 	now := time.Now()
-	result, err := s.db.ExecContext(ctx, insertQuery, name, now)
+	result, err := s.db.ExecContext(ctx, insertQuery, name, description, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
@@ -129,10 +129,11 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name string) (*model
 	}
 
 	category := &model.Category{
-		ID:        int(id),
-		Name:      name,
-		CreatedAt: now,
-		IsActive:  true,
+		ID:          int(id),
+		Name:        name,
+		Description: description,
+		CreatedAt:   now,
+		IsActive:    true,
 	}
 
 	slog.Info("created new category", "name", name, "id", id)
@@ -148,7 +149,7 @@ func (t *sqliteTransaction) GetCategories(ctx context.Context) ([]model.Category
 	}
 
 	query := `
-		SELECT id, name, created_at, is_active
+		SELECT id, name, description, created_at, is_active
 		FROM categories
 		WHERE is_active = 1
 		ORDER BY name`
@@ -162,7 +163,7 @@ func (t *sqliteTransaction) GetCategories(ctx context.Context) ([]model.Category
 	var categories []model.Category
 	for rows.Next() {
 		var cat model.Category
-		if err := rows.Scan(&cat.ID, &cat.Name, &cat.CreatedAt, &cat.IsActive); err != nil {
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive); err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
 		categories = append(categories, cat)
@@ -186,13 +187,13 @@ func (t *sqliteTransaction) GetCategoryByName(ctx context.Context, name string) 
 	}
 
 	query := `
-		SELECT id, name, created_at, is_active
+		SELECT id, name, description, created_at, is_active
 		FROM categories
 		WHERE name = ? AND is_active = 1`
 
 	var cat model.Category
 	err := t.tx.QueryRowContext(ctx, query, name).Scan(
-		&cat.ID, &cat.Name, &cat.CreatedAt, &cat.IsActive,
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive,
 	)
 
 	if err == sql.ErrNoRows {
@@ -206,7 +207,7 @@ func (t *sqliteTransaction) GetCategoryByName(ctx context.Context, name string) 
 }
 
 // CreateCategory creates a new category within a transaction.
-func (t *sqliteTransaction) CreateCategory(ctx context.Context, name string) (*model.Category, error) {
+func (t *sqliteTransaction) CreateCategory(ctx context.Context, name, description string) (*model.Category, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
 	}
@@ -217,13 +218,13 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name string) (*m
 
 	// Check if category already exists (including inactive ones)
 	existingQuery := `
-		SELECT id, name, created_at, is_active
+		SELECT id, name, description, created_at, is_active
 		FROM categories
 		WHERE name = ?`
 
 	var existing model.Category
 	err := t.tx.QueryRowContext(ctx, existingQuery, name).Scan(
-		&existing.ID, &existing.Name, &existing.CreatedAt, &existing.IsActive,
+		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive,
 	)
 
 	if err == nil {
@@ -243,11 +244,11 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name string) (*m
 
 	// Create new category
 	insertQuery := `
-		INSERT INTO categories (name, created_at, is_active)
-		VALUES (?, ?, 1)`
+		INSERT INTO categories (name, description, created_at, is_active)
+		VALUES (?, ?, ?, 1)`
 
 	now := time.Now()
-	result, err := t.tx.ExecContext(ctx, insertQuery, name, now)
+	result, err := t.tx.ExecContext(ctx, insertQuery, name, description, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
@@ -258,11 +259,182 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name string) (*m
 	}
 
 	category := &model.Category{
-		ID:        int(id),
-		Name:      name,
-		CreatedAt: now,
-		IsActive:  true,
+		ID:          int(id),
+		Name:        name,
+		Description: description,
+		CreatedAt:   now,
+		IsActive:    true,
 	}
 
 	return category, nil
+}
+
+// UpdateCategory updates an existing category.
+func (s *SQLiteStorage) UpdateCategory(ctx context.Context, id int, name, description string) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	if name == "" {
+		return fmt.Errorf("category name cannot be empty")
+	}
+
+	// Check if another category already has this name
+	var existingID int
+	checkQuery := `SELECT id FROM categories WHERE name = ? AND id != ? AND is_active = 1`
+	err := s.db.QueryRowContext(ctx, checkQuery, name, id).Scan(&existingID)
+	if err != sql.ErrNoRows {
+		if err == nil {
+			return fmt.Errorf("category with name %q already exists", name)
+		}
+		return fmt.Errorf("failed to check for duplicate category: %w", err)
+	}
+
+	updateQuery := `
+		UPDATE categories 
+		SET name = ?, description = ?
+		WHERE id = ? AND is_active = 1`
+
+	result, err := s.db.ExecContext(ctx, updateQuery, name, description, id)
+	if err != nil {
+		return fmt.Errorf("failed to update category: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found or inactive")
+	}
+
+	slog.Info("updated category", "id", id, "name", name)
+	return nil
+}
+
+// DeleteCategory soft-deletes a category by setting is_active to false.
+func (s *SQLiteStorage) DeleteCategory(ctx context.Context, id int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	// Check if category is in use
+	var usageCount int
+	checkQuery := `
+		SELECT COUNT(*) 
+		FROM classifications 
+		WHERE category = (SELECT name FROM categories WHERE id = ?)`
+	
+	if err := s.db.QueryRowContext(ctx, checkQuery, id).Scan(&usageCount); err != nil {
+		return fmt.Errorf("failed to check category usage: %w", err)
+	}
+
+	if usageCount > 0 {
+		return fmt.Errorf("cannot delete category: %d transactions are using it", usageCount)
+	}
+
+	// Soft delete the category
+	deleteQuery := `UPDATE categories SET is_active = 0 WHERE id = ?`
+	result, err := s.db.ExecContext(ctx, deleteQuery, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete category: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found")
+	}
+
+	slog.Info("deleted category", "id", id)
+	return nil
+}
+
+// Transaction implementations for UpdateCategory and DeleteCategory
+
+// UpdateCategory updates an existing category within a transaction.
+func (t *sqliteTransaction) UpdateCategory(ctx context.Context, id int, name, description string) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	if name == "" {
+		return fmt.Errorf("category name cannot be empty")
+	}
+
+	// Check if another category already has this name
+	var existingID int
+	checkQuery := `SELECT id FROM categories WHERE name = ? AND id != ? AND is_active = 1`
+	err := t.tx.QueryRowContext(ctx, checkQuery, name, id).Scan(&existingID)
+	if err != sql.ErrNoRows {
+		if err == nil {
+			return fmt.Errorf("category with name %q already exists", name)
+		}
+		return fmt.Errorf("failed to check for duplicate category: %w", err)
+	}
+
+	updateQuery := `
+		UPDATE categories 
+		SET name = ?, description = ?
+		WHERE id = ? AND is_active = 1`
+
+	result, err := t.tx.ExecContext(ctx, updateQuery, name, description, id)
+	if err != nil {
+		return fmt.Errorf("failed to update category: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found or inactive")
+	}
+
+	return nil
+}
+
+// DeleteCategory soft-deletes a category within a transaction.
+func (t *sqliteTransaction) DeleteCategory(ctx context.Context, id int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	// Check if category is in use
+	var usageCount int
+	checkQuery := `
+		SELECT COUNT(*) 
+		FROM classifications 
+		WHERE category = (SELECT name FROM categories WHERE id = ?)`
+	
+	if err := t.tx.QueryRowContext(ctx, checkQuery, id).Scan(&usageCount); err != nil {
+		return fmt.Errorf("failed to check category usage: %w", err)
+	}
+
+	if usageCount > 0 {
+		return fmt.Errorf("cannot delete category: %d transactions are using it", usageCount)
+	}
+
+	// Soft delete the category
+	deleteQuery := `UPDATE categories SET is_active = 0 WHERE id = ?`
+	result, err := t.tx.ExecContext(ctx, deleteQuery, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete category: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("category not found")
+	}
+
+	return nil
 }

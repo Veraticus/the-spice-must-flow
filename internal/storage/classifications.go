@@ -4,6 +4,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -142,7 +143,7 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 	rows, err := q.QueryContext(ctx, `
 		SELECT 
 			t.id, t.hash, t.date, t.name, t.merchant_name,
-			t.amount, t.plaid_categories, t.account_id,
+			t.amount, t.categories, t.account_id,
 			c.category, c.status, c.confidence, c.classified_at, c.notes
 		FROM classifications c
 		JOIN transactions t ON c.transaction_id = t.id
@@ -159,6 +160,7 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 	for rows.Next() {
 		var c model.Classification
 		var statusStr string
+		var categories sql.NullString
 
 		err := rows.Scan(
 			&c.Transaction.ID,
@@ -167,7 +169,7 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 			&c.Transaction.Name,
 			&c.Transaction.MerchantName,
 			&c.Transaction.Amount,
-			&c.Transaction.PlaidCategory,
+			&categories,
 			&c.Transaction.AccountID,
 			&c.Category,
 			&statusStr,
@@ -180,6 +182,13 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 		}
 
 		c.Status = model.ClassificationStatus(statusStr)
+		
+		// Parse categories JSON
+		if categories.Valid && categories.String != "" {
+			if err := json.Unmarshal([]byte(categories.String), &c.Transaction.Category); err != nil {
+				return nil, fmt.Errorf("failed to parse categories: %w", err)
+			}
+		}
 
 		classifications = append(classifications, c)
 	}

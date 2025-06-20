@@ -153,6 +153,20 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     6,
+		Description: "Add description field to categories",
+		Up: func(tx *sql.Tx) error {
+			_, err := tx.Exec(`
+				ALTER TABLE categories 
+				ADD COLUMN description TEXT DEFAULT ''
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to add description column: %w", err)
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.

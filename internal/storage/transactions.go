@@ -257,10 +257,11 @@ func (s *SQLiteStorage) GetTransactionByID(ctx context.Context, id string) (*mod
 
 func (s *SQLiteStorage) getTransactionByIDTx(ctx context.Context, q queryable, id string) (*model.Transaction, error) {
 	var txn model.Transaction
+	var categories sql.NullString
 
 	err := q.QueryRowContext(ctx, `
 		SELECT id, hash, date, name, merchant_name, 
-		       amount, plaid_categories, account_id
+		       amount, categories, account_id
 		FROM transactions
 		WHERE id = ?
 	`, id).Scan(
@@ -270,7 +271,7 @@ func (s *SQLiteStorage) getTransactionByIDTx(ctx context.Context, q queryable, i
 		&txn.Name,
 		&txn.MerchantName,
 		&txn.Amount,
-		&txn.PlaidCategory,
+		&categories,
 		&txn.AccountID,
 	)
 
@@ -279,6 +280,13 @@ func (s *SQLiteStorage) getTransactionByIDTx(ctx context.Context, q queryable, i
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
+	}
+	
+	// Parse categories JSON
+	if categories.Valid && categories.String != "" {
+		if err := json.Unmarshal([]byte(categories.String), &txn.Category); err != nil {
+			return nil, fmt.Errorf("failed to parse categories: %w", err)
+		}
 	}
 
 	return &txn, nil

@@ -121,6 +121,7 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 	var category string
 	var confidence float64
 	var isNew bool
+	var description string
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -136,6 +137,8 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 		} else if strings.HasPrefix(line, "NEW:") {
 			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
 			isNew = strings.ToLower(newStr) == "true"
+		} else if strings.HasPrefix(line, "DESCRIPTION:") {
+			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
 		}
 	}
 
@@ -153,9 +156,10 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 	}
 
 	return ClassificationResponse{
-		Category:   category,
-		Confidence: confidence,
-		IsNew:      isNew,
+		Category:            category,
+		Confidence:          confidence,
+		IsNew:               isNew,
+		CategoryDescription: description,
 	}, nil
 }
 
@@ -178,4 +182,64 @@ type openAIResponse struct {
 		TotalTokens      int `json:"total_tokens"`
 	} `json:"usage"`
 	Created int64 `json:"created"`
+}
+
+// GenerateDescription generates a description for a category.
+func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
+	requestBody := map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are a financial category description generator. Respond only with the description text, no additional formatting.",
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": c.temperature,
+		"max_tokens":  c.maxTokens,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return DescriptionResponse{}, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response openAIResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Choices) == 0 {
+		return DescriptionResponse{}, fmt.Errorf("no completion choices returned")
+	}
+
+	return DescriptionResponse{
+		Description: strings.TrimSpace(response.Choices[0].Message.Content),
+	}, nil
 }

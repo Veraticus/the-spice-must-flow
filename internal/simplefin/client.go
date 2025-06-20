@@ -182,16 +182,8 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 				return nil, fmt.Errorf("failed to parse amount %s: %w", tx.Amount, err)
 			}
 
-			// Extract any category info from extra field if available
+			// SimpleFIN doesn't provide categories
 			var categories []string
-			if tx.Extra != nil {
-				// SimpleFIN may provide category in the extra object
-				if categoryVal, ok := tx.Extra["category"]; ok {
-					if category, ok := categoryVal.(string); ok && category != "" {
-						categories = []string{category}
-					}
-				}
-			}
 			
 			// Try to infer transaction type from description or payee
 			transactionType := inferTransactionType(tx.Description, tx.Payee)

@@ -214,10 +214,11 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 	var category string
 	var confidence float64
 	var isNew bool
+	var description string
 
 	err := common.WithRetry(ctx, func() error {
 		var err error
-		category, confidence, isNew, err = e.classifier.SuggestCategory(ctx, representative, categories)
+		category, confidence, isNew, description, err = e.classifier.SuggestCategory(ctx, representative, categories)
 		if err != nil {
 			return &common.RetryableError{Err: err, Retryable: true}
 		}
@@ -245,11 +246,12 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 	pending := make([]model.PendingClassification, len(txns))
 	for i, txn := range txns {
 		pending[i] = model.PendingClassification{
-			Transaction:       txn,
-			SuggestedCategory: category,
-			Confidence:        confidence,
-			SimilarCount:      len(txns),
-			IsNewCategory:     isNew,
+			Transaction:         txn,
+			SuggestedCategory:   category,
+			Confidence:          confidence,
+			SimilarCount:        len(txns),
+			IsNewCategory:       isNew,
+			CategoryDescription: description,
 		}
 	}
 
@@ -296,7 +298,7 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 
 	for _, txn := range txns {
 		// Get AI suggestion for each transaction
-		category, confidence, isNew, err := e.classifier.SuggestCategory(ctx, txn, categories)
+		category, confidence, isNew, description, err := e.classifier.SuggestCategory(ctx, txn, categories)
 		if err != nil {
 			slog.Warn("Failed to get AI suggestion",
 				"transaction_id", txn.ID,
@@ -305,14 +307,16 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 			category = "Other Expenses"
 			confidence = 0.0
 			isNew = false
+			description = ""
 		}
 
 		pending := model.PendingClassification{
-			Transaction:       txn,
-			SuggestedCategory: category,
-			Confidence:        confidence,
-			SimilarCount:      1,
-			IsNewCategory:     isNew,
+			Transaction:         txn,
+			SuggestedCategory:   category,
+			Confidence:          confidence,
+			SimilarCount:        1,
+			IsNewCategory:       isNew,
+			CategoryDescription: description,
 		}
 
 		classification, err := e.prompter.ConfirmClassification(ctx, pending)
@@ -470,8 +474,17 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 		return nil
 	}
 	
-	// Create the new category
-	newCategory, err := e.storage.CreateCategory(ctx, categoryName)
+	// Use LLM to generate a proper description for the category
+	description, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
+	if err != nil {
+		// Fall back to a simple description if LLM fails
+		slog.Warn("Failed to generate category description, using fallback",
+			"category", categoryName,
+			"error", err)
+		description = fmt.Sprintf("Category for %s related expenses", categoryName)
+	}
+	
+	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description)
 	if err != nil {
 		return fmt.Errorf("failed to create category: %w", err)
 	}

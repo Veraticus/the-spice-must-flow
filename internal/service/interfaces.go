@@ -31,7 +31,9 @@ type Storage interface {
 	// Category operations
 	GetCategories(ctx context.Context) ([]model.Category, error)
 	GetCategoryByName(ctx context.Context, name string) (*model.Category, error)
-	CreateCategory(ctx context.Context, name string) (*model.Category, error)
+	CreateCategory(ctx context.Context, name, description string) (*model.Category, error)
+	UpdateCategory(ctx context.Context, id int, name, description string) error
+	DeleteCategory(ctx context.Context, id int) error
 
 	// Database management
 	Migrate(ctx context.Context) error
@@ -49,10 +51,11 @@ type Transaction interface {
 
 // LLMSuggestion represents a single classification suggestion.
 type LLMSuggestion struct {
-	TransactionID string
-	Category      string
-	Confidence    float64
-	IsNew         bool // True if this is a new category suggestion (confidence < 0.9)
+	TransactionID       string
+	Category            string
+	Confidence          float64
+	IsNew               bool   // True if this is a new category suggestion
+	CategoryDescription string // Description for new categories
 }
 
 // CompletionStats shows the results of a classification run.
