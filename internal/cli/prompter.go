@@ -67,9 +67,20 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Category options:")); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write category options: %w", err)
 	}
-	if _, err := fmt.Fprintf(p.writer, "  [A] Accept AI suggestion: %s\n", SuccessStyle.Render(pending.SuggestedCategory)); err != nil {
-		return model.Classification{}, fmt.Errorf("failed to write AI suggestion: %w", err)
+	
+	if pending.IsNewCategory {
+		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category: %s\n", WarningStyle.Render(pending.SuggestedCategory)); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write new category option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [E] Use existing category instead"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write existing option: %w", err)
+		}
+	} else {
+		if _, err := fmt.Fprintf(p.writer, "  [A] Accept AI suggestion: %s\n", SuccessStyle.Render(pending.SuggestedCategory)); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write AI suggestion: %w", err)
+		}
 	}
+	
 	if _, err := fmt.Fprintln(p.writer, "  [C] Enter custom category"); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write custom option: %w", err)
 	}
@@ -80,7 +91,14 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 		return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	choice, err := p.promptChoice(ctx, "Choice [A/C/S]", []string{"a", "c", "s"})
+	var validChoices []string
+	if pending.IsNewCategory {
+		validChoices = []string{"a", "e", "c", "s"}
+	} else {
+		validChoices = []string{"a", "c", "s"}
+	}
+	
+	choice, err := p.promptChoice(ctx, "Choice", validChoices)
 	if err != nil {
 		return model.Classification{}, err
 	}
@@ -97,6 +115,24 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 		classification.Status = model.StatusClassifiedByAI
 		p.trackCategorization(pending.Transaction.MerchantName, pending.SuggestedCategory)
 		p.incrementStats(false, false)
+		if pending.IsNewCategory {
+			if _, err := fmt.Fprintf(p.writer, FormatSuccess("✓ Will create new category: %s\n"), pending.SuggestedCategory); err != nil {
+				slog.Warn("Failed to write new category confirmation", "error", err)
+			}
+		}
+	case "e":
+		// This option is only available for new category suggestions
+		if pending.IsNewCategory {
+			category, err := p.promptCustomCategory(ctx)
+			if err != nil {
+				return model.Classification{}, err
+			}
+			classification.Category = category
+			classification.Status = model.StatusUserModified
+			classification.Confidence = 1.0
+			p.trackCategorization(pending.Transaction.MerchantName, category)
+			p.incrementStats(true, false)
+		}
 	case "c":
 		category, err := p.promptCustomCategory(ctx)
 		if err != nil {
@@ -138,9 +174,21 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Options:")); err != nil {
 		return nil, fmt.Errorf("failed to write options prompt: %w", err)
 	}
-	if _, err := fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending)); err != nil {
-		return nil, fmt.Errorf("failed to write batch accept option: %w", err)
+	
+	if pending[0].IsNewCategory {
+		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category '%s' for all %d transactions\n", 
+			pending[0].SuggestedCategory, len(pending)); err != nil {
+			return nil, fmt.Errorf("failed to write new category accept option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [E] Use existing category for all"); err != nil {
+			return nil, fmt.Errorf("failed to write existing category option: %w", err)
+		}
+	} else {
+		if _, err := fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending)); err != nil {
+			return nil, fmt.Errorf("failed to write batch accept option: %w", err)
+		}
 	}
+	
 	if _, err := fmt.Fprintln(p.writer, "  [C] Set custom category for all"); err != nil {
 		return nil, fmt.Errorf("failed to write custom category option: %w", err)
 	}
@@ -154,14 +202,34 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 		return nil, fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	choice, err := p.promptChoice(ctx, "Choice [A/C/R/S]", []string{"a", "c", "r", "s"})
+	var validChoices []string
+	var promptText string
+	if pending[0].IsNewCategory {
+		validChoices = []string{"a", "e", "c", "r", "s"}
+		promptText = "Choice [A/E/C/R/S]"
+	} else {
+		validChoices = []string{"a", "c", "r", "s"}
+		promptText = "Choice [A/C/R/S]"
+	}
+	
+	choice, err := p.promptChoice(ctx, promptText, validChoices)
 	if err != nil {
 		return nil, err
 	}
 
 	switch choice {
 	case "a":
+		if pending[0].IsNewCategory {
+			if _, err := fmt.Fprintf(p.writer, FormatSuccess("✓ Will create new category: %s\n"), pending[0].SuggestedCategory); err != nil {
+				slog.Warn("Failed to write new category confirmation", "error", err)
+			}
+		}
 		return p.acceptAllClassifications(pending)
+	case "e":
+		// This option is only available for new category suggestions
+		if pending[0].IsNewCategory {
+			return p.customCategoryForAll(ctx, pending)
+		}
 	case "c":
 		return p.customCategoryForAll(ctx, pending)
 	case "r":
@@ -260,10 +328,19 @@ func (p *Prompter) formatSingleTransaction(pending model.PendingClassification) 
 		fmt.Sprintf("  Amount: $%.2f\n", t.Amount) +
 		fmt.Sprintf("  Description: %s\n", t.Name)
 
-	suggestion := fmt.Sprintf("\n%s AI Suggestion: %s (%.0f%% confidence)",
-		RobotIcon,
-		SuccessStyle.Render(pending.SuggestedCategory),
-		pending.Confidence*100)
+	var suggestion string
+	if pending.IsNewCategory {
+		suggestion = fmt.Sprintf("\n%s AI suggests NEW category: %s (%.0f%% confidence)",
+			RobotIcon,
+			WarningStyle.Render(pending.SuggestedCategory),
+			pending.Confidence*100)
+		suggestion += fmt.Sprintf("\n  %s This is a new category suggestion", InfoIcon)
+	} else {
+		suggestion = fmt.Sprintf("\n%s AI Suggestion: %s (%.0f%% confidence)",
+			RobotIcon,
+			SuccessStyle.Render(pending.SuggestedCategory),
+			pending.Confidence*100)
+	}
 
 	if pending.SimilarCount > 0 {
 		suggestion += fmt.Sprintf("\n  %s Similar transactions: %d", InfoIcon, pending.SimilarCount)
@@ -298,9 +375,17 @@ func (p *Prompter) formatBatchSummary(pending []model.PendingClassification, pat
 			minDate.Format("Jan 2"),
 			maxDate.Format("Jan 2, 2006"))
 
-	suggestion := fmt.Sprintf("\n%s AI suggests: %s",
-		RobotIcon,
-		SuccessStyle.Render(suggestedCategory))
+	var suggestion string
+	if pending[0].IsNewCategory {
+		suggestion = fmt.Sprintf("\n%s AI suggests NEW category: %s",
+			RobotIcon,
+			WarningStyle.Render(suggestedCategory))
+		suggestion += fmt.Sprintf("\n%s This is a new category suggestion", InfoIcon)
+	} else {
+		suggestion = fmt.Sprintf("\n%s AI suggests: %s",
+			RobotIcon,
+			SuccessStyle.Render(suggestedCategory))
+	}
 
 	if pattern != "" {
 		suggestion += fmt.Sprintf("\n%s Pattern detected: %s", CheckIcon, pattern)

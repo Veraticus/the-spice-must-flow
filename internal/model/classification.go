@@ -30,6 +30,7 @@ type PendingClassification struct {
 	Transaction       Transaction
 	Confidence        float64
 	SimilarCount      int
+	IsNewCategory     bool // True if this is a new category suggestion
 }
 
 // ClassificationProgress tracks where we are in a classification run.

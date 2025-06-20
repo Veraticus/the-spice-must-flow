@@ -11,7 +11,7 @@ import (
 )
 
 func TestSQLiteStorage_VendorCache(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t, "Cat1", "Cat2", "Cat3")
 	defer cleanup()
 	ctx := context.Background()
 
@@ -50,7 +50,7 @@ func TestSQLiteStorage_VendorCache(t *testing.T) {
 }
 
 func TestSQLiteStorage_VendorCacheInvalidation(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t, "InitialCategory", "UpdatedCategory")
 	defer cleanup()
 	ctx := context.Background()
 
@@ -94,7 +94,7 @@ func TestSQLiteStorage_VendorCacheInvalidation(t *testing.T) {
 }
 
 func TestSQLiteStorage_VendorUsageTracking(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t, "TestCategory")
 	defer cleanup()
 	ctx := context.Background()
 
@@ -134,7 +134,7 @@ func TestSQLiteStorage_VendorUsageTracking(t *testing.T) {
 	for i, txn := range transactions {
 		classification := &model.Classification{
 			Transaction: txn,
-			Category:    "Test Category",
+			Category:    "TestCategory",
 			Status:      model.StatusUserModified,
 			Confidence:  1.0,
 		}
@@ -165,6 +165,11 @@ func TestSQLiteStorage_DeleteVendor(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Create required category
+	if _, err := store.CreateCategory(ctx, "Test"); err != nil {
+		t.Fatalf("Failed to create Test category: %v", err)
+	}
 
 	// Create vendor
 	vendor := &model.Vendor{
@@ -215,6 +220,14 @@ func TestSQLiteStorage_VendorConcurrency(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Pre-create categories for concurrent test
+	for i := 0; i < 5; i++ {
+		categoryName := makeTestName("Category", i)
+		if _, err := store.CreateCategory(ctx, categoryName); err != nil {
+			t.Fatalf("Failed to create category %q: %v", categoryName, err)
+		}
+	}
 
 	// Test concurrent vendor operations
 	numGoroutines := 10
@@ -279,6 +292,14 @@ func TestSQLiteStorage_VendorSorting(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Create required categories
+	categories := []string{"Cat1", "Cat2", "Cat3", "Cat4"}
+	for _, cat := range categories {
+		if _, err := store.CreateCategory(ctx, cat); err != nil {
+			t.Fatalf("Failed to create category %q: %v", cat, err)
+		}
+	}
 
 	// Create vendors with different use counts
 	vendors := []*model.Vendor{
@@ -318,6 +339,14 @@ func TestSQLiteStorage_DeleteVendorRaceCondition(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Create required categories
+	categories := []string{"TestCategory", "UpdatedCategory"}
+	for _, cat := range categories {
+		if _, err := store.CreateCategory(ctx, cat); err != nil {
+			t.Fatalf("Failed to create category %q: %v", cat, err)
+		}
+	}
 
 	// Create multiple vendors
 	vendorCount := 20

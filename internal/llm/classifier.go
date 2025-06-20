@@ -79,25 +79,26 @@ func NewClassifier(cfg Config, logger *slog.Logger) (*Classifier, error) {
 }
 
 // SuggestCategory suggests a category for a single transaction.
-func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error) {
+func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, error) {
 	// Check cache first
 	if suggestion, found := c.cache.get(transaction.Hash); found {
 		c.logger.Debug("cache hit for transaction",
 			"transaction_id", transaction.ID,
 			"merchant", transaction.MerchantName)
-		return suggestion.Category, suggestion.Confidence, nil
+		return suggestion.Category, suggestion.Confidence, suggestion.IsNew, nil
 	}
 
 	// Rate limiting
 	if err := c.rateLimiter.wait(ctx); err != nil {
-		return "", 0, fmt.Errorf("rate limit error: %w", err)
+		return "", 0, false, fmt.Errorf("rate limit error: %w", err)
 	}
 
 	// Prepare the prompt
-	prompt := c.buildPrompt(transaction)
+	prompt := c.buildPrompt(transaction, categories)
 
 	var category string
 	var confidence float64
+	var isNew bool
 
 	// Use common retry logic
 	err := common.WithRetry(ctx, func() error {
@@ -115,14 +116,16 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 
 		category = response.Category
 		confidence = response.Confidence
+		isNew = response.IsNew
 		c.logger.Debug("classification succeeded",
 			"category", category,
-			"confidence", confidence)
+			"confidence", confidence,
+			"isNew", isNew)
 		return nil
 	}, c.retryOpts)
 
 	if err != nil {
-		return "", 0, fmt.Errorf("classification failed: %w", err)
+		return "", 0, false, fmt.Errorf("classification failed: %w", err)
 	}
 
 	// Cache the result
@@ -130,19 +133,21 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 		TransactionID: transaction.ID,
 		Category:      category,
 		Confidence:    confidence,
+		IsNew:         isNew,
 	})
 
 	c.logger.Info("transaction classified",
 		"transaction_id", transaction.ID,
 		"merchant", transaction.MerchantName,
 		"category", category,
-		"confidence", confidence)
+		"confidence", confidence,
+		"isNew", isNew)
 
-	return category, confidence, nil
+	return category, confidence, isNew, nil
 }
 
 // BatchSuggestCategories suggests categories for multiple transactions.
-func (c *Classifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
+func (c *Classifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 	errors := make([]error, len(transactions))
 
@@ -165,7 +170,7 @@ func (c *Classifier) BatchSuggestCategories(ctx context.Context, transactions []
 				return
 			}
 
-			category, confidence, err := c.SuggestCategory(ctx, transaction)
+			category, confidence, isNew, err := c.SuggestCategory(ctx, transaction, categories)
 			if err != nil {
 				errors[idx] = err
 				return
@@ -175,6 +180,7 @@ func (c *Classifier) BatchSuggestCategories(ctx context.Context, transactions []
 				TransactionID: transaction.ID,
 				Category:      category,
 				Confidence:    confidence,
+				IsNew:         isNew,
 			}
 		}(i, txn)
 	}
@@ -192,36 +198,22 @@ func (c *Classifier) BatchSuggestCategories(ctx context.Context, transactions []
 }
 
 // buildPrompt creates the prompt for transaction classification.
-func (c *Classifier) buildPrompt(txn model.Transaction) string {
+func (c *Classifier) buildPrompt(txn model.Transaction, categories []string) string {
 	merchant := txn.MerchantName
 	if merchant == "" {
 		merchant = txn.Name
 	}
 
-	return fmt.Sprintf(`Classify this financial transaction into one of the following personal finance categories:
+	// Build category list
+	categoryList := ""
+	for _, cat := range categories {
+		categoryList += fmt.Sprintf("- %s\n", cat)
+	}
 
-Categories:
-- Coffee & Dining
-- Food & Dining
-- Groceries
-- Transportation
-- Entertainment
-- Shopping
-- Office Supplies
-- Computer & Electronics
-- Healthcare
-- Insurance
-- Utilities
-- Home & Garden
-- Personal Care
-- Education
-- Travel
-- Gifts & Donations
-- Taxes
-- Investments
-- Other Expenses
-- Miscellaneous
+	return fmt.Sprintf(`Classify this financial transaction into one of the existing categories OR suggest a new category if none fit well.
 
+Existing Categories:
+%s
 Transaction Details:
 Merchant: %s
 Amount: $%.2f
@@ -229,16 +221,23 @@ Date: %s
 Description: %s
 Plaid Category: %s
 
-Respond with only the category name and confidence score (0.0-1.0) in the format:
-CATEGORY: <category>
-CONFIDENCE: <score>
+Instructions:
+1. If you are confident (90%% or higher) that the transaction fits one of the existing categories, respond:
+   CATEGORY: <existing category name>
+   CONFIDENCE: <0.90-1.0>
+
+2. If you are less confident (<90%%) that it fits existing categories, suggest a new category:
+   CATEGORY: <new category suggestion>
+   CONFIDENCE: <0.0-0.89>
+   NEW: true
 
 Consider the merchant name, amount, and context to make the most accurate classification.`,
+		categoryList,
 		merchant,
 		txn.Amount,
 		txn.Date.Format("2006-01-02"),
 		txn.Name,
-		txn.PlaidCategory)
+		strings.Join(txn.PlaidCategory, ", "))
 }
 
 // Close stops background goroutines and cleans up resources.

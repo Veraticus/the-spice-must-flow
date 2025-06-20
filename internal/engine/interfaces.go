@@ -9,8 +9,8 @@ import (
 
 // Classifier defines the contract for transaction categorization.
 type Classifier interface {
-	SuggestCategory(ctx context.Context, transaction model.Transaction) (string, float64, error)
-	BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error)
+	SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (category string, confidence float64, isNew bool, err error)
+	BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error)
 }
 
 // Prompter defines the contract for user interaction during classification.

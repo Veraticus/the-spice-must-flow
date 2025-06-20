@@ -12,6 +12,14 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Seed required categories for workflow test
+	categories := []string{"Coffee & Dining", "Online Shopping", "Shopping", "Groceries", "Transportation"}
+	for _, cat := range categories {
+		if _, err := store.CreateCategory(ctx, cat); err != nil {
+			t.Fatalf("Failed to create category %q: %v", cat, err)
+		}
+	}
 
 	// Step 1: Import transactions
 	t.Log("Step 1: Importing transactions")
@@ -256,6 +264,11 @@ func TestSQLiteStorage_ResumableSession(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Seed required category
+	if _, err := store.CreateCategory(ctx, "Test Category"); err != nil {
+		t.Fatalf("Failed to create Test Category: %v", err)
+	}
 
 	// Create transactions
 	transactions := createTestTransactions(10)
@@ -381,6 +394,11 @@ func TestSQLiteStorage_DataIntegrity(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
+	
+	// Seed required category
+	if _, err := store.CreateCategory(ctx, "Test Category"); err != nil {
+		t.Fatalf("Failed to create Test Category: %v", err)
+	}
 
 	// Test that classification references are maintained
 	txn := model.Transaction{

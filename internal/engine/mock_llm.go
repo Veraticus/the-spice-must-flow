@@ -33,7 +33,7 @@ func NewMockClassifier() *MockClassifier {
 }
 
 // SuggestCategory provides deterministic category suggestions based on merchant name.
-func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Transaction) (string, float64, error) {
+func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Transaction, categories []string) (string, float64, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -45,6 +45,7 @@ func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Tr
 
 	var category string
 	var confidence float64
+	var isNew bool
 
 	switch {
 	case strings.Contains(merchantLower, "starbucks") || strings.Contains(merchantLower, "coffee"):
@@ -78,6 +79,11 @@ func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Tr
 	case strings.Contains(merchantLower, "restaurant") || strings.Contains(merchantLower, "diner") || strings.Contains(merchantLower, "grill"):
 		category = "Food & Dining"
 		confidence = 0.88
+	case strings.Contains(merchantLower, "peloton") || strings.Contains(merchantLower, "fitness"):
+		// New category suggestion for fitness-related merchants
+		category = "Fitness & Health"
+		confidence = 0.75 // Below 0.9 threshold
+		isNew = true
 	default:
 		// Default categorization based on amount
 		switch {
@@ -93,6 +99,11 @@ func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Tr
 		}
 	}
 
+	// Set isNew if confidence is below 0.9 and not already set
+	if confidence < 0.9 && !isNew {
+		isNew = true
+	}
+
 	// Record the call
 	call := MockLLMCall{
 		Transaction: transaction,
@@ -102,15 +113,15 @@ func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Tr
 	}
 	m.calls = append(m.calls, call)
 
-	return category, confidence, nil
+	return category, confidence, isNew, nil
 }
 
 // BatchSuggestCategories provides batch suggestions for multiple transactions.
-func (m *MockClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
+func (m *MockClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 
 	for i, txn := range transactions {
-		category, confidence, err := m.SuggestCategory(ctx, txn)
+		category, confidence, isNew, err := m.SuggestCategory(ctx, txn, categories)
 		if err != nil {
 			return nil, fmt.Errorf("failed to suggest category for transaction %s: %w", txn.ID, err)
 		}
@@ -119,6 +130,7 @@ func (m *MockClassifier) BatchSuggestCategories(ctx context.Context, transaction
 			TransactionID: txn.ID,
 			Category:      category,
 			Confidence:    confidence,
+			IsNew:         isNew,
 		}
 	}
 

@@ -68,6 +68,14 @@ const (
     StatusUserModified      ClassificationStatus = "USER_MODIFIED"
 )
 
+// Category represents a valid expense category.
+type Category struct {
+    ID           int
+    Name         string
+    CreatedAt    time.Time
+    IsActive     bool
+}
+
 // Classification represents a transaction after processing.
 type Classification struct {
     Transaction  Transaction
@@ -124,6 +132,11 @@ type Storage interface {
     SaveVendor(ctx context.Context, vendor *model.Vendor) error
     GetAllVendors(ctx context.Context) ([]model.Vendor, error)
     
+    // Category operations
+    GetCategories(ctx context.Context) ([]model.Category, error)
+    GetCategoryByName(ctx context.Context, name string) (*model.Category, error)
+    CreateCategory(ctx context.Context, name string) (*model.Category, error)
+    
     // Classification operations
     SaveClassification(ctx context.Context, classification *model.Classification) error
     GetClassificationsByDateRange(ctx context.Context, start, end time.Time) ([]model.Classification, error)
@@ -147,15 +160,19 @@ type Transaction interface {
 
 // LLMClassifier defines the contract for AI-based categorization.
 type LLMClassifier interface {
-    SuggestCategory(ctx context.Context, transaction model.Transaction) (category string, confidence float64, err error)
-    BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]LLMSuggestion, error)
+    // SuggestCategory returns a category suggestion with confidence.
+    // If confidence < 0.9, the category may be a new suggestion.
+    // The categories parameter contains all valid existing categories.
+    SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (category string, confidence float64, isNew bool, err error)
+    BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]LLMSuggestion, error)
 }
 
 // LLMSuggestion represents a single classification suggestion
 type LLMSuggestion struct {
-    TransactionID string
-    Category      string
-    Confidence    float64
+    TransactionID     string
+    Category          string
+    Confidence        float64
+    IsNewCategory     bool   // true if this is a suggested new category
 }
 
 // UserPrompter defines the contract for user interaction.
@@ -501,7 +518,70 @@ $ spice flow --year 2024
 
 ---
 
-## **5. Implementation Details**
+## **5. Dynamic Category System**
+
+### **Overview**
+
+The categorization system uses a dynamic, learning-based approach where categories evolve based on actual usage:
+
+1. **Database-Driven Categories**: Categories are stored in the database, not hardcoded
+2. **Confidence-Based Evolution**: LLM suggests new categories when confidence < 90%
+3. **User-Controlled Growth**: Users decide whether to create new categories
+4. **Natural Taxonomy**: Categories emerge from actual spending patterns
+
+### **How It Works**
+
+```
+1. Known merchant → Use existing vendor rule
+2. New merchant → Ask LLM with current categories
+3. High confidence (≥90%) → Suggest existing category
+4. Low confidence (<90%) → Suggest NEW category
+5. User decides → Create new or map to existing
+```
+
+### **Example Flow**
+
+```bash
+# First transaction for a new type
+Classifying: PELOTON SUBSCRIPTION
+Current categories: [Entertainment, Shopping, Utilities, Food & Dining]
+LLM confidence: 72% (below threshold)
+
+Suggested NEW category: Fitness & Health
+[N] Create new category "Fitness & Health"
+[E] Pick from existing categories
+[C] Enter custom name
+> N
+✓ Created category "Fitness & Health"
+
+# Later transaction
+Classifying: PLANET FITNESS
+Current categories: [..., Fitness & Health]  
+Suggested: Fitness & Health (97% confidence) ✓
+```
+
+### **Benefits**
+
+- **No Predefined Limits**: Categories match your actual spending
+- **Intelligent Suggestions**: LLM understands context
+- **Clean Data**: High confidence threshold prevents mis-categorization
+- **User Control**: Always have final say on new categories
+
+### **Initial Categories**
+
+The system can be seeded with basic categories on first run:
+- Food & Dining
+- Transportation  
+- Shopping
+- Utilities
+- Entertainment
+- Other Expenses
+
+Or start empty and let categories emerge naturally.
+
+---
+
+## **6. Implementation Details**
 
 ### **Retry Logic Implementation**
 
@@ -628,11 +708,19 @@ var migrations = []Migration{
                 `CREATE INDEX idx_transactions_merchant ON transactions(merchant_name)`,
                 `CREATE INDEX idx_transactions_hash ON transactions(hash)`,
                 
+                `CREATE TABLE IF NOT EXISTS categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )`,
+                
                 `CREATE TABLE IF NOT EXISTS vendors (
                     name TEXT PRIMARY KEY,
                     category TEXT NOT NULL,
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    use_count INTEGER DEFAULT 0
+                    use_count INTEGER DEFAULT 0,
+                    FOREIGN KEY (category) REFERENCES categories(name)
                 )`,
                 
                 `CREATE TABLE IF NOT EXISTS classifications (
@@ -942,15 +1030,27 @@ func (e *ClassificationEngine) classifyByAI(ctx context.Context, merchant string
         return nil, err
     }
     
+    // Get current categories
+    categories, err := e.storage.GetCategories(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get categories: %w", err)
+    }
+    
+    categoryNames := make([]string, len(categories))
+    for i, cat := range categories {
+        categoryNames[i] = cat.Name
+    }
+    
     // Get AI suggestion for the first transaction
     representative := txns[0]
     
     var category string
     var confidence float64
+    var isNew bool
     
-    err := common.WithRetry(ctx, func() error {
+    err = common.WithRetry(ctx, func() error {
         var err error
-        category, confidence, err = e.llm.SuggestCategory(ctx, representative)
+        category, confidence, isNew, err = e.llm.SuggestCategory(ctx, representative, categoryNames)
         return err
     }, common.RetryOptions{
         MaxAttempts:  3,

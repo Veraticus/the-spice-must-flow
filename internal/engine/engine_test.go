@@ -558,22 +558,22 @@ type failingClassifier struct {
 	mu        sync.Mutex
 }
 
-func (f *failingClassifier) SuggestCategory(_ context.Context, _ model.Transaction) (string, float64, error) {
+func (f *failingClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.attempts++
 	if f.attempts <= f.failCount {
-		return "", 0, errors.New("temporary failure")
+		return "", 0, false, errors.New("temporary failure")
 	}
 
-	return "Test Category", 0.85, nil
+	return "Test Category", 0.85, false, nil
 }
 
-func (f *failingClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction) ([]service.LLMSuggestion, error) {
+func (f *failingClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
 	suggestions := make([]service.LLMSuggestion, len(transactions))
 	for i, txn := range transactions {
-		category, confidence, err := f.SuggestCategory(ctx, txn)
+		category, confidence, isNew, err := f.SuggestCategory(ctx, txn, categories)
 		if err != nil {
 			return nil, err
 		}
@@ -581,7 +581,133 @@ func (f *failingClassifier) BatchSuggestCategories(ctx context.Context, transact
 			TransactionID: txn.ID,
 			Category:      category,
 			Confidence:    confidence,
+			IsNew:         isNew,
 		}
 	}
 	return suggestions, nil
+}
+
+// TestNewCategoryFlow tests the flow when AI suggests a new category.
+func TestNewCategoryFlow(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup storage
+	db, err := storage.NewSQLiteStorage(":memory:")
+	require.NoError(t, err)
+	require.NoError(t, db.Migrate(ctx))
+	defer db.Close()
+
+	// Setup transactions
+	txns := []model.Transaction{
+		{
+			ID:           "1",
+			Hash:         "hash1",
+			Date:         time.Now(),
+			Name:         "PELOTON SUBSCRIPTION",
+			MerchantName: "Peloton",
+			Amount:       39.99,
+			AccountID:    "acc1",
+		},
+	}
+	err = db.SaveTransactions(ctx, txns)
+	require.NoError(t, err)
+
+	// Create classifier that suggests a new category with low confidence
+	llm := &newCategoryClassifier{
+		suggestedCategory: "Fitness & Health",
+		confidence:        0.75, // Below 0.9 threshold
+		isNew:             true,
+	}
+
+	// Create prompter that accepts the new category
+	prompter := &newCategoryPrompter{
+		acceptNewCategory: true,
+		acceptedCategory:  "Fitness & Health",
+	}
+
+	// Create engine
+	engine := New(db, llm, prompter)
+
+	// Run classification
+	err = engine.ClassifyTransactions(ctx, nil)
+	require.NoError(t, err)
+
+	// Verify the new category was created
+	categories, err := db.GetCategories(ctx)
+	require.NoError(t, err)
+	
+	// Find the new category
+	var found bool
+	for _, cat := range categories {
+		if cat.Name == "Fitness & Health" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "New category 'Fitness & Health' should have been created")
+
+	// Verify the transaction was classified
+	classifications, err := db.GetClassificationsByDateRange(ctx, time.Now().AddDate(0, 0, -1), time.Now().AddDate(0, 0, 1))
+	require.NoError(t, err)
+	require.Len(t, classifications, 1)
+	assert.Equal(t, "Fitness & Health", classifications[0].Category)
+}
+
+// newCategoryClassifier simulates AI suggesting a new category.
+type newCategoryClassifier struct {
+	suggestedCategory string
+	confidence        float64
+	isNew             bool
+}
+
+func (n *newCategoryClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, error) {
+	return n.suggestedCategory, n.confidence, n.isNew, nil
+}
+
+func (n *newCategoryClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
+	suggestions := make([]service.LLMSuggestion, len(transactions))
+	for i, txn := range transactions {
+		suggestions[i] = service.LLMSuggestion{
+			TransactionID: txn.ID,
+			Category:      n.suggestedCategory,
+			Confidence:    n.confidence,
+			IsNew:         n.isNew,
+		}
+	}
+	return suggestions, nil
+}
+
+// newCategoryPrompter simulates user accepting a new category.
+type newCategoryPrompter struct {
+	acceptNewCategory bool
+	acceptedCategory  string
+}
+
+func (n *newCategoryPrompter) ConfirmClassification(_ context.Context, pending model.PendingClassification) (model.Classification, error) {
+	if pending.IsNewCategory && n.acceptNewCategory {
+		return model.Classification{
+			Transaction:  pending.Transaction,
+			Category:     n.acceptedCategory,
+			Status:       model.StatusClassifiedByAI,
+			Confidence:   pending.Confidence,
+			ClassifiedAt: time.Now(),
+		}, nil
+	}
+	return model.Classification{}, errors.New("not accepting new category")
+}
+
+func (n *newCategoryPrompter) BatchConfirmClassifications(_ context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+	classifications := make([]model.Classification, len(pending))
+	for i, p := range pending {
+		c, err := n.ConfirmClassification(context.Background(), p)
+		if err != nil {
+			return nil, err
+		}
+		classifications[i] = c
+	}
+	return classifications, nil
+}
+
+func (n *newCategoryPrompter) GetCompletionStats() service.CompletionStats {
+	return service.CompletionStats{}
 }

@@ -58,6 +58,24 @@ func NewWithConfig(storage service.Storage, classifier Classifier, prompter Prom
 func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDate *time.Time) error {
 	slog.Info("Starting classification engine", "from_date", fromDate)
 
+	// Load categories from the database
+	categories, err := e.storage.GetCategories(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load categories: %w", err)
+	}
+	
+	if len(categories) == 0 {
+		return fmt.Errorf("no categories found in database - please run migrations first")
+	}
+	
+	// Convert to string slice for LLM
+	categoryNames := make([]string, len(categories))
+	for i, cat := range categories {
+		categoryNames[i] = cat.Name
+	}
+	
+	slog.Info("Loaded categories", "count", len(categories))
+
 	// Load previous progress
 	progress, err := e.storage.GetLatestProgress(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -136,7 +154,7 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 			}
 		} else {
 			// Need classification
-			classifications, err = e.classifyMerchantGroup(ctx, merchant, txns)
+			classifications, err = e.classifyMerchantGroup(ctx, merchant, txns, categoryNames)
 			if err != nil {
 				slog.Error("Failed to classify merchant group",
 					"merchant", merchant,
@@ -185,7 +203,7 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 }
 
 // classifyMerchantGroup handles classification for a group of transactions from the same merchant.
-func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, merchant string, txns []model.Transaction) ([]model.Classification, error) {
+func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, merchant string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
 	if len(txns) == 0 {
 		return []model.Classification{}, nil
 	}
@@ -195,10 +213,11 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	var category string
 	var confidence float64
+	var isNew bool
 
 	err := common.WithRetry(ctx, func() error {
 		var err error
-		category, confidence, err = e.classifier.SuggestCategory(ctx, representative)
+		category, confidence, isNew, err = e.classifier.SuggestCategory(ctx, representative, categories)
 		if err != nil {
 			return &common.RetryableError{Err: err, Retryable: true}
 		}
@@ -219,7 +238,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 		slog.Info("High variance detected, reviewing individually",
 			"merchant", merchant,
 			"transaction_count", len(txns))
-		return e.reviewIndividually(ctx, merchant, txns)
+		return e.reviewIndividually(ctx, merchant, txns, categories)
 	}
 
 	// Prepare for batch review
@@ -230,6 +249,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 			SuggestedCategory: category,
 			Confidence:        confidence,
 			SimilarCount:      len(txns),
+			IsNewCategory:     isNew,
 		}
 	}
 
@@ -241,9 +261,17 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	// Save vendor rule if confirmed
 	if len(classifications) > 0 {
+		// Ensure the category exists (in case user created a new one)
+		category := classifications[0].Category
+		if err := e.ensureCategoryExists(ctx, category); err != nil {
+			slog.Warn("Failed to ensure category exists",
+				"category", category,
+				"error", err)
+		}
+
 		vendor := &model.Vendor{
 			Name:        merchant,
-			Category:    classifications[0].Category,
+			Category:    category,
 			LastUpdated: time.Now(),
 			UseCount:    len(classifications),
 		}
@@ -263,19 +291,20 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 }
 
 // reviewIndividually handles high-variance merchants by reviewing each transaction.
-func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction) ([]model.Classification, error) {
+func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
 	classifications := make([]model.Classification, 0, len(txns))
 
 	for _, txn := range txns {
 		// Get AI suggestion for each transaction
-		category, confidence, err := e.classifier.SuggestCategory(ctx, txn)
+		category, confidence, isNew, err := e.classifier.SuggestCategory(ctx, txn, categories)
 		if err != nil {
 			slog.Warn("Failed to get AI suggestion",
 				"transaction_id", txn.ID,
 				"error", err)
 			// Use a default category if AI fails
-			category = "Uncategorized"
+			category = "Other Expenses"
 			confidence = 0.0
+			isNew = false
 		}
 
 		pending := model.PendingClassification{
@@ -283,6 +312,7 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 			SuggestedCategory: category,
 			Confidence:        confidence,
 			SimilarCount:      1,
+			IsNewCategory:     isNew,
 		}
 
 		classification, err := e.prompter.ConfirmClassification(ctx, pending)
@@ -425,4 +455,30 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 	}
 
 	return e.storage.SaveProgress(ctx, progress)
+}
+
+// ensureCategoryExists checks if a category exists and creates it if necessary.
+func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string) error {
+	// Check if category already exists
+	existingCategory, err := e.storage.GetCategoryByName(ctx, categoryName)
+	if err != nil {
+		return fmt.Errorf("failed to check category existence: %w", err)
+	}
+	
+	// Category already exists
+	if existingCategory != nil {
+		return nil
+	}
+	
+	// Create the new category
+	newCategory, err := e.storage.CreateCategory(ctx, categoryName)
+	if err != nil {
+		return fmt.Errorf("failed to create category: %w", err)
+	}
+	
+	slog.Info("Created new category",
+		"category", newCategory.Name,
+		"id", newCategory.ID)
+	
+	return nil
 }

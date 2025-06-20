@@ -108,6 +108,29 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     4,
+		Description: "Add categories table for dynamic categorization",
+		Up: func(tx *sql.Tx) error {
+			queries := []string{
+				`CREATE TABLE IF NOT EXISTS categories (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT UNIQUE NOT NULL,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					is_active BOOLEAN DEFAULT 1
+				)`,
+				`CREATE INDEX idx_categories_name ON categories(name)`,
+				`CREATE INDEX idx_categories_active ON categories(is_active)`,
+			}
+
+			for _, query := range queries {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("failed to execute query '%s': %w", query, err)
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.

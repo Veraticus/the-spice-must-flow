@@ -123,6 +123,42 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 			expectedStatus:   model.StatusUserModified,
 			expectedCategory: "Restaurants",
 		},
+		{
+			name: "accept new category suggestion",
+			pending: model.PendingClassification{
+				Transaction: model.Transaction{
+					ID:           "tx7",
+					Name:         "PELOTON SUBSCRIPTION",
+					MerchantName: "Peloton",
+					Amount:       39.99,
+					Date:         time.Now(),
+				},
+				SuggestedCategory: "Fitness & Health",
+				Confidence:        0.75,
+				IsNewCategory:     true,
+			},
+			input:            "a\n",
+			expectedStatus:   model.StatusClassifiedByAI,
+			expectedCategory: "Fitness & Health",
+		},
+		{
+			name: "use existing category instead of new",
+			pending: model.PendingClassification{
+				Transaction: model.Transaction{
+					ID:           "tx8",
+					Name:         "24 HOUR FITNESS",
+					MerchantName: "24 Hour Fitness",
+					Amount:       50.00,
+					Date:         time.Now(),
+				},
+				SuggestedCategory: "Fitness & Health",
+				Confidence:        0.70,
+				IsNewCategory:     true,
+			},
+			input:            "e\nEntertainment\n",
+			expectedStatus:   model.StatusUserModified,
+			expectedCategory: "Entertainment",
+		},
 	}
 
 	for _, tt := range tests {

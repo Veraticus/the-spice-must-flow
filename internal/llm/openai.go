@@ -120,6 +120,7 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	var category string
 	var confidence float64
+	var isNew bool
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -132,6 +133,9 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 			if err != nil {
 				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
 			}
+		} else if strings.HasPrefix(line, "NEW:") {
+			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
+			isNew = strings.ToLower(newStr) == "true"
 		}
 	}
 
@@ -143,9 +147,15 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 		confidence = 0.7 // Default confidence if not provided
 	}
 
+	// If confidence is below 0.9 and NEW wasn't explicitly set, assume it's a new category
+	if confidence < 0.9 && !isNew {
+		isNew = true
+	}
+
 	return ClassificationResponse{
 		Category:   category,
 		Confidence: confidence,
+		IsNew:      isNew,
 	}, nil
 }
 

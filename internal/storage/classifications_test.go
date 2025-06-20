@@ -8,8 +8,29 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
-func TestSQLiteStorage_ClassificationHistory(t *testing.T) {
+// Helper function to create test storage with categories.
+func createTestStorageWithCategories(t *testing.T, categories ...string) (*SQLiteStorage, func()) {
+	t.Helper()
 	store, cleanup := createTestStorage(t)
+	ctx := context.Background()
+
+	// Seed categories
+	for _, cat := range categories {
+		if _, err := store.CreateCategory(ctx, cat); err != nil {
+			cleanup()
+			t.Fatalf("Failed to create category %q: %v", cat, err)
+		}
+	}
+
+	return store, cleanup
+}
+
+func TestSQLiteStorage_ClassificationHistory(t *testing.T) {
+	store, cleanup := createTestStorageWithCategories(t,
+		"Initial Category",
+		"User Corrected",
+		"Final Category",
+	)
 	defer cleanup()
 	ctx := context.Background()
 
@@ -91,7 +112,7 @@ func TestSQLiteStorage_ClassificationHistory(t *testing.T) {
 }
 
 func TestSQLiteStorage_ClassificationWithVendorRule(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t, "Subscription Services")
 	defer cleanup()
 	ctx := context.Background()
 
@@ -172,7 +193,11 @@ func TestSQLiteStorage_ClassificationWithVendorRule(t *testing.T) {
 }
 
 func TestSQLiteStorage_ClassificationStatuses(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t,
+		"AI Predicted",
+		"User Selected",
+		"Rule Applied",
+	)
 	defer cleanup()
 	ctx := context.Background()
 
@@ -258,7 +283,7 @@ func TestSQLiteStorage_ClassificationStatuses(t *testing.T) {
 }
 
 func TestSQLiteStorage_ClassificationDateFiltering(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t, "Test Category")
 	defer cleanup()
 	ctx := context.Background()
 
@@ -380,7 +405,11 @@ func TestSQLiteStorage_ClassificationDateFiltering(t *testing.T) {
 }
 
 func TestSQLiteStorage_ClassificationAmountAggregation(t *testing.T) {
-	store, cleanup := createTestStorage(t)
+	store, cleanup := createTestStorageWithCategories(t,
+		"Food & Dining",
+		"Transportation",
+		"Shopping",
+	)
 	defer cleanup()
 	ctx := context.Background()
 

@@ -13,4 +13,5 @@ type Client interface {
 type ClassificationResponse struct {
 	Category   string
 	Confidence float64
+	IsNew      bool // True if this is a new category suggestion
 }

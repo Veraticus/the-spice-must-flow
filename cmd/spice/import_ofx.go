@@ -143,8 +143,20 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 	analyzeTransactions(allTransactions, verbose)
 
 	if !dryRun {
-		// TODO: Save to database
-		slog.Info("💾 Would save transactions to database",
+		// Initialize storage
+		ctx := context.Background()
+		storageService, err := initStorage(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to initialize storage: %w", err)
+		}
+		defer storageService.Close()
+		
+		// Save transactions
+		if err := storageService.SaveTransactions(ctx, allTransactions); err != nil {
+			return fmt.Errorf("failed to save transactions: %w", err)
+		}
+		
+		slog.Info("💾 Successfully saved transactions to database",
 			"total_count", len(allTransactions),
 			"unique_count", len(transactionMap))
 	} else {

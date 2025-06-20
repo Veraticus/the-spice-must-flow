@@ -28,6 +28,11 @@ type Storage interface {
 	SaveProgress(ctx context.Context, progress *model.ClassificationProgress) error
 	GetLatestProgress(ctx context.Context) (*model.ClassificationProgress, error)
 
+	// Category operations
+	GetCategories(ctx context.Context) ([]model.Category, error)
+	GetCategoryByName(ctx context.Context, name string) (*model.Category, error)
+	CreateCategory(ctx context.Context, name string) (*model.Category, error)
+
 	// Database management
 	Migrate(ctx context.Context) error
 	BeginTx(ctx context.Context) (Transaction, error)
@@ -47,6 +52,7 @@ type LLMSuggestion struct {
 	TransactionID string
 	Category      string
 	Confidence    float64
+	IsNew         bool // True if this is a new category suggestion (confidence < 0.9)
 }
 
 // CompletionStats shows the results of a classification run.

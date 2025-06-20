@@ -18,6 +18,7 @@ go.work
 # Data directories
 /data/
 /tmp/
+/vendor/
 
 # IDE files
 .vscode/

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/aclindsa/ofxgo"
@@ -19,10 +20,38 @@ func NewParser() *Parser {
 	return &Parser{}
 }
 
+// preprocessOFX fixes common formatting issues in OFX files
+func (p *Parser) preprocessOFX(content string) string {
+	// Trim any leading whitespace or blank lines before the header
+	content = strings.TrimLeft(content, " \t\r\n")
+	
+	// Fix mixed-case SEVERITY values (should be INFO, WARN, or ERROR)
+	severityRegex := regexp.MustCompile(`(?i)<SEVERITY>(Info|Warn|Error)</SEVERITY>`)
+	content = severityRegex.ReplaceAllStringFunc(content, func(match string) string {
+		return strings.ToUpper(match)
+	})
+	
+	// Fix missing closing angle brackets in SGML-style OFX files
+	// Match opening tags that are missing their closing bracket
+	// Pattern: <TAGNAME at end of line (no > and no content after tag)
+	tagFixRegex := regexp.MustCompile(`(?m)^(\s*<[A-Z][A-Z0-9._]*[A-Z0-9])$`)
+	content = tagFixRegex.ReplaceAllString(content, "$1>")
+	
+	return content
+}
+
 // ParseFile parses an OFX/QFX file and returns transactions
 func (p *Parser) ParseFile(ctx context.Context, reader io.Reader) ([]model.Transaction, error) {
+	// Read and preprocess the content
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OFX file: %w", err)
+	}
+	
+	processedContent := p.preprocessOFX(string(content))
+	
 	// Parse OFX response
-	resp, err := ofxgo.ParseResponse(reader)
+	resp, err := ofxgo.ParseResponse(strings.NewReader(processedContent))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse OFX file: %w", err)
 	}
@@ -165,7 +194,15 @@ func (p *Parser) extractMerchantName(tx ofxgo.Transaction) string {
 
 // GetAccounts extracts unique account IDs from the OFX file
 func (p *Parser) GetAccounts(ctx context.Context, reader io.Reader) ([]string, error) {
-	resp, err := ofxgo.ParseResponse(reader)
+	// Read and preprocess the content
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OFX file: %w", err)
+	}
+	
+	processedContent := p.preprocessOFX(string(content))
+	
+	resp, err := ofxgo.ParseResponse(strings.NewReader(processedContent))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse OFX file: %w", err)
 	}
