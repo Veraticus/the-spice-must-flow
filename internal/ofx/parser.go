@@ -152,6 +152,23 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 		MerchantName: merchantName,
 		Amount:       amount,
 		AccountID:    accountID,
+		Type:         string(ofxTx.TrnType), // e.g., DEBIT, CHECK, PAYMENT, ATM
+	}
+	
+	// Add check number if present
+	if ofxTx.CheckNum != "" {
+		tx.CheckNumber = string(ofxTx.CheckNum)
+	}
+	
+	// OFX doesn't provide categories, but we could infer some based on transaction type
+	// This is optional and can be expanded later
+	switch tx.Type {
+	case "INT":
+		tx.Category = []string{"Income", "Interest"}
+	case "FEE":
+		tx.Category = []string{"Bank Fees"}
+	case "ATM":
+		tx.Category = []string{"Cash & ATM"}
 	}
 
 	// Generate hash for deduplication
@@ -170,6 +187,12 @@ func (p *Parser) extractMerchantName(tx ofxgo.Transaction) string {
 	// Fall back to NAME field
 	name := string(tx.Name)
 
+	// Use MEMO field if NAME is generic
+	if tx.Memo != "" && isGenericDescription(name) {
+		// Sometimes MEMO has better merchant info
+		name = string(tx.Memo)
+	}
+
 	// Basic cleanup
 	name = strings.TrimSpace(name)
 
@@ -180,16 +203,44 @@ func (p *Parser) extractMerchantName(tx ofxgo.Transaction) string {
 		"DEBIT CARD PURCHASE ",
 		"ACH DEBIT ",
 		"CHECK CARD ",
+		"VISA PURCHASE ",
+		"MC PURCHASE ",
+		"DEBIT PURCHASE ",
 	}
 
 	for _, prefix := range prefixes {
-		if strings.HasPrefix(name, prefix) {
-			name = strings.TrimPrefix(name, prefix)
+		if strings.HasPrefix(strings.ToUpper(name), prefix) {
+			name = name[len(prefix):]
 			break
 		}
 	}
 
+	// Clean up date patterns like "MM/DD" at the beginning
+	if len(name) > 5 && name[2] == '/' && name[5] == ' ' {
+		name = strings.TrimSpace(name[6:])
+	}
+
 	return name
+}
+
+// isGenericDescription checks if a transaction name is too generic
+func isGenericDescription(name string) bool {
+	generic := []string{
+		"DEBIT",
+		"CREDIT",
+		"PURCHASE",
+		"PAYMENT",
+		"POS TRANSACTION",
+		"CARD PURCHASE",
+	}
+	
+	upperName := strings.ToUpper(name)
+	for _, g := range generic {
+		if upperName == g {
+			return true
+		}
+	}
+	return false
 }
 
 // GetAccounts extracts unique account IDs from the OFX file

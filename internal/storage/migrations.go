@@ -131,6 +131,28 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     5,
+		Description: "Add generic transaction metadata fields",
+		Up: func(tx *sql.Tx) error {
+			queries := []string{
+				// Rename plaid_categories to categories for source-agnostic design
+				`ALTER TABLE transactions RENAME COLUMN plaid_categories TO categories`,
+				// Add new fields for transaction metadata
+				`ALTER TABLE transactions ADD COLUMN transaction_type TEXT`,
+				`ALTER TABLE transactions ADD COLUMN check_number TEXT`,
+				// Add index for transaction type
+				`CREATE INDEX idx_transactions_type ON transactions(transaction_type)`,
+			}
+
+			for _, query := range queries {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("failed to execute query '%s': %w", query, err)
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.

@@ -147,8 +147,8 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 		confidence = 0.7 // Default confidence if not provided
 	}
 
-	// If confidence is below 0.9 and NEW wasn't explicitly set, assume it's a new category
-	if confidence < 0.9 && !isNew {
+	// If confidence is below 0.85 and NEW wasn't explicitly set, assume it's a new category
+	if confidence < 0.85 && !isNew {
 		isNew = true
 	}
 

@@ -210,34 +210,55 @@ func (c *Classifier) buildPrompt(txn model.Transaction, categories []string) str
 		categoryList += fmt.Sprintf("- %s\n", cat)
 	}
 
-	return fmt.Sprintf(`Classify this financial transaction into one of the existing categories OR suggest a new category if none fit well.
+	// Build transaction details, handling optional fields
+	transactionDetails := fmt.Sprintf("Merchant: %s\nAmount: $%.2f\nDate: %s\nDescription: %s",
+		merchant,
+		txn.Amount,
+		txn.Date.Format("2006-01-02"),
+		txn.Name)
+	
+	// Include transaction type if available
+	if txn.Type != "" {
+		transactionDetails += fmt.Sprintf("\nTransaction Type: %s", txn.Type)
+	}
+	
+	// Include check number if it's a check
+	if txn.CheckNumber != "" {
+		transactionDetails += fmt.Sprintf("\nCheck Number: %s", txn.CheckNumber)
+	}
+	
+	// Include category hints if available (from any source)
+	if len(txn.Category) > 0 {
+		categoryHint := strings.Join(txn.Category, " > ")
+		transactionDetails += fmt.Sprintf("\nCategory Hint: %s", categoryHint)
+	}
+
+	return fmt.Sprintf(`Classify this financial transaction into the most appropriate category based solely on the transaction details.
+
+IMPORTANT GUIDELINES:
+- Base your classification purely on what the transaction IS, not assumptions about its purpose
+- A coffee shop transaction could be personal breakfast OR a business meeting - classify by merchant type, not assumed intent
+- Avoid inferring business vs personal use - that's for the user to decide
+- When suggesting new categories, keep them neutral and descriptive (e.g., "Dining" not "Business Meals")
 
 Existing Categories:
 %s
 Transaction Details:
-Merchant: %s
-Amount: $%.2f
-Date: %s
-Description: %s
-Plaid Category: %s
+%s
 
 Instructions:
-1. If you are confident (90%% or higher) that the transaction fits one of the existing categories, respond:
+1. If you are confident (85%% or higher) that the transaction fits one of the existing categories, respond:
    CATEGORY: <existing category name>
-   CONFIDENCE: <0.90-1.0>
+   CONFIDENCE: <0.85-1.0>
 
-2. If you are less confident (<90%%) that it fits existing categories, suggest a new category:
+2. If you are less confident (<85%%) that it fits existing categories, suggest a new category:
    CATEGORY: <new category suggestion>
-   CONFIDENCE: <0.0-0.89>
+   CONFIDENCE: <0.0-0.84>
    NEW: true
 
-Consider the merchant name, amount, and context to make the most accurate classification.`,
+Focus on WHAT the transaction is, not WHY it might have occurred.`,
 		categoryList,
-		merchant,
-		txn.Amount,
-		txn.Date.Format("2006-01-02"),
-		txn.Name,
-		strings.Join(txn.PlaidCategory, ", "))
+		transactionDetails)
 }
 
 // Close stops background goroutines and cleans up resources.

@@ -182,6 +182,20 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 				return nil, fmt.Errorf("failed to parse amount %s: %w", tx.Amount, err)
 			}
 
+			// Extract any category info from extra field if available
+			var categories []string
+			if tx.Extra != nil {
+				// SimpleFIN may provide category in the extra object
+				if categoryVal, ok := tx.Extra["category"]; ok {
+					if category, ok := categoryVal.(string); ok && category != "" {
+						categories = []string{category}
+					}
+				}
+			}
+			
+			// Try to infer transaction type from description or payee
+			transactionType := inferTransactionType(tx.Description, tx.Payee)
+
 			// Create our transaction model
 			modelTx := model.Transaction{
 				ID:           fmt.Sprintf("%s_%s", account.ID, tx.ID),
@@ -190,8 +204,8 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 				MerchantName: normalizeMerchant(tx.Payee),
 				Amount:       amount,
 				AccountID:    account.ID,
-				// SimpleFIN doesn't provide categories
-				PlaidCategory: "",
+				Category:     categories,
+				Type:         transactionType,
 			}
 
 			// Generate hash for deduplication
@@ -269,5 +283,33 @@ func normalizeMerchant(raw string) string {
 	merchant = strings.Title(strings.ToLower(merchant))
 	
 	return merchant
+}
+
+// inferTransactionType tries to guess transaction type from description/payee
+func inferTransactionType(description, payee string) string {
+	combined := strings.ToLower(description + " " + payee)
+	
+	// Check for common patterns
+	switch {
+	case strings.Contains(combined, "check #") || strings.Contains(combined, "check paid"):
+		return "CHECK"
+	case strings.Contains(combined, "atm") || strings.Contains(combined, "cash withdrawal"):
+		return "ATM"
+	case strings.Contains(combined, "direct deposit") || strings.Contains(combined, "payroll"):
+		return "DIRECTDEP"
+	case strings.Contains(combined, "wire transfer") || strings.Contains(combined, "wire from"):
+		return "XFER"
+	case strings.Contains(combined, "online payment") || strings.Contains(combined, "web payment"):
+		return "ONLINE"
+	case strings.Contains(combined, "interest paid"):
+		return "INT"
+	case strings.Contains(combined, "fee") || strings.Contains(combined, "service charge"):
+		return "FEE"
+	case strings.Contains(combined, "venmo") || strings.Contains(combined, "zelle") || strings.Contains(combined, "paypal"):
+		return "PAYMENT"
+	default:
+		// Default to DEBIT for purchases
+		return "DEBIT"
+	}
 }
 

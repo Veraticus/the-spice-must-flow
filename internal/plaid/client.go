@@ -252,9 +252,33 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 	merchantName = cleanMerchantName(merchantName)
 
 	// Get categories - Plaid provides a hierarchy
-	var plaidCategory string
-	if categories := pt.GetCategory(); len(categories) > 0 {
-		plaidCategory = strings.Join(categories, " > ")
+	var categories []string
+	if plaidCategories := pt.GetCategory(); len(plaidCategories) > 0 {
+		categories = plaidCategories
+	}
+	
+	// Extract transaction type from payment channel or category
+	transactionType := ""
+	if channel := pt.GetPaymentChannel(); channel != "" {
+		switch channel {
+		case "online":
+			transactionType = "ONLINE"
+		case "in_store":
+			transactionType = "POS"
+		default:
+			transactionType = "OTHER"
+		}
+	}
+	
+	// Check if it's a check transaction
+	checkNumber := ""
+	if pt.HasCheckNumber() {
+		if num := pt.GetCheckNumber(); num != "" {
+			checkNumber = num
+			if transactionType == "" {
+				transactionType = "CHECK"
+			}
+		}
 	}
 
 	tx := model.Transaction{
@@ -263,8 +287,10 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 		Name:          pt.GetName(),
 		MerchantName:  merchantName,
 		AccountID:     pt.GetAccountId(),
-		PlaidCategory: plaidCategory,
 		Amount:        pt.GetAmount(),
+		Category:      categories,
+		Type:          transactionType,
+		CheckNumber:   checkNumber,
 	}
 
 	// Generate hash for deduplication

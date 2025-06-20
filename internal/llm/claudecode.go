@@ -53,7 +53,7 @@ func newClaudeCodeClient(cfg Config) (Client, error) {
 func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (ClassificationResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a financial transaction classifier. Respond only with the category and confidence score in the exact format requested.\n\n%s",
+		"You are a neutral financial transaction classifier. Your role is to categorize transactions based on WHAT they are (merchant type, service provided) not WHO might be using them or WHY. Avoid any assumptions about personal vs business use. Respond only with the category and confidence score in the exact format requested.\n\n%s",
 		prompt,
 	)
 

@@ -525,7 +525,7 @@ $ spice flow --year 2024
 The categorization system uses a dynamic, learning-based approach where categories evolve based on actual usage:
 
 1. **Database-Driven Categories**: Categories are stored in the database, not hardcoded
-2. **Confidence-Based Evolution**: LLM suggests new categories when confidence < 90%
+2. **Confidence-Based Evolution**: LLM suggests new categories when confidence < 85%
 3. **User-Controlled Growth**: Users decide whether to create new categories
 4. **Natural Taxonomy**: Categories emerge from actual spending patterns
 
@@ -534,8 +534,8 @@ The categorization system uses a dynamic, learning-based approach where categori
 ```
 1. Known merchant → Use existing vendor rule
 2. New merchant → Ask LLM with current categories
-3. High confidence (≥90%) → Suggest existing category
-4. Low confidence (<90%) → Suggest NEW category
+3. High confidence (≥85%) → Suggest existing category
+4. Low confidence (<85%) → Suggest NEW category
 5. User decides → Create new or map to existing
 ```
 
