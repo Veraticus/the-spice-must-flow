@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
@@ -78,6 +79,48 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 	classifications, err := storageService.GetClassificationsByDateRange(ctx, start, end)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve classifications: %w", err)
+	}
+
+	// Check data coverage and classification status if exporting
+	if export {
+		// Get unclassified transactions to check completeness
+		unclassifiedTxns, err := storageService.GetTransactionsToClassify(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to check for unclassified transactions: %w", err)
+		}
+		
+		// Filter unclassified transactions to our date range
+		var unclassifiedInRange []model.Transaction
+		for _, tx := range unclassifiedTxns {
+			if !tx.Date.Before(start) && !tx.Date.After(end) {
+				unclassifiedInRange = append(unclassifiedInRange, tx)
+			}
+		}
+		
+		// Check if we have unclassified transactions
+		if len(unclassifiedInRange) > 0 {
+			var exampleMerchants []string
+			for i, tx := range unclassifiedInRange {
+				if i < 3 && tx.MerchantName != "" {
+					exampleMerchants = append(exampleMerchants, tx.MerchantName)
+				}
+			}
+			
+			errorMsg := fmt.Sprintf("cannot export: %d transactions are not classified", len(unclassifiedInRange))
+			if len(exampleMerchants) > 0 {
+				errorMsg += fmt.Sprintf(" (e.g., %s)", strings.Join(exampleMerchants, ", "))
+			}
+			errorMsg += "\nRun 'spice classify' to categorize all transactions first"
+			return fmt.Errorf(errorMsg)
+		}
+		
+		// For full year exports, validate we have adequate data coverage
+		// Use classifications as a proxy for transaction coverage
+		if month == "" {
+			if err := validateDataCoverageFromClassifications(classifications, start, end); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Generate summary
@@ -227,6 +270,90 @@ func exportToSheets(ctx context.Context, classifications []model.Classification,
 	if err := writer.Write(ctx, classifications, summary); err != nil {
 		return fmt.Errorf("failed to write report: %w", err)
 	}
+
+	return nil
+}
+
+// validateDataCoverageFromClassifications ensures we have sufficient transaction data for the requested period
+// Note: This uses classifications as a proxy for transaction coverage. The assumption is that
+// if we have classified transactions, we have imported data for that period.
+func validateDataCoverageFromClassifications(classifications []model.Classification, start, end time.Time) error {
+	if len(classifications) == 0 {
+		return fmt.Errorf("no transaction data found for %d", start.Year())
+	}
+
+	// Sort classifications by date
+	sortedClassifications := make([]model.Classification, len(classifications))
+	copy(sortedClassifications, classifications)
+	for i := 0; i < len(sortedClassifications)-1; i++ {
+		for j := i + 1; j < len(sortedClassifications); j++ {
+			if sortedClassifications[j].Transaction.Date.Before(sortedClassifications[i].Transaction.Date) {
+				sortedClassifications[i], sortedClassifications[j] = sortedClassifications[j], sortedClassifications[i]
+			}
+		}
+	}
+
+	// Find gaps of 30+ days
+	var gaps []string
+	
+	// Check gap at start
+	firstTransaction := sortedClassifications[0].Transaction.Date
+	startGap := int(firstTransaction.Sub(start).Hours() / 24)
+	if startGap >= 30 {
+		gaps = append(gaps, fmt.Sprintf("%s to %s (%d days)", 
+			start.Format("Jan 2, 2006"),
+			firstTransaction.AddDate(0, 0, -1).Format("Jan 2, 2006"),
+			startGap))
+	}
+
+	// Check gaps between transactions
+	for i := 0; i < len(sortedClassifications)-1; i++ {
+		current := sortedClassifications[i].Transaction.Date
+		next := sortedClassifications[i+1].Transaction.Date
+		
+		// Calculate gap between transactions (exclusive of transaction dates)
+		gapStart := current.AddDate(0, 0, 1)
+		gapEnd := next.AddDate(0, 0, -1)
+		gapDays := int(gapEnd.Sub(gapStart).Hours()/24) + 1
+		
+		if gapDays >= 30 {
+			gaps = append(gaps, fmt.Sprintf("%s to %s (%d days)",
+				gapStart.Format("Jan 2, 2006"),
+				gapEnd.Format("Jan 2, 2006"),
+				gapDays))
+		}
+	}
+
+	// Check gap at end
+	lastTransaction := sortedClassifications[len(sortedClassifications)-1].Transaction.Date
+	endGap := int(end.Sub(lastTransaction).Hours() / 24)
+	if endGap >= 30 {
+		gaps = append(gaps, fmt.Sprintf("%s to %s (%d days)",
+			lastTransaction.AddDate(0, 0, 1).Format("Jan 2, 2006"),
+			end.Format("Jan 2, 2006"),
+			endGap))
+	}
+
+	// Display warnings for gaps
+	if len(gaps) > 0 {
+		slog.Warn(cli.FormatWarning("Data gaps detected in the requested export period:"))
+		for _, gap := range gaps {
+			slog.Warn(cli.FormatWarning(fmt.Sprintf("  • Missing data: %s", gap)))
+		}
+		slog.Warn(cli.FormatWarning("This could mean no transactions occurred or data hasn't been imported."))
+	}
+
+	// Calculate overall coverage for info
+	actualStart := sortedClassifications[0].Transaction.Date
+	actualEnd := sortedClassifications[len(sortedClassifications)-1].Transaction.Date
+	requiredDays := int(end.Sub(start).Hours() / 24) + 1
+	actualDays := int(actualEnd.Sub(actualStart).Hours() / 24) + 1
+	coveragePercent := float64(actualDays) / float64(requiredDays) * 100
+
+	slog.Info(cli.FormatInfo(fmt.Sprintf("Data coverage: %s to %s (%.0f%% of requested period)",
+		actualStart.Format("Jan 2"),
+		actualEnd.Format("Jan 2"),
+		coveragePercent)))
 
 	return nil
 }

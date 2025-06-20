@@ -15,10 +15,23 @@ import (
 
 func init() {
 	importOFXCmd := &cobra.Command{
-		Use:   "import-ofx [file]",
-		Short: "Import transactions from OFX/QFX file",
-		Long:  `Import financial transactions from OFX or QFX (Quicken) files exported from your bank`,
-		Args:  cobra.ExactArgs(1),
+		Use:   "import-ofx [files...]",
+		Short: "Import transactions from OFX/QFX files",
+		Long:  `Import financial transactions from OFX or QFX (Quicken) files exported from your bank.
+
+Examples:
+  # Import single file
+  spice import-ofx ~/Downloads/chase_jan_2024.qfx
+  
+  # Import multiple files
+  spice import-ofx ~/Downloads/chase_*.qfx
+  
+  # Import all QFX files in a directory
+  spice import-ofx ~/Downloads/*.qfx
+  
+  # Import from multiple directories
+  spice import-ofx ~/Downloads/Chase/*.qfx ~/Downloads/Ally/*.qfx`,
+		Args:  cobra.MinimumNArgs(1),
 		RunE:  runImportOFX,
 	}
 
@@ -29,45 +42,111 @@ func init() {
 }
 
 func runImportOFX(cmd *cobra.Command, args []string) error {
-	filePath := args[0]
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 
-	// Check file exists
-	if _, err := os.Stat(filePath); err != nil {
-		return fmt.Errorf("file not found: %s", filePath)
+	// Expand globs and collect all files
+	var allFiles []string
+	for _, pattern := range args {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return fmt.Errorf("invalid pattern %s: %w", pattern, err)
+		}
+		if len(matches) == 0 {
+			// If no glob matches, check if it's a direct file
+			if _, err := os.Stat(pattern); err == nil {
+				allFiles = append(allFiles, pattern)
+			} else {
+				slog.Warn("No files found matching pattern", "pattern", pattern)
+			}
+		} else {
+			allFiles = append(allFiles, matches...)
+		}
 	}
 
-	slog.Info("🌶️  Importing OFX file...",
-		"file", filepath.Base(filePath),
+	if len(allFiles) == 0 {
+		return fmt.Errorf("no files found to import")
+	}
+
+	slog.Info("🌶️  Importing OFX files...",
+		"file_count", len(allFiles),
 		"dry_run", dryRun)
 
-	// Open file
-	f, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer f.Close()
+	// Track all transactions across files
+	var allTransactions []model.Transaction
+	transactionMap := make(map[string]bool) // For deduplication
+	fileResults := make(map[string]int)
 
-	// Parse OFX
 	parser := ofx.NewParser()
-	transactions, err := parser.ParseFile(context.Background(), f)
-	if err != nil {
-		return fmt.Errorf("failed to parse OFX file: %w", err)
+	ctx := context.Background()
+
+	// Process each file
+	for _, filePath := range allFiles {
+		slog.Info("Processing file", "file", filepath.Base(filePath))
+
+		// Open file
+		f, err := os.Open(filePath)
+		if err != nil {
+			slog.Error("Failed to open file",
+				"file", filePath,
+				"error", err)
+			continue
+		}
+
+		// Parse OFX
+		transactions, err := parser.ParseFile(ctx, f)
+		f.Close()
+		
+		if err != nil {
+			slog.Error("Failed to parse OFX file",
+				"file", filePath,
+				"error", err)
+			continue
+		}
+
+		if len(transactions) == 0 {
+			slog.Warn("No transactions found in file",
+				"file", filepath.Base(filePath))
+			continue
+		}
+
+		// Add transactions with deduplication
+		addedCount := 0
+		for _, tx := range transactions {
+			if !transactionMap[tx.Hash] {
+				transactionMap[tx.Hash] = true
+				allTransactions = append(allTransactions, tx)
+				addedCount++
+			}
+		}
+
+		fileResults[filepath.Base(filePath)] = addedCount
+		slog.Info("Processed file",
+			"file", filepath.Base(filePath),
+			"transactions_found", len(transactions),
+			"added", addedCount,
+			"duplicates", len(transactions)-addedCount)
 	}
 
-	if len(transactions) == 0 {
-		slog.Warn("No transactions found in file")
+	if len(allTransactions) == 0 {
+		slog.Warn("No transactions found in any file")
 		return nil
 	}
 
-	// Analyze the data
-	analyzeTransactions(transactions, verbose)
+	// Show summary
+	fmt.Println("\n📁 File import summary:")
+	for file, count := range fileResults {
+		fmt.Printf("  - %s: %d transactions\n", file, count)
+	}
+
+	// Analyze combined data
+	analyzeTransactions(allTransactions, verbose)
 
 	if !dryRun {
 		// TODO: Save to database
 		slog.Info("💾 Would save transactions to database",
-			"count", len(transactions))
+			"total_count", len(allTransactions),
+			"unique_count", len(transactionMap))
 	} else {
 		slog.Info("🔍 Dry run complete - no data saved")
 	}

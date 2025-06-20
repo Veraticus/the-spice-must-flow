@@ -21,17 +21,31 @@
 ## Importing to Spice
 
 ```bash
-# Preview what will be imported (dry run)
-./spice import-ofx ~/Downloads/Chase1234.qfx --dry-run
+# Import single file
+./spice import-ofx ~/Downloads/Chase1234.qfx
+
+# Import all QFX files in a directory
+./spice import-ofx ~/Downloads/*.qfx
+
+# Import from multiple patterns
+./spice import-ofx ~/Downloads/Chase*.qfx ~/Downloads/Ally*.qfx
+
+# Import all 2024 files with dry run
+./spice import-ofx ~/Downloads/*2024*.qfx --dry-run
 
 # Import with verbose output
-./spice import-ofx ~/Downloads/Chase1234.qfx -v
-
-# Import multiple files
-for f in ~/Downloads/*.qfx; do
-  ./spice import-ofx "$f"
-done
+./spice import-ofx ~/Downloads/*.qfx -v
 ```
+
+## Deduplication
+
+Transactions are automatically deduplicated across all files based on:
+- Date
+- Amount  
+- Merchant name
+- Account ID
+
+This means you can safely import overlapping month ranges or re-import files.
 
 ## What OFX Provides
 
