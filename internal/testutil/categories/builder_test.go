@@ -136,11 +136,11 @@ func TestBuilder_ChainedOperations(t *testing.T) {
 
 	// Should have basic + custom + testing categories
 	requiredCategories := []string{
-		"Groceries",           // from basic
-		"Custom Category 1",   // custom
-		"Custom Category 2",   // custom
-		"Test Category 1",     // from fixture
-		"Initial Category",    // from fixture
+		"Groceries",         // from basic
+		"Custom Category 1", // custom
+		"Custom Category 2", // custom
+		"Test Category 1",   // from fixture
+		"Initial Category",  // from fixture
 	}
 
 	ctx := context.Background()
@@ -193,7 +193,7 @@ func TestCategories_MustFind(t *testing.T) {
 
 func TestCategoryMap(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create a simple in-memory database for testing
 	db := testutil.SetupTestDBWithBuilder(t, func(b categories.Builder) categories.Builder {
 		return b.WithCategories(
@@ -206,7 +206,7 @@ func TestCategoryMap(t *testing.T) {
 	// Build a map using the builder
 	builder := categories.NewBuilder(t).
 		WithCategories(categories.CategoryGroceries, categories.CategoryFoodDining)
-	
+
 	catMap, err := builder.BuildMap(ctx, db.Storage)
 	if err != nil {
 		t.Fatalf("failed to build category map: %v", err)
@@ -271,10 +271,10 @@ func TestCompositeFixture(t *testing.T) {
 
 	// Should have categories from both fixtures
 	requiredCategories := []categories.CategoryName{
-		categories.CategoryFoodDining,    // from minimal
+		categories.CategoryFoodDining,     // from minimal
 		categories.CategoryTransportation, // from minimal
-		categories.CategoryTest1,         // from testing
-		categories.CategoryInitial,       // from testing
+		categories.CategoryTest1,          // from testing
+		categories.CategoryInitial,        // from testing
 	}
 
 	for _, required := range requiredCategories {

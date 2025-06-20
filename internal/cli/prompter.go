@@ -67,7 +67,7 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Category options:")); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write category options: %w", err)
 	}
-	
+
 	if pending.IsNewCategory {
 		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category: %s\n", WarningStyle.Render(pending.SuggestedCategory)); err != nil {
 			return model.Classification{}, fmt.Errorf("failed to write new category option: %w", err)
@@ -80,7 +80,7 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 			return model.Classification{}, fmt.Errorf("failed to write AI suggestion: %w", err)
 		}
 	}
-	
+
 	if _, err := fmt.Fprintln(p.writer, "  [C] Enter custom category"); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write custom option: %w", err)
 	}
@@ -97,7 +97,7 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 	} else {
 		validChoices = []string{"a", "c", "s"}
 	}
-	
+
 	choice, err := p.promptChoice(ctx, "Choice", validChoices)
 	if err != nil {
 		return model.Classification{}, err
@@ -174,9 +174,9 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Options:")); err != nil {
 		return nil, fmt.Errorf("failed to write options prompt: %w", err)
 	}
-	
+
 	if pending[0].IsNewCategory {
-		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category '%s' for all %d transactions\n", 
+		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category '%s' for all %d transactions\n",
 			pending[0].SuggestedCategory, len(pending)); err != nil {
 			return nil, fmt.Errorf("failed to write new category accept option: %w", err)
 		}
@@ -188,7 +188,7 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 			return nil, fmt.Errorf("failed to write batch accept option: %w", err)
 		}
 	}
-	
+
 	if _, err := fmt.Fprintln(p.writer, "  [C] Set custom category for all"); err != nil {
 		return nil, fmt.Errorf("failed to write custom category option: %w", err)
 	}
@@ -211,7 +211,7 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 		validChoices = []string{"a", "c", "r", "s"}
 		promptText = "Choice [A/C/R/S]"
 	}
-	
+
 	choice, err := p.promptChoice(ctx, promptText, validChoices)
 	if err != nil {
 		return nil, err

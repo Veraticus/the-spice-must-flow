@@ -24,19 +24,19 @@ func NewParser() *Parser {
 func (p *Parser) preprocessOFX(content string) string {
 	// Trim any leading whitespace or blank lines before the header
 	content = strings.TrimLeft(content, " \t\r\n")
-	
+
 	// Fix mixed-case SEVERITY values (should be INFO, WARN, or ERROR)
 	severityRegex := regexp.MustCompile(`(?i)<SEVERITY>(Info|Warn|Error)</SEVERITY>`)
 	content = severityRegex.ReplaceAllStringFunc(content, func(match string) string {
 		return strings.ToUpper(match)
 	})
-	
+
 	// Fix missing closing angle brackets in SGML-style OFX files
 	// Match opening tags that are missing their closing bracket
 	// Pattern: <TAGNAME at end of line (no > and no content after tag)
 	tagFixRegex := regexp.MustCompile(`(?m)^(\s*<[A-Z][A-Z0-9._]*[A-Z0-9])$`)
 	content = tagFixRegex.ReplaceAllString(content, "$1>")
-	
+
 	return content
 }
 
@@ -47,9 +47,9 @@ func (p *Parser) ParseFile(ctx context.Context, reader io.Reader) ([]model.Trans
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OFX file: %w", err)
 	}
-	
+
 	processedContent := p.preprocessOFX(string(content))
-	
+
 	// Parse OFX response
 	resp, err := ofxgo.ParseResponse(strings.NewReader(processedContent))
 	if err != nil {
@@ -88,7 +88,7 @@ func (p *Parser) ParseFile(ctx context.Context, reader io.Reader) ([]model.Trans
 			transactions = append(transactions, txns...)
 		}
 	}
-	
+
 	slog.Info("Parsed OFX file",
 		"total_transactions", len(transactions),
 		"bank_statements", bankStmts,
@@ -154,12 +154,12 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 		AccountID:    accountID,
 		Type:         string(ofxTx.TrnType), // e.g., DEBIT, CHECK, PAYMENT, ATM
 	}
-	
+
 	// Add check number if present
 	if ofxTx.CheckNum != "" {
 		tx.CheckNumber = string(ofxTx.CheckNum)
 	}
-	
+
 	// OFX doesn't provide categories, but we could infer some based on transaction type
 	// This is optional and can be expanded later
 	switch tx.Type {
@@ -233,7 +233,7 @@ func isGenericDescription(name string) bool {
 		"POS TRANSACTION",
 		"CARD PURCHASE",
 	}
-	
+
 	upperName := strings.ToUpper(name)
 	for _, g := range generic {
 		if upperName == g {
@@ -250,9 +250,9 @@ func (p *Parser) GetAccounts(ctx context.Context, reader io.Reader) ([]string, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OFX file: %w", err)
 	}
-	
+
 	processedContent := p.preprocessOFX(string(content))
-	
+
 	resp, err := ofxgo.ParseResponse(strings.NewReader(processedContent))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse OFX file: %w", err)

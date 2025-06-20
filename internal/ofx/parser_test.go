@@ -180,9 +180,9 @@ func TestParseFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := NewParser()
 			reader := strings.NewReader(tt.ofxData)
-			
+
 			transactions, err := parser.ParseFile(context.Background(), reader)
-			
+
 			if tt.expectedError {
 				assert.Error(t, err)
 			} else {
@@ -196,11 +196,11 @@ func TestParseFile(t *testing.T) {
 func TestParseBankTransactions(t *testing.T) {
 	parser := NewParser()
 	reader := strings.NewReader(sampleBankOFX)
-	
+
 	transactions, err := parser.ParseFile(context.Background(), reader)
 	require.NoError(t, err)
 	require.Len(t, transactions, 3)
-	
+
 	// Test first transaction (Starbucks)
 	tx1 := transactions[0]
 	assert.Equal(t, "2024011501", tx1.ID)
@@ -212,14 +212,14 @@ func TestParseBankTransactions(t *testing.T) {
 	assert.Equal(t, 2024, tx1.Date.Year())
 	assert.Equal(t, time.January, tx1.Date.Month())
 	assert.Equal(t, 15, tx1.Date.Day())
-	
+
 	// Test second transaction (Whole Foods)
 	tx2 := transactions[1]
 	assert.Equal(t, "2024012001", tx2.ID)
 	assert.Equal(t, "Whole Foods Market", tx2.Name)
 	assert.Equal(t, "Whole Foods Market", tx2.MerchantName)
 	assert.Equal(t, 125.00, tx2.Amount)
-	
+
 	// Test third transaction (Check)
 	tx3 := transactions[2]
 	assert.Equal(t, "2024012501", tx3.ID)
@@ -230,18 +230,18 @@ func TestParseBankTransactions(t *testing.T) {
 func TestParseCreditCardTransactions(t *testing.T) {
 	parser := NewParser()
 	reader := strings.NewReader(sampleCreditCardOFX)
-	
+
 	transactions, err := parser.ParseFile(context.Background(), reader)
 	require.NoError(t, err)
 	require.Len(t, transactions, 2)
-	
+
 	// Test Amazon transaction
 	tx1 := transactions[0]
 	assert.Equal(t, "CC2024011001", tx1.ID)
 	assert.Equal(t, "AMAZON.COM*RT4Y7HG2", tx1.Name)
 	assert.Equal(t, 45.99, tx1.Amount)
 	assert.Equal(t, "4111111111111111", tx1.AccountID)
-	
+
 	// Test Netflix transaction
 	tx2 := transactions[1]
 	assert.Equal(t, "CC2024011501", tx2.ID)
@@ -251,7 +251,7 @@ func TestParseCreditCardTransactions(t *testing.T) {
 
 func TestExtractMerchantName(t *testing.T) {
 	parser := NewParser()
-	
+
 	tests := []struct {
 		name     string
 		input    string
@@ -278,7 +278,7 @@ func TestExtractMerchantName(t *testing.T) {
 			expected: "AMAZON.COM",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock transaction with the test input
@@ -302,7 +302,7 @@ func TestTransactionDeduplication(t *testing.T) {
 		AccountID:    "123456",
 	}
 	tx1.Hash = tx1.GenerateHash()
-	
+
 	tx2 := model.Transaction{
 		ID:           "TX002", // Different ID
 		Date:         time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
@@ -312,16 +312,16 @@ func TestTransactionDeduplication(t *testing.T) {
 		AccountID:    "123456",
 	}
 	tx2.Hash = tx2.GenerateHash()
-	
+
 	// Hashes should be identical for deduplication
 	assert.Equal(t, tx1.Hash, tx2.Hash)
-	
+
 	// Different amount should produce different hash
 	tx3 := tx1
 	tx3.Amount = 30.00
 	tx3.Hash = tx3.GenerateHash()
 	assert.NotEqual(t, tx1.Hash, tx3.Hash)
-	
+
 	// Different date should produce different hash
 	tx4 := tx1
 	tx4.Date = time.Date(2024, 1, 16, 0, 0, 0, 0, time.UTC)
@@ -331,13 +331,13 @@ func TestTransactionDeduplication(t *testing.T) {
 
 func TestGetAccounts(t *testing.T) {
 	parser := NewParser()
-	
+
 	// Test with bank statement
 	reader := strings.NewReader(sampleBankOFX)
 	accounts, err := parser.GetAccounts(context.Background(), reader)
 	require.NoError(t, err)
 	assert.Contains(t, accounts, "1234567890")
-	
+
 	// Test with credit card statement
 	reader = strings.NewReader(sampleCreditCardOFX)
 	accounts, err = parser.GetAccounts(context.Background(), reader)

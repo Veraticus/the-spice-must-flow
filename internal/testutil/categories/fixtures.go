@@ -24,10 +24,10 @@ type fixture struct {
 	version     int
 }
 
-func (f *fixture) Name() string                  { return f.name }
-func (f *fixture) Description() string           { return f.description }
-func (f *fixture) Categories() []CategoryName    { return f.categories }
-func (f *fixture) Version() int                  { return f.version }
+func (f *fixture) Name() string               { return f.name }
+func (f *fixture) Description() string        { return f.description }
+func (f *fixture) Categories() []CategoryName { return f.categories }
+func (f *fixture) Version() int               { return f.version }
 
 // Predefined fixtures for common test scenarios.
 var (

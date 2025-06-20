@@ -8,18 +8,18 @@ import (
 
 // Transaction represents a single financial transaction from any source.
 type Transaction struct {
-	Date          time.Time
-	ID            string
-	Name          string    // Raw transaction description
-	MerchantName  string    // Cleaned merchant name
-	AccountID     string
-	Hash          string
-	Amount        float64
-	
+	Date         time.Time
+	ID           string
+	Name         string // Raw transaction description
+	MerchantName string // Cleaned merchant name
+	AccountID    string
+	Hash         string
+	Amount       float64
+
 	// Optional metadata that may be available depending on source
-	Category      []string  // Category hints from source (e.g., Plaid categories)
-	Type          string    // Transaction type (e.g., DEBIT, CHECK, PAYMENT, ATM)
-	CheckNumber   string    // Check number if applicable
+	Category    []string // Category hints from source (e.g., Plaid categories)
+	Type        string   // Transaction type (e.g., DEBIT, CHECK, PAYMENT, ATM)
+	CheckNumber string   // Check number if applicable
 }
 
 // GenerateHash creates a unique hash for duplicate detection.

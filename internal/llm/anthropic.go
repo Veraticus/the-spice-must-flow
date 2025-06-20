@@ -184,10 +184,10 @@ type anthropicResponse struct {
 // GenerateDescription generates a description for a category.
 func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	requestBody := map[string]any{
-		"model":      c.model,
-		"max_tokens": c.maxTokens,
+		"model":       c.model,
+		"max_tokens":  c.maxTokens,
 		"temperature": c.temperature,
-		"system":     "You are a financial category description generator. Respond only with the description text, no additional formatting.",
+		"system":      "You are a financial category description generator. Respond only with the description text, no additional formatting.",
 		"messages": []map[string]string{
 			{
 				"role":    "user",

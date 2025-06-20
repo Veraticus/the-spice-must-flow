@@ -59,34 +59,34 @@ func (c CategoryName) String() string {
 
 // Common category names used across tests
 const (
-	CategoryGroceries           CategoryName = "Groceries"
-	CategoryFoodDining          CategoryName = "Food & Dining"
-	CategoryCoffeeDining        CategoryName = "Coffee & Dining"
-	CategoryShopping            CategoryName = "Shopping"
-	CategoryOnlineShopping      CategoryName = "Online Shopping"
-	CategoryTransportation      CategoryName = "Transportation"
-	CategorySubscriptions       CategoryName = "Subscription Services"
-	CategoryHealthFitness       CategoryName = "Health & Fitness"
-	CategoryEntertainment       CategoryName = "Entertainment"
-	CategoryUtilities           CategoryName = "Utilities"
-	CategoryEducation           CategoryName = "Education"
-	CategoryTravel              CategoryName = "Travel"
-	CategoryPersonalCare        CategoryName = "Personal Care"
-	CategoryGiftsCharitable     CategoryName = "Gifts & Charitable"
-	CategoryHomeImprovement     CategoryName = "Home Improvement"
-	CategoryInsurance           CategoryName = "Insurance"
-	CategoryInvestmentsSavings  CategoryName = "Investments & Savings"
-	CategoryBankingFees         CategoryName = "Banking & Fees"
+	CategoryGroceries          CategoryName = "Groceries"
+	CategoryFoodDining         CategoryName = "Food & Dining"
+	CategoryCoffeeDining       CategoryName = "Coffee & Dining"
+	CategoryShopping           CategoryName = "Shopping"
+	CategoryOnlineShopping     CategoryName = "Online Shopping"
+	CategoryTransportation     CategoryName = "Transportation"
+	CategorySubscriptions      CategoryName = "Subscription Services"
+	CategoryHealthFitness      CategoryName = "Health & Fitness"
+	CategoryEntertainment      CategoryName = "Entertainment"
+	CategoryUtilities          CategoryName = "Utilities"
+	CategoryEducation          CategoryName = "Education"
+	CategoryTravel             CategoryName = "Travel"
+	CategoryPersonalCare       CategoryName = "Personal Care"
+	CategoryGiftsCharitable    CategoryName = "Gifts & Charitable"
+	CategoryHomeImprovement    CategoryName = "Home Improvement"
+	CategoryInsurance          CategoryName = "Insurance"
+	CategoryInvestmentsSavings CategoryName = "Investments & Savings"
+	CategoryBankingFees        CategoryName = "Banking & Fees"
 )
 
 // Test-specific category names
 const (
-	CategoryTest1               CategoryName = "Test Category 1"
-	CategoryTest2               CategoryName = "Test Category 2"
-	CategoryTest3               CategoryName = "Test Category 3"
-	CategoryInitial             CategoryName = "Initial Category"
-	CategoryUserCorrected       CategoryName = "User Corrected"
-	CategoryFinal               CategoryName = "Final Category"
+	CategoryTest1         CategoryName = "Test Category 1"
+	CategoryTest2         CategoryName = "Test Category 2"
+	CategoryTest3         CategoryName = "Test Category 3"
+	CategoryInitial       CategoryName = "Initial Category"
+	CategoryUserCorrected CategoryName = "User Corrected"
+	CategoryFinal         CategoryName = "Final Category"
 )
 
 // Categories represents a collection of created test categories.

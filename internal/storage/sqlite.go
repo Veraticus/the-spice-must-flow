@@ -18,6 +18,7 @@ import (
 // SQLiteStorage implements the Storage interface using SQLite.
 type SQLiteStorage struct {
 	db          *sql.DB
+	dbPath      string
 	vendorCache map[string]*model.Vendor
 	cacheExpiry time.Time
 	cacheMutex  sync.RWMutex
@@ -54,6 +55,7 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 
 	return &SQLiteStorage{
 		db:          db,
+		dbPath:      dbPath,
 		vendorCache: make(map[string]*model.Vendor),
 	}, nil
 }
@@ -61,6 +63,11 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 // Close closes the database connection.
 func (s *SQLiteStorage) Close() error {
 	return s.db.Close()
+}
+
+// NewCheckpointManager creates a new checkpoint manager for this storage instance.
+func (s *SQLiteStorage) NewCheckpointManager() (*CheckpointManager, error) {
+	return NewCheckpointManager(s.db, s.dbPath)
 }
 
 // BeginTx starts a new database transaction.

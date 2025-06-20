@@ -86,11 +86,11 @@ func (s *SQLiteStorage) saveVendorTx(ctx context.Context, tx *sql.Tx, vendor *mo
 	err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS(SELECT 1 FROM categories WHERE name = ? AND is_active = 1)
 	`, vendor.Category).Scan(&categoryExists)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to check category existence: %w", err)
 	}
-	
+
 	if !categoryExists {
 		return fmt.Errorf("category '%s' does not exist", vendor.Category)
 	}

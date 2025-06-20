@@ -635,7 +635,7 @@ func TestNewCategoryFlow(t *testing.T) {
 	// Verify the new category was created
 	categories, err := db.GetCategories(ctx)
 	require.NoError(t, err)
-	
+
 	// Find the new category
 	var found bool
 	for _, cat := range categories {

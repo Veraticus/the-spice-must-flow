@@ -256,7 +256,7 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 	if plaidCategories := pt.GetCategory(); len(plaidCategories) > 0 {
 		categories = plaidCategories
 	}
-	
+
 	// Extract transaction type from payment channel or category
 	transactionType := ""
 	if channel := pt.GetPaymentChannel(); channel != "" {
@@ -269,7 +269,7 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 			transactionType = "OTHER"
 		}
 	}
-	
+
 	// Check if it's a check transaction
 	checkNumber := ""
 	if pt.HasCheckNumber() {
@@ -282,15 +282,15 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 	}
 
 	tx := model.Transaction{
-		Date:          date,
-		ID:            pt.GetTransactionId(),
-		Name:          pt.GetName(),
-		MerchantName:  merchantName,
-		AccountID:     pt.GetAccountId(),
-		Amount:        pt.GetAmount(),
-		Category:      categories,
-		Type:          transactionType,
-		CheckNumber:   checkNumber,
+		Date:         date,
+		ID:           pt.GetTransactionId(),
+		Name:         pt.GetName(),
+		MerchantName: merchantName,
+		AccountID:    pt.GetAccountId(),
+		Amount:       pt.GetAmount(),
+		Category:     categories,
+		Type:         transactionType,
+		CheckNumber:  checkNumber,
 	}
 
 	// Generate hash for deduplication
@@ -453,10 +453,10 @@ func (c *Client) SearchInstitutions(ctx context.Context, query string, limit int
 		query,
 		[]plaid.CountryCode{plaid.COUNTRYCODE_US},
 	)
-	
+
 	// Set products filter to only get institutions that support transactions
 	request.SetProducts([]plaid.Products{plaid.PRODUCTS_TRANSACTIONS})
-	
+
 	// Set options
 	options := plaid.InstitutionsSearchRequestOptions{
 		IncludeOptionalMetadata: plaid.PtrBool(true),
@@ -477,7 +477,7 @@ func (c *Client) SearchInstitutions(ctx context.Context, query string, limit int
 		if i >= limit {
 			break
 		}
-		
+
 		// Check if institution supports transactions
 		supportsTransactions := false
 		for _, product := range inst.GetProducts() {

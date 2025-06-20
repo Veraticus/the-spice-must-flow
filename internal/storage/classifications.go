@@ -45,11 +45,11 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 		err := tx.QueryRowContext(ctx, `
 			SELECT EXISTS(SELECT 1 FROM categories WHERE name = ? AND is_active = 1)
 		`, classification.Category).Scan(&categoryExists)
-		
+
 		if err != nil {
 			return fmt.Errorf("failed to check category existence: %w", err)
 		}
-		
+
 		if !categoryExists {
 			return fmt.Errorf("category '%s' does not exist", classification.Category)
 		}
@@ -182,7 +182,7 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 		}
 
 		c.Status = model.ClassificationStatus(statusStr)
-		
+
 		// Parse categories JSON
 		if categories.Valid && categories.String != "" {
 			if err := json.Unmarshal([]byte(categories.String), &c.Transaction.Category); err != nil {

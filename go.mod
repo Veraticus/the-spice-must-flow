@@ -3,6 +3,7 @@ module github.com/joshsymonds/the-spice-must-flow
 go 1.23.9
 
 require (
+	github.com/aclindsa/ofxgo v0.1.3
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/plaid/plaid-go/v20 v20.1.0
@@ -18,7 +19,6 @@ require (
 	cloud.google.com/go/auth v0.16.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
-	github.com/aclindsa/ofxgo v0.1.3 // indirect
 	github.com/aclindsa/xml v0.0.0-20201125035057-bbd5c9ec99ac // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect

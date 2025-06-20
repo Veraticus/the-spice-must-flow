@@ -325,7 +325,7 @@ func (s *SQLiteStorage) DeleteCategory(ctx context.Context, id int) error {
 		SELECT COUNT(*) 
 		FROM classifications 
 		WHERE category = (SELECT name FROM categories WHERE id = ?)`
-	
+
 	if err := s.db.QueryRowContext(ctx, checkQuery, id).Scan(&usageCount); err != nil {
 		return fmt.Errorf("failed to check category usage: %w", err)
 	}
@@ -411,7 +411,7 @@ func (t *sqliteTransaction) DeleteCategory(ctx context.Context, id int) error {
 		SELECT COUNT(*) 
 		FROM classifications 
 		WHERE category = (SELECT name FROM categories WHERE id = ?)`
-	
+
 	if err := t.tx.QueryRowContext(ctx, checkQuery, id).Scan(&usageCount); err != nil {
 		return fmt.Errorf("failed to check category usage: %w", err)
 	}

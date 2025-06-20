@@ -271,21 +271,21 @@ func TestGlobPatterns(t *testing.T) {
 		expected int
 	}{
 		{
-			name:    "all QFX files",
-			pattern: "*.qfx",
-			files:   []string{"jan.qfx", "feb.qfx", "data.csv"},
+			name:     "all QFX files",
+			pattern:  "*.qfx",
+			files:    []string{"jan.qfx", "feb.qfx", "data.csv"},
 			expected: 2,
 		},
 		{
-			name:    "specific month pattern",
-			pattern: "*jan*.qfx",
-			files:   []string{"jan2024.qfx", "february.qfx", "january.qfx"},
+			name:     "specific month pattern",
+			pattern:  "*jan*.qfx",
+			files:    []string{"jan2024.qfx", "february.qfx", "january.qfx"},
 			expected: 2,
 		},
 		{
-			name:    "no matches",
-			pattern: "*.ofx",
-			files:   []string{"jan.qfx", "feb.qfx"},
+			name:     "no matches",
+			pattern:  "*.ofx",
+			files:    []string{"jan.qfx", "feb.qfx"},
 			expected: 0,
 		},
 	}

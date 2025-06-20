@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/simplefin"
 	"github.com/spf13/cobra"
@@ -58,7 +58,7 @@ func runTestSimpleFIN(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to fetch accounts: %w", err)
 	}
 
-	slog.Info("✅ Connected to SimpleFIN", 
+	slog.Info("✅ Connected to SimpleFIN",
 		"accounts_found", len(accounts))
 
 	for i, accountID := range accounts {

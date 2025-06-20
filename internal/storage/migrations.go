@@ -167,6 +167,33 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     7,
+		Description: "Add checkpoint metadata table",
+		Up: func(tx *sql.Tx) error {
+			queries := []string{
+				`CREATE TABLE IF NOT EXISTS checkpoint_metadata (
+					id TEXT PRIMARY KEY,
+					created_at DATETIME NOT NULL,
+					description TEXT,
+					file_size INTEGER,
+					row_counts TEXT,
+					schema_version INTEGER,
+					is_auto BOOLEAN DEFAULT 0,
+					parent_checkpoint TEXT
+				)`,
+				`CREATE INDEX idx_checkpoint_metadata_created_at ON checkpoint_metadata(created_at)`,
+				`CREATE INDEX idx_checkpoint_metadata_is_auto ON checkpoint_metadata(is_auto)`,
+			}
+
+			for _, query := range queries {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("failed to execute query '%s': %w", query, err)
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.

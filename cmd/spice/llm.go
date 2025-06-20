@@ -5,10 +5,11 @@ import (
 	"os"
 	"time"
 
+	"log/slog"
+
 	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
 	"github.com/joshsymonds/the-spice-must-flow/internal/llm"
 	"github.com/spf13/viper"
-	"log/slog"
 )
 
 // createLLMClient creates an LLM client based on configuration.
@@ -84,7 +85,7 @@ func createLLMClient() (engine.Classifier, error) {
 	case "claudecode":
 		// Claude Code doesn't need an API key
 		config.APIKey = ""
-		
+
 		// Set default model if not specified
 		if config.Model == "" {
 			config.Model = "claude-3-opus-20240229"

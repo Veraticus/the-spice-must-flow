@@ -39,6 +39,7 @@ func init() {
 	// Add commands
 	rootCmd.AddCommand(authCmd())
 	rootCmd.AddCommand(categoriesCmd())
+	rootCmd.AddCommand(checkpointCmd())
 	rootCmd.AddCommand(classifyCmd())
 	rootCmd.AddCommand(importCmd())
 	rootCmd.AddCommand(vendorsCmd())

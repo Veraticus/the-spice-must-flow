@@ -63,7 +63,7 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 	}
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -154,7 +154,7 @@ func (s *SQLiteStorage) getTransactionsToClassifyTx(ctx context.Context, q query
 			WHERE c.transaction_id IS NULL
 		`
 	}
-	
+
 	args := []any{}
 
 	if fromDate != nil {
@@ -193,7 +193,7 @@ func (s *SQLiteStorage) getTransactionsToClassifyTx(ctx context.Context, q query
 			if err != nil {
 				return nil, fmt.Errorf("failed to scan transaction: %w", err)
 			}
-			
+
 			// Parse categories JSON
 			if categoriesJSON.Valid && categoriesJSON.String != "" {
 				if err := json.Unmarshal([]byte(categoriesJSON.String), &txn.Category); err != nil {
@@ -201,7 +201,7 @@ func (s *SQLiteStorage) getTransactionsToClassifyTx(ctx context.Context, q query
 					slog.Warn("Failed to parse categories JSON", "error", err, "json", categoriesJSON.String)
 				}
 			}
-			
+
 			// Set type and check number
 			if txType.Valid {
 				txn.Type = txType.String
@@ -224,7 +224,7 @@ func (s *SQLiteStorage) getTransactionsToClassifyTx(ctx context.Context, q query
 			if err != nil {
 				return nil, fmt.Errorf("failed to scan transaction: %w", err)
 			}
-			
+
 			// Parse categories from old plaid_categories column
 			if categoriesJSON.Valid && categoriesJSON.String != "" {
 				// Try to parse as JSON array first
@@ -281,7 +281,7 @@ func (s *SQLiteStorage) getTransactionByIDTx(ctx context.Context, q queryable, i
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
-	
+
 	// Parse categories JSON
 	if categories.Valid && categories.String != "" {
 		if err := json.Unmarshal([]byte(categories.String), &txn.Category); err != nil {

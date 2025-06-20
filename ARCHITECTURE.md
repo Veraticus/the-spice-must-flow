@@ -539,6 +539,25 @@ The categorization system uses a dynamic, learning-based approach where categori
 5. User decides → Create new or map to existing
 ```
 
+### **Category Descriptions**
+
+Categories now include AI-generated descriptions to improve classification accuracy:
+
+```go
+type Category struct {
+    ID          int
+    Name        string
+    Description string    // AI-generated explanation of what belongs here
+    CreatedAt   time.Time
+    IsActive    bool
+}
+```
+
+When creating categories via CLI:
+- Descriptions are automatically generated using the configured LLM
+- Users can override with custom descriptions
+- Descriptions help both humans and AI understand category boundaries
+
 ### **Example Flow**
 
 ```bash
@@ -581,7 +600,203 @@ Or start empty and let categories emerge naturally.
 
 ---
 
-## **6. Implementation Details**
+## **6. LLM Integration**
+
+### **Overview**
+
+The application supports multiple LLM providers for intelligent transaction classification and category description generation:
+
+- **OpenAI** (GPT-3.5, GPT-4)
+- **Anthropic** (Claude 3 Opus, Claude 3 Sonnet)
+- **Claude Code** (Local Claude CLI integration)
+
+### **LLM Client Architecture**
+
+```go
+// Client interface for all LLM providers
+type Client interface {
+    Classify(ctx context.Context, prompt string) (ClassificationResponse, error)
+    GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error)
+}
+
+// Unified configuration
+type Config struct {
+    Provider       string  // "openai", "anthropic", or "claudecode"
+    APIKey         string
+    Model          string
+    Temperature    float64
+    MaxTokens      int
+    ClaudeCodePath string  // Path to claude CLI for claudecode provider
+}
+```
+
+### **Features**
+
+1. **Unified Interface**: Single interface supports all providers
+2. **Intelligent Caching**: Reduces API calls and costs
+3. **Rate Limiting**: Prevents API throttling
+4. **Retry Logic**: Handles transient failures gracefully
+5. **Cost Tracking**: Logs API usage for cost monitoring
+
+### **Claude Code Integration**
+
+Special support for local Claude CLI:
+```yaml
+llm:
+  provider: claudecode
+  claude_code_path: /path/to/claude  # Custom CLI path
+  model: sonnet
+```
+
+Benefits:
+- No API keys required
+- Works offline with Claude Code
+- Supports custom Claude installations
+
+---
+
+## **7. Category Management System**
+
+### **CLI Commands**
+
+Complete CRUD operations for categories:
+
+```bash
+# List all categories with descriptions
+spice categories list
+
+# Add new category with AI description
+spice categories add "Healthcare"
+
+# Add with custom description
+spice categories add "Pets" --description "Pet supplies, vet visits, grooming"
+
+# Skip AI description generation
+spice categories add "Misc" --no-description
+
+# Update category
+spice categories update <id> --name "New Name"
+spice categories update <id> --description "New description"
+spice categories update <id> --regenerate  # New AI description
+
+# Delete category (soft delete)
+spice categories delete <id> [--force]
+```
+
+### **Storage Interface**
+
+```go
+type Storage interface {
+    // Category operations
+    GetCategories(ctx context.Context) ([]model.Category, error)
+    GetCategoryByName(ctx context.Context, name string) (*model.Category, error)
+    CreateCategory(ctx context.Context, name, description string) (*model.Category, error)
+    UpdateCategory(ctx context.Context, id int, name, description string) error
+    DeleteCategory(ctx context.Context, id int) error
+}
+```
+
+### **Features**
+
+1. **AI-Generated Descriptions**: Automatic helpful descriptions for new categories
+2. **Soft Deletes**: Categories marked inactive, not removed
+3. **Usage Protection**: Can't delete categories with classified transactions
+4. **Description Regeneration**: Update descriptions with latest AI models
+
+---
+
+## **8. Database Checkpoint System**
+
+### **Overview**
+
+A comprehensive checkpoint system provides database backups, rollback capabilities, and configuration sharing:
+
+```
+~/.local/share/spice/
+├── spice.db              # Active database
+└── checkpoints/
+    ├── before-import.db
+    ├── before-import.meta.json
+    └── checkpoint-2024-06-20-1430.db
+```
+
+### **Checkpoint Commands**
+
+```bash
+# Create checkpoint
+spice checkpoint create --tag "before-year-end"
+spice checkpoint create  # Auto-named: checkpoint-YYYY-MM-DD-HHMM
+
+# List checkpoints with metadata
+spice checkpoint list
+NAME                CREATED              SIZE    TRANSACTIONS  CATEGORIES
+before-import      2024-06-20 14:30:00  1.2MB   1,234         15
+year-end-backup    2024-12-31 23:59:00  2.1MB   3,456         22
+
+# Restore checkpoint
+spice checkpoint restore before-import
+> This will replace your current database. Continue? (y/N)
+
+# Compare checkpoints
+spice checkpoint diff before-import current
++ 222 new transactions
++ 3 new categories
+~ 45 recategorized transactions
+
+# Export for sharing
+spice checkpoint export before-import --output my-categories.spice
+
+# Import shared checkpoint
+spice checkpoint import colleague-categories.spice
+```
+
+### **Auto-Checkpoint Integration**
+
+Automatic checkpoints before risky operations:
+```bash
+spice import --auto-checkpoint     # Creates checkpoint before import
+spice classify --reset-vendors     # Auto-checkpoint before reset
+```
+
+### **Checkpoint Metadata**
+
+Each checkpoint stores:
+```json
+{
+  "created_at": "2024-06-20T14:30:00Z",
+  "description": "Before Q2 import",
+  "file_size": 1258291,
+  "row_counts": {
+    "transactions": 1234,
+    "categories": 15,
+    "vendors": 89,
+    "classifications": 1234
+  },
+  "schema_version": 6,
+  "is_auto": false
+}
+```
+
+### **Configuration**
+
+```yaml
+checkpoint:
+  auto_checkpoint: true      # Enable auto-checkpoints
+  retention_days: 30        # Auto-cleanup old checkpoints
+  max_checkpoints: 10       # Limit checkpoint count
+```
+
+### **Use Cases**
+
+1. **Before Major Imports**: Safely import new data
+2. **Category Experiments**: Try new categorization schemes
+3. **Sharing Configurations**: Export/import category setups
+4. **Disaster Recovery**: Restore from corruption
+5. **Historical Analysis**: Compare spending over time
+
+---
+
+## **9. Implementation Details**
 
 ### **Retry Logic Implementation**
 

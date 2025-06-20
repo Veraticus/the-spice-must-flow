@@ -11,9 +11,9 @@ import (
 
 // AuthState represents the saved SimpleFIN authentication state
 type AuthState struct {
-	AccessURL   string    `json:"access_url"`
-	ClaimedAt   time.Time `json:"claimed_at"`
-	ClaimToken  string    `json:"claim_token_hash"` // Store hash for tracking
+	AccessURL  string    `json:"access_url"`
+	ClaimedAt  time.Time `json:"claimed_at"`
+	ClaimToken string    `json:"claim_token_hash"` // Store hash for tracking
 }
 
 // LoadOrClaimAuth loads existing auth or claims a new token
@@ -51,7 +51,7 @@ func LoadOrClaimAuth(token string) (*AuthState, error) {
 	if err := saveAuthState(stateFile, newAuth); err != nil {
 		return nil, fmt.Errorf("failed to save auth state: %w", err)
 	}
-	
+
 	slog.Info("Successfully claimed and saved SimpleFIN access URL",
 		"state_file", stateFile)
 

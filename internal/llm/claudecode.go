@@ -27,7 +27,7 @@ func newClaudeCodeClient(cfg Config) (Client, error) {
 	if cliPath == "" {
 		cliPath = "claude"
 	}
-	
+
 	// Check if claude CLI is available
 	if _, err := exec.LookPath(cliPath); err != nil {
 		return nil, fmt.Errorf("claude CLI not found at %s: ensure @anthropic-ai/claude-code is installed", cliPath)

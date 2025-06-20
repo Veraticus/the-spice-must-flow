@@ -379,7 +379,7 @@ func TestSQLiteStorage_VendorOperations(t *testing.T) {
 			store, cleanup := createTestStorage(t)
 			defer cleanup()
 			ctx := context.Background()
-			
+
 			// Seed required categories for vendor tests
 			categories := []string{"Coffee & Dining", "Online Shopping", "Shopping", "Test"}
 			for _, cat := range categories {
@@ -418,7 +418,7 @@ func TestSQLiteStorage_GetAllVendors(t *testing.T) {
 				_, _ = s.CreateCategory(ctx, "Cat1")
 				_, _ = s.CreateCategory(ctx, "Cat2")
 				_, _ = s.CreateCategory(ctx, "Cat3")
-				
+
 				vendors := []*model.Vendor{
 					{Name: "Vendor1", Category: "Cat1", UseCount: 1},
 					{Name: "Vendor2", Category: "Cat2", UseCount: 2},
@@ -513,7 +513,7 @@ func TestSQLiteStorage_ClassificationOperations(t *testing.T) {
 			store, cleanup := createTestStorage(t)
 			defer cleanup()
 			ctx := context.Background()
-			
+
 			// Seed required categories for this test
 			if _, err := store.CreateCategory(ctx, "Food & Dining"); err != nil {
 				t.Fatalf("Failed to create Food & Dining category: %v", err)

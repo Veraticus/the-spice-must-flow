@@ -7,13 +7,16 @@ A personal finance categorization engine that ingests financial transactions fro
 ## Features
 
 - 🏦 **Plaid Integration**: Automatically import transactions from your bank accounts
-- 🤖 **AI-Powered Categorization**: Uses OpenAI or Anthropic to intelligently categorize transactions
+- 🤖 **AI-Powered Categorization**: Uses OpenAI, Anthropic, or Claude Code to intelligently categorize transactions
 - 📊 **Google Sheets Export**: Export categorized transactions to Google Sheets for reporting
 - 🔄 **Smart Deduplication**: SHA256 hashing prevents duplicate transaction processing
 - 📚 **Learning System**: Remembers vendor categorizations to auto-categorize future transactions
 - 🎯 **Batch Processing**: Groups transactions by merchant for efficient review
 - 💾 **Resume Support**: Classification sessions can be paused and resumed
 - 🎨 **Beautiful CLI**: Interactive command-line interface with progress indicators
+- 🏷️ **Dynamic Categories**: Categories evolve based on your spending patterns with AI-generated descriptions
+- 💾 **Database Checkpoints**: Save and restore database states for safe experimentation
+- 🤝 **Category Sharing**: Export and import category configurations with colleagues
 
 ## Installation
 
@@ -91,6 +94,11 @@ llm:
   provider: "openai"  # Options: openai, anthropic, claudecode
   openai_api_key: "your-openai-api-key"
   # anthropic_api_key: "your-anthropic-api-key"  # If using Anthropic
+  
+  # For Claude Code (local CLI):
+  # provider: "claudecode"
+  # claude_code_path: "/path/to/claude"  # Optional, defaults to "claude"
+  
   model: "gpt-4"
   temperature: 0.0
 
@@ -249,6 +257,26 @@ export SPICE_CLASSIFICATION_BATCH_SIZE="50"
 export SPICE_LOGGING_LEVEL="debug"
 ```
 
+### Using Claude Code (Local LLM)
+
+Claude Code provides a free, local alternative to API-based LLMs:
+
+```yaml
+# In config.yaml
+llm:
+  provider: "claudecode"
+  claude_code_path: "/home/user/.npm-global/bin/claude"  # Optional custom path
+  model: "sonnet"  # or "opus", "haiku"
+```
+
+Benefits:
+- No API keys required
+- Works offline once installed
+- No usage costs
+- Categories get AI-generated descriptions locally
+
+Note: Requires Claude Code CLI to be installed (`npm install -g @anthropic-ai/claude-code`).
+
 ## Usage
 
 ### 1. Connect Your Bank Accounts
@@ -321,7 +349,29 @@ The import command automatically:
 - Merges transactions seamlessly
 - Handles errors gracefully (if one bank fails, others still import)
 
-### 3. Classify Transactions
+### 3. Manage Categories
+
+Categories are dynamically created and managed. Use AI to generate helpful descriptions:
+
+```bash
+# List all categories
+spice categories list
+
+# Add new category with AI-generated description
+spice categories add "Healthcare"
+
+# Add with custom description
+spice categories add "Pets" --description "Pet supplies, vet visits, grooming"
+
+# Update category name or description
+spice categories update 5 --name "Medical & Health"
+spice categories update 5 --regenerate  # Generate new AI description
+
+# Delete unused category
+spice categories delete 5
+```
+
+### 4. Classify Transactions
 
 Run the AI-powered classification workflow:
 
@@ -334,9 +384,10 @@ spice classify
 # - Use AI to suggest categories
 # - Let you review and approve/modify suggestions
 # - Learn from your decisions for future classifications
+# - Suggest new categories when confidence is low
 ```
 
-### 4. Export to Google Sheets
+### 5. Export to Google Sheets
 
 Export your categorized transactions:
 
@@ -351,6 +402,34 @@ spice export --month 2024-01
 spice export --from 2024-01-01 --to 2024-03-31
 ```
 
+### 6. Database Checkpoints
+
+Save and restore your database state for safe experimentation:
+
+```bash
+# Create a checkpoint
+spice checkpoint create --tag "before-year-end"
+spice checkpoint create  # Auto-named with timestamp
+
+# List all checkpoints
+spice checkpoint list
+
+# Restore a checkpoint
+spice checkpoint restore before-year-end
+
+# Compare checkpoints
+spice checkpoint diff before-year-end current
+
+# Export checkpoint for sharing
+spice checkpoint export before-year-end --output my-categories.spice
+
+# Import shared checkpoint
+spice checkpoint import colleague-categories.spice
+
+# Auto-checkpoint before risky operations
+spice import --auto-checkpoint
+```
+
 ### Additional Commands
 
 ```bash
@@ -363,9 +442,21 @@ spice vendors list                    # List all vendor rules
 spice vendors add "Starbucks" "Food"  # Add manual rule
 spice vendors remove "Starbucks"      # Remove rule
 
+# Manage categories
+spice categories list                 # List all categories with descriptions
+spice categories add "Travel"         # Add with AI description
+spice categories update 5 --regenerate # Update with new AI description
+spice categories delete 5             # Soft delete category
+
 # Database operations
 spice migrate                         # Run database migrations
 spice flow                           # Run full workflow (import → classify → export)
+
+# Checkpoint management
+spice checkpoint create               # Create timestamped checkpoint
+spice checkpoint list                 # List all checkpoints
+spice checkpoint restore <name>       # Restore from checkpoint
+spice checkpoint diff <name>          # Compare with current state
 
 # Bank information
 spice institutions search "bank name" # Search for banks and see OAuth requirements
@@ -382,10 +473,10 @@ The project follows clean architecture principles with interface-driven design:
 ```
 cmd/spice/          # CLI commands using cobra
 internal/
-  model/            # Core domain models
+  model/            # Core domain models (Transaction, Category, Vendor)
   service/          # Service interfaces
-  storage/          # SQLite storage implementation
-  llm/              # AI classification service
+  storage/          # SQLite storage with migrations
+  llm/              # Multi-provider AI classification (OpenAI, Anthropic, Claude Code)
   plaid/            # Plaid API client
   sheets/           # Google Sheets export
   engine/           # Core orchestration logic
@@ -397,6 +488,8 @@ Key design patterns:
 - **Dependency Injection**: Clean separation of concerns
 - **Repository Pattern**: Abstract data access through interfaces
 - **Command Pattern**: CLI commands as self-contained units
+- **Dynamic Categories**: Categories evolve based on usage patterns
+- **Checkpoint System**: Database snapshots for safe experimentation
 
 ## Development
 

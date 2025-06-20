@@ -38,6 +38,7 @@ for later categorization. Transactions are deduplicated automatically.`,
 
 	// Other options
 	cmd.Flags().Bool("dry-run", false, "Show what would be imported without saving")
+	cmd.Flags().Bool("no-checkpoint", false, "Skip creating automatic checkpoint before import")
 
 	// Bind to viper
 	_ = viper.BindPFlag("import.start_date", cmd.Flags().Lookup("start-date"))
@@ -46,6 +47,7 @@ for later categorization. Transactions are deduplicated automatically.`,
 	_ = viper.BindPFlag("import.accounts", cmd.Flags().Lookup("accounts"))
 	_ = viper.BindPFlag("import.list_accounts", cmd.Flags().Lookup("list-accounts"))
 	_ = viper.BindPFlag("import.dry_run", cmd.Flags().Lookup("dry-run"))
+	_ = viper.BindPFlag("import.no_checkpoint", cmd.Flags().Lookup("no-checkpoint"))
 
 	return cmd
 }
@@ -137,6 +139,24 @@ func runImport(cmd *cobra.Command, _ []string) error {
 	store, err := storage.NewSQLiteStorage(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer store.Close()
+
+	// Create auto-checkpoint unless disabled
+	if !viper.GetBool("import.no_checkpoint") && !viper.GetBool("checkpoint.auto_checkpoint_disabled") {
+		slog.Info("🗄️  Creating automatic checkpoint before import...")
+
+		// Create checkpoint manager
+		manager, err := store.NewCheckpointManager()
+		if err != nil {
+			slog.Warn("Failed to create checkpoint manager", "error", err)
+		} else {
+			if err := manager.AutoCheckpoint(ctx, "import"); err != nil {
+				slog.Warn("Failed to create auto-checkpoint", "error", err)
+			} else {
+				slog.Info(cli.FormatSuccess("✓ Checkpoint created"))
+			}
+		}
 	}
 
 	// Save transactions

@@ -12,7 +12,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
-	
+
 	// Seed required categories for workflow test
 	categories := []string{"Coffee & Dining", "Online Shopping", "Shopping", "Groceries", "Transportation"}
 	for _, cat := range categories {
@@ -264,7 +264,7 @@ func TestSQLiteStorage_ResumableSession(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
-	
+
 	// Seed required category
 	if _, err := store.CreateCategory(ctx, "Test Category"); err != nil {
 		t.Fatalf("Failed to create Test Category: %v", err)
@@ -394,7 +394,7 @@ func TestSQLiteStorage_DataIntegrity(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
-	
+
 	// Seed required category
 	if _, err := store.CreateCategory(ctx, "Test Category"); err != nil {
 		t.Fatalf("Failed to create Test Category: %v", err)

@@ -17,7 +17,7 @@ func init() {
 	importOFXCmd := &cobra.Command{
 		Use:   "import-ofx [files...]",
 		Short: "Import transactions from OFX/QFX files",
-		Long:  `Import financial transactions from OFX or QFX (Quicken) files exported from your bank.
+		Long: `Import financial transactions from OFX or QFX (Quicken) files exported from your bank.
 
 Examples:
   # Import single file
@@ -31,8 +31,8 @@ Examples:
   
   # Import from multiple directories
   spice import-ofx ~/Downloads/Chase/*.qfx ~/Downloads/Ally/*.qfx`,
-		Args:  cobra.MinimumNArgs(1),
-		RunE:  runImportOFX,
+		Args: cobra.MinimumNArgs(1),
+		RunE: runImportOFX,
 	}
 
 	importOFXCmd.Flags().BoolP("dry-run", "d", false, "Preview import without saving")
@@ -96,7 +96,7 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 		// Parse OFX
 		transactions, err := parser.ParseFile(ctx, f)
 		f.Close()
-		
+
 		if err != nil {
 			slog.Error("Failed to parse OFX file",
 				"file", filePath,
@@ -150,12 +150,12 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to initialize storage: %w", err)
 		}
 		defer storageService.Close()
-		
+
 		// Save transactions
 		if err := storageService.SaveTransactions(ctx, allTransactions); err != nil {
 			return fmt.Errorf("failed to save transactions: %w", err)
 		}
-		
+
 		slog.Info("💾 Successfully saved transactions to database",
 			"total_count", len(allTransactions),
 			"unique_count", len(transactionMap))

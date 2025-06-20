@@ -17,7 +17,7 @@
 //		db := testutil.SetupTestDBWithBuilder(t, func(b categories.Builder) categories.Builder {
 //			return b.WithBasicCategories()
 //		})
-//		
+//
 //		// Use db.Storage for your test...
 //	}
 //
@@ -29,7 +29,7 @@
 //		db := testutil.SetupTestDBWithBuilder(t, func(b categories.Builder) categories.Builder {
 //			return b.WithFixture(categories.FixtureStandard)
 //		})
-//		
+//
 //		// Categories from FixtureStandard are now available
 //	}
 //
@@ -44,7 +44,7 @@
 //				WithCategory("Special Category").
 //				WithCategories("Cat1", "Cat2", "Cat3")
 //		})
-//		
+//
 //		// Access categories via db.Categories
 //		groceries := db.Categories.MustFind(t, categories.CategoryGroceries)
 //	}

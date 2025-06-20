@@ -88,7 +88,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to check for unclassified transactions: %w", err)
 		}
-		
+
 		// Filter unclassified transactions to our date range
 		var unclassifiedInRange []model.Transaction
 		for _, tx := range unclassifiedTxns {
@@ -96,7 +96,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 				unclassifiedInRange = append(unclassifiedInRange, tx)
 			}
 		}
-		
+
 		// Check if we have unclassified transactions
 		if len(unclassifiedInRange) > 0 {
 			var exampleMerchants []string
@@ -105,7 +105,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 					exampleMerchants = append(exampleMerchants, tx.MerchantName)
 				}
 			}
-			
+
 			errorMsg := fmt.Sprintf("cannot export: %d transactions are not classified", len(unclassifiedInRange))
 			if len(exampleMerchants) > 0 {
 				errorMsg += fmt.Sprintf(" (e.g., %s)", strings.Join(exampleMerchants, ", "))
@@ -113,7 +113,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 			errorMsg += "\nRun 'spice classify' to categorize all transactions first"
 			return fmt.Errorf(errorMsg)
 		}
-		
+
 		// For full year exports, validate we have adequate data coverage
 		// Use classifications as a proxy for transaction coverage
 		if month == "" {
@@ -295,12 +295,12 @@ func validateDataCoverageFromClassifications(classifications []model.Classificat
 
 	// Find gaps of 30+ days
 	var gaps []string
-	
+
 	// Check gap at start
 	firstTransaction := sortedClassifications[0].Transaction.Date
 	startGap := int(firstTransaction.Sub(start).Hours() / 24)
 	if startGap >= 30 {
-		gaps = append(gaps, fmt.Sprintf("%s to %s (%d days)", 
+		gaps = append(gaps, fmt.Sprintf("%s to %s (%d days)",
 			start.Format("Jan 2, 2006"),
 			firstTransaction.AddDate(0, 0, -1).Format("Jan 2, 2006"),
 			startGap))
@@ -310,12 +310,12 @@ func validateDataCoverageFromClassifications(classifications []model.Classificat
 	for i := 0; i < len(sortedClassifications)-1; i++ {
 		current := sortedClassifications[i].Transaction.Date
 		next := sortedClassifications[i+1].Transaction.Date
-		
+
 		// Calculate gap between transactions (exclusive of transaction dates)
 		gapStart := current.AddDate(0, 0, 1)
 		gapEnd := next.AddDate(0, 0, -1)
 		gapDays := int(gapEnd.Sub(gapStart).Hours()/24) + 1
-		
+
 		if gapDays >= 30 {
 			gaps = append(gaps, fmt.Sprintf("%s to %s (%d days)",
 				gapStart.Format("Jan 2, 2006"),
@@ -346,8 +346,8 @@ func validateDataCoverageFromClassifications(classifications []model.Classificat
 	// Calculate overall coverage for info
 	actualStart := sortedClassifications[0].Transaction.Date
 	actualEnd := sortedClassifications[len(sortedClassifications)-1].Transaction.Date
-	requiredDays := int(end.Sub(start).Hours() / 24) + 1
-	actualDays := int(actualEnd.Sub(actualStart).Hours() / 24) + 1
+	requiredDays := int(end.Sub(start).Hours()/24) + 1
+	actualDays := int(actualEnd.Sub(actualStart).Hours()/24) + 1
 	coveragePercent := float64(actualDays) / float64(requiredDays) * 100
 
 	slog.Info(cli.FormatInfo(fmt.Sprintf("Data coverage: %s to %s (%.0f%% of requested period)",

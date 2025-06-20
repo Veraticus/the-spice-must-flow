@@ -23,7 +23,7 @@ func Example_basicUsage() {
 	// Use the storage for your test
 	ctx := context.Background()
 	cats, _ := db.Storage.GetCategories(ctx)
-	
+
 	// Categories are available for use
 	for _, cat := range cats {
 		_ = cat.Name // Use category
@@ -83,9 +83,9 @@ func TestComplexScenario(t *testing.T) {
 	// Set up database with all required categories
 	db := testutil.SetupTestDBWithBuilder(t, func(b categories.Builder) categories.Builder {
 		return b.
-			WithFixture(categories.FixtureStandard).     // Common categories
-			WithCategory("Special Promotion").           // Test-specific
-			WithCategories("Refund", "Cashback")         // Additional test categories
+			WithFixture(categories.FixtureStandard). // Common categories
+			WithCategory("Special Promotion").       // Test-specific
+			WithCategories("Refund", "Cashback")     // Additional test categories
 	})
 
 	ctx := context.Background()
@@ -186,7 +186,7 @@ func TestTableDrivenWithCategories(t *testing.T) {
 			},
 		},
 		{
-			name: "comprehensive test",
+			name:       "comprehensive test",
 			categories: []categories.CategoryName{}, // Will use fixture instead
 			test: func(t *testing.T, storage service.Storage) {
 				// Test logic needing many categories
@@ -197,7 +197,7 @@ func TestTableDrivenWithCategories(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var db *testutil.TestDB
-			
+
 			if len(tt.categories) == 0 {
 				// Use comprehensive fixture for tests needing many categories
 				db = testutil.SetupTestDBWithBuilder(t, func(b categories.Builder) categories.Builder {

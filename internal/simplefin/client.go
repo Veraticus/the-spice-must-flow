@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -50,7 +50,7 @@ func NewClient(token string) (*SimpleFINClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load/claim auth: %w", err)
 	}
-	
+
 	return &SimpleFINClient{
 		accessURL: auth.AccessURL,
 		httpClient: &http.Client{
@@ -71,47 +71,47 @@ func claimToken(token string) (string, error) {
 			return "", fmt.Errorf("failed to decode SimpleFIN token: %w", err)
 		}
 	}
-	
+
 	claimURL := string(decodedBytes)
-	
+
 	// Validate it's a proper URL
 	if !strings.HasPrefix(claimURL, "http://") && !strings.HasPrefix(claimURL, "https://") {
 		return "", fmt.Errorf("decoded token is not a valid URL: %s", claimURL)
 	}
-	
+
 	// Create HTTP client
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 	}
-	
+
 	// Claim the access URL by POSTing to the claim URL
 	req, err := http.NewRequest("POST", claimURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create claim request: %w", err)
 	}
-	
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to claim access URL: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("failed to claim SimpleFIN access: %d - %s", resp.StatusCode, string(body))
 	}
-	
+
 	// Read the access URL from the response
 	accessURLBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read access URL: %w", err)
 	}
-	
+
 	accessURL := strings.TrimSpace(string(accessURLBytes))
 	if !strings.HasPrefix(accessURL, "http://") && !strings.HasPrefix(accessURL, "https://") {
 		return "", fmt.Errorf("invalid access URL received: %s", accessURL)
 	}
-	
+
 	return accessURL, nil
 }
 
@@ -119,25 +119,25 @@ func claimToken(token string) (string, error) {
 func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error) {
 	// SimpleFIN uses the access URL with /accounts endpoint
 	baseURL := c.accessURL + "/accounts"
-	
+
 	// Parse URL to add query parameters
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
-	
+
 	// Add query parameters for date range
 	q := u.Query()
 	q.Set("start-date", fmt.Sprintf("%d", startDate.Unix()))
 	// Note: end-date in SimpleFIN is exclusive, so we add 1 day
 	q.Set("end-date", fmt.Sprintf("%d", endDate.AddDate(0, 0, 1).Unix()))
 	u.RawQuery = q.Encode()
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	slog.Debug("Requesting SimpleFIN transactions",
 		"start_date", startDate.Format("2006-01-02"),
 		"end_date", endDate.Format("2006-01-02"),
@@ -184,7 +184,7 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 
 			// SimpleFIN doesn't provide categories
 			var categories []string
-			
+
 			// Try to infer transaction type from description or payee
 			transactionType := inferTransactionType(tx.Description, tx.Payee)
 
@@ -265,22 +265,22 @@ func parseAmount(amountStr string) (float64, error) {
 func normalizeMerchant(raw string) string {
 	// This is a simple implementation - we'll enhance it later
 	merchant := strings.TrimSpace(raw)
-	
+
 	// Remove common suffixes
 	merchant = strings.TrimSuffix(merchant, " LLC")
 	merchant = strings.TrimSuffix(merchant, " INC")
 	merchant = strings.TrimSuffix(merchant, " CORP")
-	
+
 	// Title case
 	merchant = strings.Title(strings.ToLower(merchant))
-	
+
 	return merchant
 }
 
 // inferTransactionType tries to guess transaction type from description/payee
 func inferTransactionType(description, payee string) string {
 	combined := strings.ToLower(description + " " + payee)
-	
+
 	// Check for common patterns
 	switch {
 	case strings.Contains(combined, "check #") || strings.Contains(combined, "check paid"):
@@ -304,4 +304,3 @@ func inferTransactionType(description, payee string) string {
 		return "DEBIT"
 	}
 }
-

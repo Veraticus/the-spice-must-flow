@@ -61,11 +61,11 @@ func listCategoriesCmd() *cobra.Command {
 
 			// Header
 			headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-			fmt.Fprintf(w, "%s\t%s\t%s\n", 
+			fmt.Fprintf(w, "%s\t%s\t%s\n",
 				headerStyle.Render("ID"),
 				headerStyle.Render("Name"),
 				headerStyle.Render("Description"))
-			fmt.Fprintf(w, "%s\t%s\t%s\n", 
+			fmt.Fprintf(w, "%s\t%s\t%s\n",
 				strings.Repeat("-", 4),
 				strings.Repeat("-", 20),
 				strings.Repeat("-", 50))
@@ -122,12 +122,12 @@ func addCategoryCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("failed to initialize LLM: %w", err)
 				}
-				
+
 				// Classifiers from llm package implement Close via embedded Classifier interface
 				if closer, ok := classifier.(interface{ Close() error }); ok {
 					defer closer.Close()
 				}
-				
+
 				description, err = classifier.GenerateCategoryDescription(ctx, categoryName)
 				if err != nil {
 					return fmt.Errorf("failed to generate category description: %w", err)
@@ -164,24 +164,25 @@ func updateCategoryCmd() *cobra.Command {
 	var (
 		categoryName        string
 		categoryDescription string
+		regenerateDesc      bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a category",
-		Long:  `Update the name or description of an existing category.`,
+		Long:  `Update the name or description of an existing category. Use --regenerate to create a new AI-generated description.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			
+
 			// Parse category ID
 			id, err := strconv.Atoi(args[0])
 			if err != nil {
 				return fmt.Errorf("invalid category ID: %w", err)
 			}
 
-			if categoryName == "" && categoryDescription == "" {
-				return fmt.Errorf("must specify --name or --description to update")
+			if categoryName == "" && categoryDescription == "" && !regenerateDesc {
+				return fmt.Errorf("must specify --name, --description, or --regenerate to update")
 			}
 
 			// Initialize storage with auto-migration
@@ -216,7 +217,24 @@ func updateCategoryCmd() *cobra.Command {
 			}
 
 			description := currentCategory.Description
-			if categoryDescription != "" {
+			if regenerateDesc {
+				// Generate new description using LLM
+				classifier, err := createLLMClient()
+				if err != nil {
+					return fmt.Errorf("failed to initialize LLM: %w", err)
+				}
+
+				// Classifiers from llm package implement Close via embedded Classifier interface
+				if closer, ok := classifier.(interface{ Close() error }); ok {
+					defer closer.Close()
+				}
+
+				generatedDesc, err := classifier.GenerateCategoryDescription(ctx, name)
+				if err != nil {
+					return fmt.Errorf("failed to generate category description: %w", err)
+				}
+				description = generatedDesc
+			} else if categoryDescription != "" {
 				description = categoryDescription
 			}
 
@@ -226,12 +244,16 @@ func updateCategoryCmd() *cobra.Command {
 			}
 
 			fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Updated category %d", id)))
+			if regenerateDesc {
+				fmt.Printf("  Description: %s\n", description)
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&categoryName, "name", "", "New category name")
 	cmd.Flags().StringVar(&categoryDescription, "description", "", "New category description")
+	cmd.Flags().BoolVar(&regenerateDesc, "regenerate", false, "Regenerate description using AI")
 
 	return cmd
 }
@@ -246,7 +268,7 @@ func deleteCategoryCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			
+
 			// Parse category ID
 			id, err := strconv.Atoi(args[0])
 			if err != nil {

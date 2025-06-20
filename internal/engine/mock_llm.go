@@ -105,7 +105,7 @@ func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Tr
 	if confidence < 0.9 && !isNew {
 		isNew = true
 	}
-	
+
 	// Generate description for new categories
 	if isNew && description == "" {
 		description = fmt.Sprintf("Expenses related to %s", strings.ToLower(category))

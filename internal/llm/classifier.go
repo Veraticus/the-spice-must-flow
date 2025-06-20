@@ -222,17 +222,17 @@ func (c *Classifier) buildPrompt(txn model.Transaction, categories []string) str
 		txn.Amount,
 		txn.Date.Format("2006-01-02"),
 		txn.Name)
-	
+
 	// Include transaction type if available
 	if txn.Type != "" {
 		transactionDetails += fmt.Sprintf("\nTransaction Type: %s", txn.Type)
 	}
-	
+
 	// Include check number if it's a check
 	if txn.CheckNumber != "" {
 		transactionDetails += fmt.Sprintf("\nCheck Number: %s", txn.CheckNumber)
 	}
-	
+
 	// Include category hints if available (from any source)
 	if len(txn.Category) > 0 {
 		categoryHint := strings.Join(txn.Category, " > ")
@@ -297,7 +297,7 @@ The description should:
 Respond with ONLY the description text, no additional formatting or explanation.`, categoryName)
 
 	var description string
-	
+
 	// Use common retry logic
 	err := common.WithRetry(ctx, func() error {
 		response, err := c.client.GenerateDescription(ctx, prompt)
@@ -307,7 +307,7 @@ Respond with ONLY the description text, no additional formatting or explanation.
 				"category", categoryName)
 			return &common.RetryableError{Err: err, Retryable: true}
 		}
-		
+
 		description = response.Description
 		return nil
 	}, c.retryOpts)

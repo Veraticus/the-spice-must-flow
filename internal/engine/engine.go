@@ -63,17 +63,17 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 	if err != nil {
 		return fmt.Errorf("failed to load categories: %w", err)
 	}
-	
+
 	if len(categories) == 0 {
 		return fmt.Errorf("no categories found in database - please run migrations first")
 	}
-	
+
 	// Convert to string slice for LLM
 	categoryNames := make([]string, len(categories))
 	for i, cat := range categories {
 		categoryNames[i] = cat.Name
 	}
-	
+
 	slog.Info("Loaded categories", "count", len(categories))
 
 	// Load previous progress
@@ -468,12 +468,12 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 	if err != nil {
 		return fmt.Errorf("failed to check category existence: %w", err)
 	}
-	
+
 	// Category already exists
 	if existingCategory != nil {
 		return nil
 	}
-	
+
 	// Use LLM to generate a proper description for the category
 	description, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
 	if err != nil {
@@ -483,15 +483,15 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 			"error", err)
 		description = fmt.Sprintf("Category for %s related expenses", categoryName)
 	}
-	
+
 	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description)
 	if err != nil {
 		return fmt.Errorf("failed to create category: %w", err)
 	}
-	
+
 	slog.Info("Created new category",
 		"category", newCategory.Name,
 		"id", newCategory.ID)
-	
+
 	return nil
 }

@@ -325,7 +325,7 @@ func TestSQLiteStorage_TransactionClassificationState(t *testing.T) {
 	store, cleanup := createTestStorage(t)
 	defer cleanup()
 	ctx := context.Background()
-	
+
 	// Seed required categories
 	categories := []string{"Food", "Transport", "Shopping"}
 	for _, cat := range categories {
