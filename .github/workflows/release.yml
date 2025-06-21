@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  GO_VERSION: '1.24.3'
+  GO_VERSION: '1.23'
 
 permissions:
   contents: write
@@ -54,7 +54,7 @@ jobs:
             - go mod download
         builds:
           - id: the-spice-must-flow
-            main: ./cmd/the-spice-must-flow
+            main: ./cmd/spice
             binary: the-spice-must-flow
             env:
               - CGO_ENABLED=0
