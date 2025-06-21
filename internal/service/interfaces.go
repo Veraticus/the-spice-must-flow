@@ -35,6 +35,15 @@ type Storage interface {
 	UpdateCategory(ctx context.Context, id int, name, description string) error
 	DeleteCategory(ctx context.Context, id int) error
 
+	// Check pattern operations
+	CreateCheckPattern(ctx context.Context, pattern *model.CheckPattern) error
+	GetCheckPattern(ctx context.Context, id int64) (*model.CheckPattern, error)
+	GetActiveCheckPatterns(ctx context.Context) ([]model.CheckPattern, error)
+	GetMatchingCheckPatterns(ctx context.Context, txn model.Transaction) ([]model.CheckPattern, error)
+	UpdateCheckPattern(ctx context.Context, pattern *model.CheckPattern) error
+	DeleteCheckPattern(ctx context.Context, id int64) error
+	IncrementCheckPatternUseCount(ctx context.Context, id int64) error
+
 	// Database management
 	Migrate(ctx context.Context) error
 	BeginTx(ctx context.Context) (Transaction, error)

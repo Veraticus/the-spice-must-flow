@@ -194,6 +194,48 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     8,
+		Description: "Add check patterns table for intelligent check categorization",
+		Up: func(tx *sql.Tx) error {
+			queries := []string{
+				`CREATE TABLE IF NOT EXISTS check_patterns (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					pattern_name TEXT NOT NULL,
+					amount_min REAL,
+					amount_max REAL,
+					check_number_pattern TEXT,
+					day_of_month_min INTEGER,
+					day_of_month_max INTEGER,
+					category TEXT NOT NULL,
+					notes TEXT,
+					confidence_boost REAL DEFAULT 0.3,
+					active BOOLEAN DEFAULT 1,
+					use_count INTEGER DEFAULT 0,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+				)`,
+				`CREATE INDEX idx_check_patterns_amount ON check_patterns(amount_min, amount_max)`,
+				`CREATE INDEX idx_check_patterns_active ON check_patterns(active)`,
+				`CREATE INDEX idx_check_patterns_category ON check_patterns(category)`,
+				// Add trigger to update updated_at timestamp
+				`CREATE TRIGGER update_check_patterns_timestamp
+				AFTER UPDATE ON check_patterns
+				FOR EACH ROW
+				WHEN NEW.updated_at = OLD.updated_at
+				BEGIN
+					UPDATE check_patterns SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+				END`,
+			}
+
+			for _, query := range queries {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("failed to execute query '%s': %w", query, err)
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.
