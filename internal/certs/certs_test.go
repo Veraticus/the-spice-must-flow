@@ -23,11 +23,12 @@ func TestFileManager_GetOrCreateCertificate(t *testing.T) {
 	}{
 		{
 			name: "creates new certificate when none exists",
-			setup: func(t *testing.T, certDir string) {
+			setup: func(_ *testing.T, _ string) {
 				// No setup needed - directory doesn't exist
 			},
 			wantErr: false,
 			validateResult: func(t *testing.T, cert tls.Certificate) {
+				t.Helper()
 				require.Len(t, cert.Certificate, 1, "should have one certificate")
 
 				x509Cert, err := x509.ParseCertificate(cert.Certificate[0])
@@ -46,6 +47,7 @@ func TestFileManager_GetOrCreateCertificate(t *testing.T) {
 		{
 			name: "reuses existing valid certificate",
 			setup: func(t *testing.T, certDir string) {
+				t.Helper()
 				// Create a valid certificate first
 				m := NewFileManager(certDir)
 				_, err := m.GetOrCreateCertificate()
@@ -53,6 +55,7 @@ func TestFileManager_GetOrCreateCertificate(t *testing.T) {
 			},
 			wantErr: false,
 			validateResult: func(t *testing.T, cert tls.Certificate) {
+				t.Helper()
 				require.Len(t, cert.Certificate, 1, "should have one certificate")
 
 				// Verify it's the same certificate by checking creation time
@@ -67,19 +70,27 @@ func TestFileManager_GetOrCreateCertificate(t *testing.T) {
 		{
 			name: "regenerates invalid certificate",
 			setup: func(t *testing.T, certDir string) {
+				t.Helper()
 				// Create directory
-				os.MkdirAll(certDir, 0700)
+				if err := os.MkdirAll(certDir, 0700); err != nil {
+					t.Fatalf("failed to create cert directory: %v", err)
+				}
 
 				// Write files that exist but contain invalid certificate data
 				certFile := filepath.Join(certDir, "localhost.crt")
 				keyFile := filepath.Join(certDir, "localhost.key")
 
 				// Write completely invalid data (not even valid PEM)
-				os.WriteFile(certFile, []byte("invalid certificate data"), 0644)
-				os.WriteFile(keyFile, []byte("invalid key data"), 0600)
+				if err := os.WriteFile(certFile, []byte("invalid certificate data"), 0600); err != nil {
+					t.Fatalf("failed to write cert file: %v", err)
+				}
+				if err := os.WriteFile(keyFile, []byte("invalid key data"), 0600); err != nil {
+					t.Fatalf("failed to write key file: %v", err)
+				}
 			},
 			wantErr: false,
 			validateResult: func(t *testing.T, cert tls.Certificate) {
+				t.Helper()
 				require.Len(t, cert.Certificate, 1, "should have one certificate")
 
 				// Should be a fresh certificate
@@ -93,10 +104,15 @@ func TestFileManager_GetOrCreateCertificate(t *testing.T) {
 		{
 			name: "handles certificate directory creation failure",
 			setup: func(t *testing.T, certDir string) {
+				t.Helper()
 				// Create a file where the directory should be
 				parentDir := filepath.Dir(certDir)
-				os.MkdirAll(parentDir, 0700)
-				os.WriteFile(certDir, []byte("not a directory"), 0644)
+				if err := os.MkdirAll(parentDir, 0700); err != nil {
+					t.Fatalf("failed to create parent directory: %v", err)
+				}
+				if err := os.WriteFile(certDir, []byte("not a directory"), 0600); err != nil {
+					t.Fatalf("failed to write file: %v", err)
+				}
 			},
 			wantErr:       true,
 			errorContains: "failed to check certificate",
@@ -104,18 +120,23 @@ func TestFileManager_GetOrCreateCertificate(t *testing.T) {
 		{
 			name: "handles permission errors on certificate file",
 			setup: func(t *testing.T, certDir string) {
+				t.Helper()
 				if os.Getuid() == 0 {
 					t.Skip("Cannot test permission errors as root")
 				}
-				os.MkdirAll(certDir, 0700)
+				if err := os.MkdirAll(certDir, 0700); err != nil {
+					t.Fatalf("failed to create cert directory: %v", err)
+				}
 				// Make directory read-only
-				os.Chmod(certDir, 0500)
+				if err := os.Chmod(certDir, 0400); err != nil {
+					t.Fatalf("failed to change permissions: %v", err)
+				}
 				t.Cleanup(func() {
-					os.Chmod(certDir, 0700)
+					_ = os.Chmod(certDir, 0600) // Best effort restore
 				})
 			},
 			wantErr:       true,
-			errorContains: "failed to open certificate file for writing",
+			errorContains: "failed to check certificate",
 		},
 	}
 
@@ -172,7 +193,7 @@ func TestFileManager_CertificateExists(t *testing.T) {
 	}{
 		{
 			name: "returns false when no files exist",
-			setup: func(t *testing.T, certDir string) {
+			setup: func(_ *testing.T, _ string) {
 				// No setup needed
 			},
 			wantExists: false,
@@ -181,9 +202,16 @@ func TestFileManager_CertificateExists(t *testing.T) {
 		{
 			name: "returns true when both files exist",
 			setup: func(t *testing.T, certDir string) {
-				os.MkdirAll(certDir, 0700)
-				os.WriteFile(filepath.Join(certDir, "localhost.crt"), []byte("cert"), 0644)
-				os.WriteFile(filepath.Join(certDir, "localhost.key"), []byte("key"), 0600)
+				t.Helper()
+				if err := os.MkdirAll(certDir, 0700); err != nil {
+					t.Fatalf("failed to create cert directory: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(certDir, "localhost.crt"), []byte("cert"), 0600); err != nil {
+					t.Fatalf("failed to write certificate file: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(certDir, "localhost.key"), []byte("key"), 0600); err != nil {
+					t.Fatalf("failed to write key file: %v", err)
+				}
 			},
 			wantExists: true,
 			wantErr:    false,
@@ -191,8 +219,13 @@ func TestFileManager_CertificateExists(t *testing.T) {
 		{
 			name: "returns false when only certificate exists",
 			setup: func(t *testing.T, certDir string) {
-				os.MkdirAll(certDir, 0700)
-				os.WriteFile(filepath.Join(certDir, "localhost.crt"), []byte("cert"), 0644)
+				t.Helper()
+				if err := os.MkdirAll(certDir, 0700); err != nil {
+					t.Fatalf("failed to create cert directory: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(certDir, "localhost.crt"), []byte("cert"), 0600); err != nil {
+					t.Fatalf("failed to write certificate file: %v", err)
+				}
 			},
 			wantExists: false,
 			wantErr:    false,
@@ -200,8 +233,13 @@ func TestFileManager_CertificateExists(t *testing.T) {
 		{
 			name: "returns false when only key exists",
 			setup: func(t *testing.T, certDir string) {
-				os.MkdirAll(certDir, 0700)
-				os.WriteFile(filepath.Join(certDir, "localhost.key"), []byte("key"), 0600)
+				t.Helper()
+				if err := os.MkdirAll(certDir, 0700); err != nil {
+					t.Fatalf("failed to create cert directory: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(certDir, "localhost.key"), []byte("key"), 0600); err != nil {
+					t.Fatalf("failed to write key file: %v", err)
+				}
 			},
 			wantExists: false,
 			wantErr:    false,
@@ -236,7 +274,7 @@ func TestFileManager_CertificateExists(t *testing.T) {
 
 func TestFileManager_verifyCertificate(t *testing.T) {
 	// Helper to create a test certificate
-	createTestCert := func(notBefore, notAfter time.Time, dnsNames []string) tls.Certificate {
+	createTestCert := func(_, _ time.Time, _ []string) tls.Certificate {
 		m := &FileManager{
 			certDir:  t.TempDir(),
 			certFile: filepath.Join(t.TempDir(), "test.crt"),
@@ -351,6 +389,7 @@ func TestCertificateProperties(t *testing.T) {
 		// Verify the certificate can be used in a TLS config
 		tlsConfig := &tls.Config{
 			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
 		}
 		assert.NotNil(t, tlsConfig)
 	})

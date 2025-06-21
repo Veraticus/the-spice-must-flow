@@ -137,8 +137,8 @@ func (m *FileManager) generateCertificate() (tls.Certificate, error) {
 	}
 	defer func() { _ = certOut.Close() }()
 
-	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
-		return tls.Certificate{}, fmt.Errorf("failed to write certificate: %w", err)
+	if encodeErr := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); encodeErr != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to write certificate: %w", encodeErr)
 	}
 
 	// Save private key to file

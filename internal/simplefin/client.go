@@ -15,8 +15,8 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
-// SimpleFINClient implements the TransactionFetcher interface for SimpleFIN.
-type SimpleFINClient struct {
+// Client implements the TransactionFetcher interface for SimpleFIN.
+type Client struct {
 	httpClient *http.Client
 	accessURL  string
 }
@@ -44,14 +44,14 @@ type transaction struct {
 }
 
 // NewClient creates a new SimpleFIN client, using saved auth if available.
-func NewClient(token string) (*SimpleFINClient, error) {
+func NewClient(token string) (*Client, error) {
 	// Load or claim auth
 	auth, err := LoadOrClaimAuth(token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load/claim auth: %w", err)
 	}
 
-	return &SimpleFINClient{
+	return &Client{
 		accessURL: auth.AccessURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -85,7 +85,8 @@ func claimToken(token string) (string, error) {
 	}
 
 	// Claim the access URL by POSTing to the claim URL
-	req, err := http.NewRequest(http.MethodPost, claimURL, nil)
+	ctx := context.Background()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, claimURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create claim request: %w", err)
 	}
@@ -94,7 +95,11 @@ func claimToken(token string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to claim access URL: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			slog.Error("failed to close response body", "error", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -116,7 +121,7 @@ func claimToken(token string) (string, error) {
 }
 
 // GetTransactions fetches transactions from SimpleFIN.
-func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error) {
+func (c *Client) GetTransactions(ctx context.Context, startDate, endDate time.Time) ([]model.Transaction, error) {
 	// SimpleFIN uses the access URL with /accounts endpoint
 	baseURL := c.accessURL + "/accounts"
 
@@ -147,21 +152,25 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch data: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			slog.Error("failed to close response body", "error", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("SimpleFIN API error: %d - %s", resp.StatusCode, string(body))
 	}
 
-	var accountSet accountSet
-	if err := json.NewDecoder(resp.Body).Decode(&accountSet); err != nil {
+	var accounts accountSet
+	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	// Convert SimpleFIN transactions to our model
 	var transactions []model.Transaction
-	for _, account := range accountSet.Accounts {
+	for _, account := range accounts.Accounts {
 		for _, tx := range account.Transactions {
 			// Skip pending transactions
 			if tx.Pending {
@@ -211,7 +220,7 @@ func (c *SimpleFINClient) GetTransactions(ctx context.Context, startDate, endDat
 }
 
 // GetAccounts returns the list of account IDs.
-func (c *SimpleFINClient) GetAccounts(ctx context.Context) ([]string, error) {
+func (c *Client) GetAccounts(ctx context.Context) ([]string, error) {
 	// SimpleFIN uses the access URL with /accounts endpoint
 	accountsURL := c.accessURL + "/accounts"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, accountsURL, nil)
@@ -223,24 +232,33 @@ func (c *SimpleFINClient) GetAccounts(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch data: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			slog.Error("failed to close response body", "error", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("SimpleFIN API error: %d - %s", resp.StatusCode, string(body))
 	}
 
-	var accountSet accountSet
-	if err := json.NewDecoder(resp.Body).Decode(&accountSet); err != nil {
+	var accounts accountSet
+	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	var accountIDs []string
-	for _, account := range accountSet.Accounts {
+	accountIDs := make([]string, 0, len(accounts.Accounts))
+	for _, account := range accounts.Accounts {
 		accountIDs = append(accountIDs, account.ID)
 	}
 
 	return accountIDs, nil
+}
+
+// Close closes the SimpleFIN client (no-op for now).
+func (c *Client) Close() error {
+	return nil
 }
 
 // parseAmount converts SimpleFIN amount string (in cents) to float64 dollars.
@@ -271,8 +289,14 @@ func normalizeMerchant(raw string) string {
 	merchant = strings.TrimSuffix(merchant, " INC")
 	merchant = strings.TrimSuffix(merchant, " CORP")
 
-	// Title case
-	merchant = strings.Title(strings.ToLower(merchant))
+	// Title case using simple approach
+	words := strings.Fields(strings.ToLower(merchant))
+	for i, word := range words {
+		if word != "" {
+			words[i] = strings.ToUpper(string(word[0])) + word[1:]
+		}
+	}
+	merchant = strings.Join(words, " ")
 
 	return merchant
 }

@@ -457,8 +457,8 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 	ctx := context.Background()
 	defaultCategories := []string{"Groceries", "Transportation", "Entertainment"}
 	for _, cat := range defaultCategories {
-		_, err := db.CreateCategory(ctx, cat, "Test category: "+cat)
-		require.NoError(t, err)
+		_, catErr := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		require.NoError(t, catErr)
 	}
 
 	// Add many transactions to ensure we can cancel mid-process
@@ -544,8 +544,8 @@ func TestClassificationEngine_RetryLogic(t *testing.T) {
 	// Create default categories
 	defaultCategories := []string{"Groceries", "Transportation", "Test Category"}
 	for _, cat := range defaultCategories {
-		_, err := db.CreateCategory(ctx, cat, "Test category: "+cat)
-		require.NoError(t, err)
+		_, catErr := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		require.NoError(t, catErr)
 	}
 
 	// Add test transaction
@@ -626,13 +626,17 @@ func TestNewCategoryFlow(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(ctx))
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			t.Errorf("failed to close database: %v", closeErr)
+		}
+	}()
 
 	// Create initial categories (the new category will be suggested by AI)
 	initialCategories := []string{"Entertainment", "Shopping", "Dining"}
 	for _, cat := range initialCategories {
-		_, err := db.CreateCategory(ctx, cat, "Test category: "+cat)
-		require.NoError(t, err)
+		_, createErr := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		require.NoError(t, createErr)
 	}
 
 	// Setup transactions

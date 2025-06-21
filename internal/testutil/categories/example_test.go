@@ -137,9 +137,9 @@ func TestComplexScenario(t *testing.T) {
 
 	// Save classifications
 	for i := range classifications {
-		err := db.Storage.SaveClassification(ctx, &classifications[i])
-		if err != nil {
-			t.Fatalf("failed to save classification: %v", err)
+		classErr := db.Storage.SaveClassification(ctx, &classifications[i])
+		if classErr != nil {
+			t.Fatalf("failed to save classification: %v", classErr)
 		}
 	}
 
@@ -171,7 +171,7 @@ func TestTableDrivenWithCategories(t *testing.T) {
 				categories.CategoryGroceries,
 				categories.CategoryFoodDining,
 			},
-			test: func(t *testing.T, storage service.Storage) {
+			test: func(_ *testing.T, _ service.Storage) {
 				// Test logic using Groceries and Food & Dining categories
 			},
 		},
@@ -181,14 +181,14 @@ func TestTableDrivenWithCategories(t *testing.T) {
 				categories.CategorySubscriptions,
 				categories.CategoryEntertainment,
 			},
-			test: func(t *testing.T, storage service.Storage) {
+			test: func(_ *testing.T, _ service.Storage) {
 				// Test logic using subscription categories
 			},
 		},
 		{
 			name:       "comprehensive test",
 			categories: []categories.CategoryName{}, // Will use fixture instead
-			test: func(t *testing.T, storage service.Storage) {
+			test: func(_ *testing.T, _ service.Storage) {
 				// Test logic needing many categories
 			},
 		},
@@ -218,6 +218,7 @@ func TestTableDrivenWithCategories(t *testing.T) {
 
 // TestParallelExecution demonstrates thread-safe test execution.
 func TestParallelExecution(t *testing.T) {
+	t.Parallel()
 	// Each parallel test gets its own isolated database
 	testCases := []string{"test1", "test2", "test3", "test4"}
 

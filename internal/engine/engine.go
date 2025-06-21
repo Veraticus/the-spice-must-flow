@@ -14,6 +14,7 @@ import (
 	"github.com/joshsymonds/the-spice-must-flow/internal/common"
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
 )
 
 // ClassificationEngine orchestrates the classification of transactions.
@@ -465,7 +466,7 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string) error {
 	// Check if category already exists
 	existingCategory, err := e.storage.GetCategoryByName(ctx, categoryName)
-	if err != nil {
+	if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
 		return fmt.Errorf("failed to check category existence: %w", err)
 	}
 

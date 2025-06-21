@@ -3,12 +3,16 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
+
+// ErrCategoryNotFound is returned when a category is not found.
+var ErrCategoryNotFound = errors.New("category not found")
 
 // GetCategories returns all active categories.
 func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, error) {
@@ -26,7 +30,11 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to query categories: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("failed to close rows", "error", err)
+		}
+	}()
 
 	var categories []model.Category
 	for rows.Next() {
@@ -66,7 +74,7 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil // Category not found
+		return nil, ErrCategoryNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query category: %w", err)
@@ -101,8 +109,8 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name, description st
 		if !existing.IsActive {
 			// Reactivate it
 			updateQuery := `UPDATE categories SET is_active = 1 WHERE id = ?`
-			if _, err := s.db.ExecContext(ctx, updateQuery, existing.ID); err != nil {
-				return nil, fmt.Errorf("failed to reactivate category: %w", err)
+			if _, updateErr := s.db.ExecContext(ctx, updateQuery, existing.ID); updateErr != nil {
+				return nil, fmt.Errorf("failed to reactivate category: %w", updateErr)
 			}
 			existing.IsActive = true
 			slog.Info("reactivated existing category", "name", name)
@@ -158,7 +166,11 @@ func (t *sqliteTransaction) GetCategories(ctx context.Context) ([]model.Category
 	if err != nil {
 		return nil, fmt.Errorf("failed to query categories: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("failed to close rows", "error", err)
+		}
+	}()
 
 	var categories []model.Category
 	for rows.Next() {
@@ -197,7 +209,7 @@ func (t *sqliteTransaction) GetCategoryByName(ctx context.Context, name string) 
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, nil // Category not found
+		return nil, ErrCategoryNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query category: %w", err)
@@ -232,8 +244,8 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name, descriptio
 		if !existing.IsActive {
 			// Reactivate it
 			updateQuery := `UPDATE categories SET is_active = 1 WHERE id = ?`
-			if _, err := t.tx.ExecContext(ctx, updateQuery, existing.ID); err != nil {
-				return nil, fmt.Errorf("failed to reactivate category: %w", err)
+			if _, updateErr := t.tx.ExecContext(ctx, updateQuery, existing.ID); updateErr != nil {
+				return nil, fmt.Errorf("failed to reactivate category: %w", updateErr)
 			}
 			existing.IsActive = true
 		}

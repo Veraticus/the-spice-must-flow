@@ -140,7 +140,11 @@ func runImport(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			slog.Error("failed to close storage", "error", err)
+		}
+	}()
 
 	// Create auto-checkpoint unless disabled
 	if !viper.GetBool("import.no_checkpoint") && !viper.GetBool("checkpoint.auto_checkpoint_disabled") {

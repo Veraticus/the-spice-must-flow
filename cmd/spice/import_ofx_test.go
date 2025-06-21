@@ -195,16 +195,20 @@ func TestMultiFileImport(t *testing.T) {
 	// Create temporary directory for test files
 	tempDir, err := os.MkdirTemp("", "ofx_test")
 	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if rmErr := os.RemoveAll(tempDir); rmErr != nil {
+			t.Errorf("failed to remove temp dir: %v", rmErr)
+		}
+	}()
 
 	// Write test OFX files
 	file1 := filepath.Join(tempDir, "jan2024.qfx")
 	file2 := filepath.Join(tempDir, "feb2024.qfx")
 	file3 := filepath.Join(tempDir, "feb_mar2024.qfx")
 
-	require.NoError(t, os.WriteFile(file1, []byte(testOFX1), 0644))
-	require.NoError(t, os.WriteFile(file2, []byte(testOFX2), 0644))
-	require.NoError(t, os.WriteFile(file3, []byte(testOFXDuplicate), 0644))
+	require.NoError(t, os.WriteFile(file1, []byte(testOFX1), 0600))
+	require.NoError(t, os.WriteFile(file2, []byte(testOFX2), 0600))
+	require.NoError(t, os.WriteFile(file3, []byte(testOFXDuplicate), 0600))
 
 	// Test glob pattern matching
 	pattern := filepath.Join(tempDir, "*.qfx")
@@ -295,12 +299,16 @@ func TestGlobPatterns(t *testing.T) {
 			// Create temp directory
 			tempDir, err := os.MkdirTemp("", "glob_test")
 			require.NoError(t, err)
-			defer os.RemoveAll(tempDir)
+			defer func() {
+				if rmErr := os.RemoveAll(tempDir); rmErr != nil {
+					t.Errorf("failed to remove temp dir: %v", rmErr)
+				}
+			}()
 
 			// Create test files
 			for _, file := range tt.files {
 				path := filepath.Join(tempDir, file)
-				require.NoError(t, os.WriteFile(path, []byte("test"), 0644))
+				require.NoError(t, os.WriteFile(path, []byte("test"), 0600))
 			}
 
 			// Test glob

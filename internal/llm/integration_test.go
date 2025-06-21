@@ -42,12 +42,12 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 	// Test single transaction classification
 	t.Run("single transaction", func(t *testing.T) {
 		txn := model.Transaction{
-			ID:            "test-openai-1",
-			Hash:          "hash-openai-1",
-			MerchantName:  "Starbucks Coffee",
-			Amount:        5.75,
-			Date:          time.Now(),
-			Category: []string{"FOOD_AND_DRINK"},
+			ID:           "test-openai-1",
+			Hash:         "hash-openai-1",
+			MerchantName: "Starbucks Coffee",
+			Amount:       5.75,
+			Date:         time.Now(),
+			Category:     []string{"FOOD_AND_DRINK"},
 		}
 
 		category, confidence, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Coffee & Dining", "Shopping", "Groceries"})
@@ -64,20 +64,20 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 	t.Run("batch transactions", func(t *testing.T) {
 		transactions := []model.Transaction{
 			{
-				ID:            "test-openai-2",
-				Hash:          "hash-openai-2",
-				MerchantName:  "Amazon.com",
-				Amount:        125.99,
-				Date:          time.Now(),
-				Category: []string{"SHOPS"},
+				ID:           "test-openai-2",
+				Hash:         "hash-openai-2",
+				MerchantName: "Amazon.com",
+				Amount:       125.99,
+				Date:         time.Now(),
+				Category:     []string{"SHOPS"},
 			},
 			{
-				ID:            "test-openai-3",
-				Hash:          "hash-openai-3",
-				MerchantName:  "Whole Foods Market",
-				Amount:        87.50,
-				Date:          time.Now(),
-				Category: []string{"FOOD_AND_DRINK"},
+				ID:           "test-openai-3",
+				Hash:         "hash-openai-3",
+				MerchantName: "Whole Foods Market",
+				Amount:       87.50,
+				Date:         time.Now(),
+				Category:     []string{"FOOD_AND_DRINK"},
 			},
 			{
 				ID:           "test-openai-4",
@@ -161,12 +161,12 @@ func TestLLMIntegration_Anthropic(t *testing.T) {
 	// Test single transaction classification
 	t.Run("single transaction", func(t *testing.T) {
 		txn := model.Transaction{
-			ID:            "test-anthropic-1",
-			Hash:          "hash-anthropic-1",
-			MerchantName:  "Uber",
-			Amount:        25.50,
-			Date:          time.Now(),
-			Category: []string{"TRAVEL"},
+			ID:           "test-anthropic-1",
+			Hash:         "hash-anthropic-1",
+			MerchantName: "Uber",
+			Amount:       25.50,
+			Date:         time.Now(),
+			Category:     []string{"TRAVEL"},
 		}
 
 		category, confidence, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Coffee & Dining", "Shopping", "Groceries"})

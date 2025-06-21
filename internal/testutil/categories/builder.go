@@ -216,13 +216,13 @@ func (b *categoryBuilder) Build(ctx context.Context, storage service.Storage) (C
 	}
 
 	// Convert map to slice for consistent ordering
-	var names []CategoryName
+	names := make([]CategoryName, 0, len(b.categories))
 	for name := range b.categories {
 		names = append(names, name)
 	}
 
 	// Create categories in storage
-	var result Categories
+	result := make(Categories, 0, len(names))
 
 	for _, name := range names {
 		createdCat, err := storage.CreateCategory(ctx, name.String(), "Test description for "+name.String())

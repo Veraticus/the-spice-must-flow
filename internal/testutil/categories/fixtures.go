@@ -155,7 +155,7 @@ func (r *FixtureRegistry) Get(name string) (Fixture, bool) {
 
 // All returns all registered fixtures.
 func (r *FixtureRegistry) All() []Fixture {
-	var fixtures []Fixture
+	fixtures := make([]Fixture, 0, len(r.fixtures))
 	for _, f := range r.fixtures {
 		fixtures = append(fixtures, f)
 	}
@@ -178,10 +178,16 @@ func NewCompositeFixture(name, description string, fixtures ...Fixture) Fixture 
 	}
 }
 
-func (c *CompositeFixture) Name() string        { return c.name }
-func (c *CompositeFixture) Description() string { return c.description }
-func (c *CompositeFixture) Version() int        { return 1 }
+// Name returns the fixture name.
+func (c *CompositeFixture) Name() string { return c.name }
 
+// Description returns the fixture description.
+func (c *CompositeFixture) Description() string { return c.description }
+
+// Version returns the fixture version.
+func (c *CompositeFixture) Version() int { return 1 }
+
+// Categories returns all unique categories from the composite fixtures.
 func (c *CompositeFixture) Categories() []CategoryName {
 	seen := make(map[CategoryName]struct{})
 	var categories []CategoryName

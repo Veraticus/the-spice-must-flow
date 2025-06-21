@@ -1,3 +1,4 @@
+// Package simplefin provides SimpleFIN API client implementation
 package simplefin
 
 import (
@@ -6,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -79,7 +81,13 @@ func getStateFilePath() (string, error) {
 }
 
 func loadAuthState(path string) (*AuthState, error) {
-	data, err := os.ReadFile(path)
+	// Validate path to prevent directory traversal
+	cleanPath := filepath.Clean(path)
+	if cleanPath != path || strings.Contains(path, "..") {
+		return nil, fmt.Errorf("invalid file path")
+	}
+
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return nil, err
 	}

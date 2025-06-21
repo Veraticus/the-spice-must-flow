@@ -40,8 +40,8 @@ func SetupTestDB(t *testing.T, cats categories.Categories) *TestDB {
 
 	// Run migrations
 	ctx := context.Background()
-	if err := storage.Migrate(ctx); err != nil {
-		t.Fatalf("failed to run migrations: %v", err)
+	if migrateErr := storage.Migrate(ctx); migrateErr != nil {
+		t.Fatalf("failed to run migrations: %v", migrateErr)
 	}
 
 	// Seed categories if provided
@@ -55,7 +55,9 @@ func SetupTestDB(t *testing.T, cats categories.Categories) *TestDB {
 
 	// Register cleanup
 	t.Cleanup(func() {
-		storage.Close()
+		if err := storage.Close(); err != nil {
+			t.Errorf("failed to close storage: %v", err)
+		}
 	})
 
 	return &TestDB{
@@ -89,8 +91,8 @@ func SetupTestDBWithBuilder(t *testing.T, configure func(categories.Builder) cat
 
 	// Run migrations
 	ctx := context.Background()
-	if err := storage.Migrate(ctx); err != nil {
-		t.Fatalf("failed to run migrations: %v", err)
+	if migrateErr := storage.Migrate(ctx); migrateErr != nil {
+		t.Fatalf("failed to run migrations: %v", migrateErr)
 	}
 
 	// Build categories
@@ -101,7 +103,9 @@ func SetupTestDBWithBuilder(t *testing.T, configure func(categories.Builder) cat
 
 	// Register cleanup
 	t.Cleanup(func() {
-		storage.Close()
+		if err := storage.Close(); err != nil {
+			t.Errorf("failed to close storage: %v", err)
+		}
 	})
 
 	return &TestDB{
@@ -127,13 +131,17 @@ func (db *TestDB) WithTransaction(fn func(tx service.Transaction) error) error {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			// Rollback error is expected if transaction was already committed
+			// Only log if it's an unexpected error
+			if err.Error() != "sql: transaction has already been committed or rolled back" {
+				db.t.Errorf("failed to rollback transaction: %v", err)
+			}
+		}
+	}()
 
-	if err := fn(tx); err != nil {
-		return err
-	}
-
-	return nil
+	return fn(tx)
 }
 
 // TestDBOptions provides configuration options for test database setup.
@@ -179,7 +187,9 @@ func SetupTestDBWithOptions(t *testing.T, opts TestDBOptions) *TestDB {
 
 	// Register cleanup
 	t.Cleanup(func() {
-		storage.Close()
+		if err := storage.Close(); err != nil {
+			t.Errorf("failed to close storage: %v", err)
+		}
 	})
 
 	return &TestDB{

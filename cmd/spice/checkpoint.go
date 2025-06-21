@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -51,7 +52,7 @@ func createCheckpointCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a new checkpoint",
 		Long:  `Create a snapshot of the current database state.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
 
 			// Initialize storage with auto-migration
@@ -59,7 +60,11 @@ func createCheckpointCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer store.Close()
+			defer func() {
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
+			}()
 
 			// Create checkpoint manager
 			sqliteStore, ok := store.(*storage.SQLiteStorage)
@@ -78,13 +83,17 @@ func createCheckpointCmd() *cobra.Command {
 			}
 
 			// Format output
-			fmt.Printf("%s Created checkpoint %s (%s)\n",
+			if _, err := fmt.Fprintf(os.Stdout, "%s Created checkpoint %s (%s)\n",
 				cli.SuccessStyle.Render("✓"),
 				cli.InfoStyle.Render(info.ID),
-				formatFileSize(info.FileSize))
+				formatFileSize(info.FileSize)); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 
 			if info.Description != "" {
-				fmt.Printf("  Description: %s\n", info.Description)
+				if _, err := fmt.Fprintf(os.Stdout, "  Description: %s\n", info.Description); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
 			}
 
 			return nil
@@ -102,7 +111,7 @@ func listCheckpointsCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all checkpoints",
 		Long:  `Display all available checkpoints with their metadata.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
 
 			// Initialize storage with auto-migration
@@ -110,7 +119,11 @@ func listCheckpointsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer store.Close()
+			defer func() {
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
+			}()
 
 			// Create checkpoint manager
 			sqliteStore, ok := store.(*storage.SQLiteStorage)
@@ -129,7 +142,9 @@ func listCheckpointsCmd() *cobra.Command {
 			}
 
 			if len(checkpoints) == 0 {
-				fmt.Println(cli.SubtitleStyle.Render("No checkpoints found."))
+				if _, err := fmt.Fprintln(os.Stdout, cli.SubtitleStyle.Render("No checkpoints found.")); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
 				return nil
 			}
 
@@ -138,14 +153,16 @@ func listCheckpointsCmd() *cobra.Command {
 
 			// Header
 			headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("4"))
-			fmt.Fprintln(w, strings.Join([]string{
+			if _, err := fmt.Fprintln(w, strings.Join([]string{
 				headerStyle.Render("NAME"),
 				headerStyle.Render("CREATED"),
 				headerStyle.Render("SIZE"),
 				headerStyle.Render("TRANSACTIONS"),
 				headerStyle.Render("CATEGORIES"),
 				headerStyle.Render("TYPE"),
-			}, "\t"))
+			}, "\t")); err != nil {
+				slog.Error("failed to write table header", "error", err)
+			}
 
 			// Rows
 			for _, cp := range checkpoints {
@@ -154,17 +171,21 @@ func listCheckpointsCmd() *cobra.Command {
 					typeLabel = "auto"
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\n",
+				if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\n",
 					cli.InfoStyle.Render(cp.ID),
 					formatRelativeTime(cp.CreatedAt),
 					formatFileSize(cp.FileSize),
 					cp.Transactions,
 					cp.Categories,
 					cli.SubtitleStyle.Render(typeLabel),
-				)
+				); err != nil {
+					slog.Error("failed to write checkpoint row", "error", err)
+				}
 			}
 
-			w.Flush()
+			if err := w.Flush(); err != nil {
+				slog.Error("failed to flush table writer", "error", err)
+			}
 
 			return nil
 		},
@@ -179,7 +200,7 @@ func restoreCheckpointCmd() *cobra.Command {
 		Short: "Restore database from a checkpoint",
 		Long:  `Replace the current database with a checkpoint.`,
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 			checkpointID := args[0]
 
@@ -192,44 +213,67 @@ func restoreCheckpointCmd() *cobra.Command {
 			// Create checkpoint manager
 			sqliteStore, ok := store.(*storage.SQLiteStorage)
 			if !ok {
-				store.Close()
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
 				return fmt.Errorf("storage is not SQLite")
 			}
 			manager, err := sqliteStore.NewCheckpointManager()
 			if err != nil {
-				store.Close()
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
 				return fmt.Errorf("failed to create checkpoint manager: %w", err)
 			}
 
 			// Get checkpoint info
 			info, err := manager.GetCheckpointInfo(ctx, checkpointID)
 			if err != nil {
-				store.Close()
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
 				return fmt.Errorf("failed to get checkpoint info: %w", err)
 			}
 
 			// Confirm unless force flag is set
 			if !force {
-				fmt.Printf("%s This will replace your current database with checkpoint %s.\n",
+				if _, writeErr := fmt.Fprintf(os.Stdout, "%s This will replace your current database with checkpoint %s.\n",
 					cli.WarningStyle.Render("⚠️"),
-					cli.InfoStyle.Render(checkpointID))
-				fmt.Printf("  Created: %s\n", info.CreatedAt.Format("2006-01-02 15:04:05"))
-				if info.Description != "" {
-					fmt.Printf("  Description: %s\n", info.Description)
+					cli.InfoStyle.Render(checkpointID)); writeErr != nil {
+					slog.Error("failed to write output", "error", writeErr)
 				}
-				fmt.Printf("\nContinue? (y/N) ")
+				if _, writeErr := fmt.Fprintf(os.Stdout, "  Created: %s\n", info.CreatedAt.Format("2006-01-02 15:04:05")); writeErr != nil {
+					slog.Error("failed to write output", "error", writeErr)
+				}
+				if info.Description != "" {
+					if _, writeErr := fmt.Fprintf(os.Stdout, "  Description: %s\n", info.Description); writeErr != nil {
+						slog.Error("failed to write output", "error", writeErr)
+					}
+				}
+				if _, writeErr := fmt.Fprintf(os.Stdout, "\nContinue? (y/N) "); writeErr != nil {
+					slog.Error("failed to write output", "error", writeErr)
+				}
 
 				var response string
-				fmt.Scanln(&response)
+				if _, scanErr := fmt.Scanln(&response); scanErr != nil {
+					// EOF or empty input is treated as "N"
+					response = "n"
+				}
 				if !strings.HasPrefix(strings.ToLower(response), "y") {
-					fmt.Println(cli.SubtitleStyle.Render("Restore canceled."))
-					store.Close()
+					if _, writeErr := fmt.Fprintln(os.Stdout, cli.SubtitleStyle.Render("Restore canceled.")); writeErr != nil {
+						slog.Error("failed to write output", "error", writeErr)
+					}
+					if closeErr := store.Close(); closeErr != nil {
+						slog.Error("failed to close storage", "error", closeErr)
+					}
 					return nil
 				}
 			}
 
 			// Must close storage before restore
-			store.Close()
+			if closeErr := store.Close(); closeErr != nil {
+				slog.Error("failed to close storage before restore", "error", closeErr)
+			}
 
 			// Restore checkpoint
 			// Note: We need to recreate the manager after closing storage
@@ -239,23 +283,31 @@ func restoreCheckpointCmd() *cobra.Command {
 			}
 			sqliteStore2, ok2 := store.(*storage.SQLiteStorage)
 			if !ok2 {
-				store.Close()
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
 				return fmt.Errorf("storage is not SQLite")
 			}
 			manager, err = sqliteStore2.NewCheckpointManager()
 			if err != nil {
-				store.Close()
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
 				return fmt.Errorf("failed to recreate checkpoint manager: %w", err)
 			}
 
 			if err := manager.Restore(ctx, checkpointID); err != nil {
-				store.Close()
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
 				return fmt.Errorf("failed to restore checkpoint: %w", err)
 			}
 
-			fmt.Printf("%s Restored from checkpoint %s\n",
+			if _, err := fmt.Fprintf(os.Stdout, "%s Restored from checkpoint %s\n",
 				cli.SuccessStyle.Render("✓"),
-				cli.InfoStyle.Render(checkpointID))
+				cli.InfoStyle.Render(checkpointID)); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 
 			return nil
 		},
@@ -274,7 +326,7 @@ func deleteCheckpointCmd() *cobra.Command {
 		Short: "Delete a checkpoint",
 		Long:  `Permanently remove a checkpoint.`,
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 			checkpointID := args[0]
 
@@ -283,7 +335,11 @@ func deleteCheckpointCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer store.Close()
+			defer func() {
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
+			}()
 
 			// Create checkpoint manager
 			sqliteStore, ok := store.(*storage.SQLiteStorage)
@@ -303,17 +359,30 @@ func deleteCheckpointCmd() *cobra.Command {
 
 			// Confirm unless force flag is set
 			if !force {
-				fmt.Printf("%s This will permanently delete checkpoint %s.\n",
+				if _, err := fmt.Fprintf(os.Stdout, "%s This will permanently delete checkpoint %s.\n",
 					cli.WarningStyle.Render("⚠️"),
-					cli.InfoStyle.Render(checkpointID))
-				fmt.Printf("  Created: %s\n", info.CreatedAt.Format("2006-01-02 15:04:05"))
-				fmt.Printf("  Size: %s\n", formatFileSize(info.FileSize))
-				fmt.Printf("\nContinue? (y/N) ")
+					cli.InfoStyle.Render(checkpointID)); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
+				if _, err := fmt.Fprintf(os.Stdout, "  Created: %s\n", info.CreatedAt.Format("2006-01-02 15:04:05")); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
+				if _, err := fmt.Fprintf(os.Stdout, "  Size: %s\n", formatFileSize(info.FileSize)); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
+				if _, err := fmt.Fprintf(os.Stdout, "\nContinue? (y/N) "); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
 
 				var response string
-				fmt.Scanln(&response)
+				if _, err := fmt.Scanln(&response); err != nil {
+					// EOF or empty input is treated as "N"
+					response = "n"
+				}
 				if !strings.HasPrefix(strings.ToLower(response), "y") {
-					fmt.Println(cli.SubtitleStyle.Render("Deletion canceled."))
+					if _, err := fmt.Fprintln(os.Stdout, cli.SubtitleStyle.Render("Deletion canceled.")); err != nil {
+						slog.Error("failed to write output", "error", err)
+					}
 					return nil
 				}
 			}
@@ -323,9 +392,11 @@ func deleteCheckpointCmd() *cobra.Command {
 				return fmt.Errorf("failed to delete checkpoint: %w", err)
 			}
 
-			fmt.Printf("%s Deleted checkpoint %s\n",
+			if _, err := fmt.Fprintf(os.Stdout, "%s Deleted checkpoint %s\n",
 				cli.SuccessStyle.Render("✓"),
-				cli.InfoStyle.Render(checkpointID))
+				cli.InfoStyle.Render(checkpointID)); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 
 			return nil
 		},
@@ -354,27 +425,28 @@ func formatFileSize(size int64) string {
 func formatRelativeTime(t time.Time) string {
 	duration := time.Since(t)
 
-	if duration < time.Minute {
+	switch {
+	case duration < time.Minute:
 		return "just now"
-	} else if duration < time.Hour {
+	case duration < time.Hour:
 		minutes := int(duration.Minutes())
 		if minutes == 1 {
 			return "1 minute ago"
 		}
 		return fmt.Sprintf("%d minutes ago", minutes)
-	} else if duration < 24*time.Hour {
+	case duration < 24*time.Hour:
 		hours := int(duration.Hours())
 		if hours == 1 {
 			return "1 hour ago"
 		}
 		return fmt.Sprintf("%d hours ago", hours)
-	} else if duration < 7*24*time.Hour {
+	case duration < 7*24*time.Hour:
 		days := int(duration.Hours() / 24)
 		if days == 1 {
 			return "yesterday"
 		}
 		return fmt.Sprintf("%d days ago", days)
-	} else {
+	default:
 		return t.Format("2006-01-02 15:04")
 	}
 }

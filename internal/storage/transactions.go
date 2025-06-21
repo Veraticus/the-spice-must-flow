@@ -78,8 +78,8 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 		// Convert categories slice to JSON string
 		categoriesJSON := ""
 		if len(txn.Category) > 0 {
-			categoriesBytes, err := json.Marshal(txn.Category)
-			if err == nil {
+			categoriesBytes, marshalErr := json.Marshal(txn.Category)
+			if marshalErr == nil {
 				categoriesJSON = string(categoriesBytes)
 			}
 		}

@@ -211,10 +211,18 @@ func vendorsDeleteCmd() *cobra.Command {
 			}
 
 			// Show vendor info
-			fmt.Printf("About to delete vendor rule:\n")
-			fmt.Printf("  Merchant: %s\n", vendor.Name)
-			fmt.Printf("  Category: %s\n", vendor.Category)
-			fmt.Printf("  Use Count: %d\n\n", vendor.UseCount)
+			if _, err := fmt.Fprintf(os.Stdout, "About to delete vendor rule:\n"); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
+			if _, err := fmt.Fprintf(os.Stdout, "  Merchant: %s\n", vendor.Name); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
+			if _, err := fmt.Fprintf(os.Stdout, "  Category: %s\n", vendor.Category); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
+			if _, err := fmt.Fprintf(os.Stdout, "  Use Count: %d\n\n", vendor.UseCount); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 
 			// Get confirmation unless --force flag is set
 			force, _ := cmd.Flags().GetBool("force")

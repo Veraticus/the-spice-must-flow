@@ -73,7 +73,7 @@ func createLLMClient() (engine.Classifier, error) {
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
 		if apiKey == "" {
-			return nil, fmt.Errorf("Anthropic API key not found in config or ANTHROPIC_API_KEY environment variable")
+			return nil, fmt.Errorf("anthropic API key not found in config or ANTHROPIC_API_KEY environment variable")
 		}
 		config.APIKey = apiKey
 

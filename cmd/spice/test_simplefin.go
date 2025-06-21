@@ -28,7 +28,7 @@ func init() {
 	rootCmd.AddCommand(testSimpleFINCmd)
 }
 
-func runTestSimpleFIN(cmd *cobra.Command, args []string) error {
+func runTestSimpleFIN(cmd *cobra.Command, _ []string) error {
 	// Get SimpleFIN token from config or environment
 	token := viper.GetString("simplefin.token")
 	if token == "" {
@@ -110,26 +110,42 @@ func runTestSimpleFIN(cmd *cobra.Command, args []string) error {
 			"accounts", len(accountTxCount))
 
 		// Show sample transactions
-		fmt.Println("\n📝 Sample transactions (first 5):")
-		fmt.Println("──────────────────────────────────────────────────────")
+		if _, err := fmt.Fprintln(os.Stdout, "\n📝 Sample transactions (first 5):"); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
+		if _, err := fmt.Fprintln(os.Stdout, "──────────────────────────────────────────────────────"); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 		for i, tx := range transactions {
 			if i >= 5 {
 				break
 			}
-			fmt.Printf("Date: %s | Amount: $%.2f | Merchant: %s\n",
+			if _, err := fmt.Fprintf(os.Stdout, "Date: %s | Amount: $%.2f | Merchant: %s\n",
 				tx.Date.Format("2006-01-02"),
 				tx.Amount,
-				tx.MerchantName)
-			if verbose {
-				fmt.Printf("  Raw Name: %s\n", tx.Name)
-				fmt.Printf("  Account: %s\n", tx.AccountID)
-				fmt.Printf("  Hash: %s\n", tx.Hash)
+				tx.MerchantName); err != nil {
+				slog.Error("failed to write output", "error", err)
 			}
-			fmt.Println("──────────────────────────────────────────────────────")
+			if verbose {
+				if _, err := fmt.Fprintf(os.Stdout, "  Raw Name: %s\n", tx.Name); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
+				if _, err := fmt.Fprintf(os.Stdout, "  Account: %s\n", tx.AccountID); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
+				if _, err := fmt.Fprintf(os.Stdout, "  Hash: %s\n", tx.Hash); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "──────────────────────────────────────────────────────"); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 		}
 
 		// Show merchant analysis
-		fmt.Println("\n🏪 Top merchants by transaction count:")
+		if _, err := fmt.Fprintln(os.Stdout, "\n🏪 Top merchants by transaction count:"); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 		type merchantCount struct {
 			name  string
 			count int
@@ -150,20 +166,30 @@ func runTestSimpleFIN(cmd *cobra.Command, args []string) error {
 			if i >= 10 {
 				break
 			}
-			fmt.Printf("  %2d. %s (%d transactions)\n", i+1, m.name, m.count)
+			if _, err := fmt.Fprintf(os.Stdout, "  %2d. %s (%d transactions)\n", i+1, m.name, m.count); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 		}
 
 		// If verbose, show raw JSON for one transaction
 		if verbose && len(transactions) > 0 {
-			fmt.Println("\n🔍 Raw transaction data (first transaction as JSON):")
+			if _, err := fmt.Fprintln(os.Stdout, "\n🔍 Raw transaction data (first transaction as JSON):"); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 			data, _ := json.MarshalIndent(transactions[0], "", "  ")
-			fmt.Println(string(data))
+			if _, err := fmt.Fprintln(os.Stdout, string(data)); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 		}
 	}
 
 	// Check how far back we can go
-	fmt.Println("\n💡 To check maximum history available:")
-	fmt.Println("   Run: spice test-simplefin -d 365")
+	if _, err := fmt.Fprintln(os.Stdout, "\n💡 To check maximum history available:"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
+	if _, err := fmt.Fprintln(os.Stdout, "   Run: spice test-simplefin -d 365"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 
 	return nil
 }

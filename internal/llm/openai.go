@@ -125,19 +125,20 @@ func (c *openAIClient) parseClassification(content string) (ClassificationRespon
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "CATEGORY:") {
+		switch {
+		case strings.HasPrefix(line, "CATEGORY:"):
 			category = strings.TrimSpace(strings.TrimPrefix(line, "CATEGORY:"))
-		} else if strings.HasPrefix(line, "CONFIDENCE:") {
+		case strings.HasPrefix(line, "CONFIDENCE:"):
 			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
 			var err error
 			confidence, err = strconv.ParseFloat(confStr, 64)
 			if err != nil {
 				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
 			}
-		} else if strings.HasPrefix(line, "NEW:") {
+		case strings.HasPrefix(line, "NEW:"):
 			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
 			isNew = strings.ToLower(newStr) == "true"
-		} else if strings.HasPrefix(line, "DESCRIPTION:") {
+		case strings.HasPrefix(line, "DESCRIPTION:"):
 			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
 		}
 	}

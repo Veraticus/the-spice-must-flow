@@ -111,8 +111,12 @@ func runInstitutionsSearch(cmd *cobra.Command, args []string) error {
 
 	// Display results in a table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "Bank Name\tOAuth Required\tSupports Transactions\tNotes")
-	fmt.Fprintln(w, "─────────\t─────────────\t───────────────────\t─────")
+	if _, err := fmt.Fprintln(w, "Bank Name\tOAuth Required\tSupports Transactions\tNotes"); err != nil {
+		slog.Error("failed to write table header", "error", err)
+	}
+	if _, err := fmt.Fprintln(w, "─────────\t─────────────\t───────────────────\t─────"); err != nil {
+		slog.Error("failed to write table separator", "error", err)
+	}
 
 	for _, inst := range institutions {
 		oauth := "No"
@@ -132,18 +136,24 @@ func runInstitutionsSearch(cmd *cobra.Command, args []string) error {
 			notes = "Requires redirect URI"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			inst.Name,
 			oauth,
 			transactions,
 			notes,
-		)
+		); err != nil {
+			slog.Error("failed to write institution row", "error", err)
+		}
 	}
 
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		slog.Error("failed to flush table writer", "error", err)
+	}
 
 	// Show summary
-	fmt.Println()
+	if _, err := fmt.Fprintln(os.Stdout); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 	nonOAuthCount := 0
 	for _, inst := range institutions {
 		if !inst.OAuth && inst.SupportsTransactions {

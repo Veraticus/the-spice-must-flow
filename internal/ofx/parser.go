@@ -1,3 +1,4 @@
+// Package ofx provides OFX/QFX file parsing functionality
 package ofx
 
 import (
@@ -27,9 +28,7 @@ func (p *Parser) preprocessOFX(content string) string {
 
 	// Fix mixed-case SEVERITY values (should be INFO, WARN, or ERROR)
 	severityRegex := regexp.MustCompile(`(?i)<SEVERITY>(Info|Warn|Error)</SEVERITY>`)
-	content = severityRegex.ReplaceAllStringFunc(content, func(match string) string {
-		return strings.ToUpper(match)
-	})
+	content = severityRegex.ReplaceAllStringFunc(content, strings.ToUpper)
 
 	// Fix missing closing angle brackets in SGML-style OFX files
 	// Match opening tags that are missing their closing bracket
@@ -41,7 +40,7 @@ func (p *Parser) preprocessOFX(content string) string {
 }
 
 // ParseFile parses an OFX/QFX file and returns transactions.
-func (p *Parser) ParseFile(ctx context.Context, reader io.Reader) ([]model.Transaction, error) {
+func (p *Parser) ParseFile(_ context.Context, reader io.Reader) ([]model.Transaction, error) {
 	// Read and preprocess the content
 	content, err := io.ReadAll(reader)
 	if err != nil {
@@ -103,7 +102,7 @@ func (p *Parser) processBankStatement(stmt *ofxgo.StatementResponse) ([]model.Tr
 		return nil, nil
 	}
 
-	var transactions []model.Transaction
+	transactions := make([]model.Transaction, 0, len(stmt.BankTranList.Transactions))
 	accountID := string(stmt.BankAcctFrom.AcctID)
 
 	for _, ofxTx := range stmt.BankTranList.Transactions {
@@ -120,7 +119,7 @@ func (p *Parser) processCreditCardStatement(stmt *ofxgo.CCStatementResponse) ([]
 		return nil, nil
 	}
 
-	var transactions []model.Transaction
+	transactions := make([]model.Transaction, 0, len(stmt.BankTranList.Transactions))
 	accountID := string(stmt.CCAcctFrom.AcctID)
 
 	for _, ofxTx := range stmt.BankTranList.Transactions {
@@ -244,7 +243,7 @@ func isGenericDescription(name string) bool {
 }
 
 // GetAccounts extracts unique account IDs from the OFX file.
-func (p *Parser) GetAccounts(ctx context.Context, reader io.Reader) ([]string, error) {
+func (p *Parser) GetAccounts(_ context.Context, reader io.Reader) ([]string, error) {
 	// Read and preprocess the content
 	content, err := io.ReadAll(reader)
 	if err != nil {
@@ -279,7 +278,7 @@ func (p *Parser) GetAccounts(ctx context.Context, reader io.Reader) ([]string, e
 	}
 
 	// Convert to slice
-	var accounts []string
+	accounts := make([]string, 0, len(accountMap))
 	for acct := range accountMap {
 		accounts = append(accounts, acct)
 	}

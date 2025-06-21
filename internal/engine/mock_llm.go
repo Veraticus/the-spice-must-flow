@@ -33,7 +33,7 @@ func NewMockClassifier() *MockClassifier {
 }
 
 // SuggestCategory provides deterministic category suggestions based on merchant name.
-func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Transaction, categories []string) (string, float64, bool, string, error) {
+func (m *MockClassifier) SuggestCategory(_ context.Context, transaction model.Transaction, _ []string) (string, float64, bool, string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

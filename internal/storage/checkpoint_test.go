@@ -15,6 +15,7 @@ import (
 )
 
 func setupTestDB(t *testing.T) (*sql.DB, string, func()) {
+	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "checkpoint-test-*")
 	require.NoError(t, err)
 
@@ -61,8 +62,8 @@ func setupTestDB(t *testing.T) (*sql.DB, string, func()) {
 	}
 
 	for _, query := range queries {
-		_, err := db.Exec(query)
-		require.NoError(t, err)
+		_, execErr := db.Exec(query)
+		require.NoError(t, execErr)
 	}
 
 	// Set schema version
@@ -70,14 +71,19 @@ func setupTestDB(t *testing.T) (*sql.DB, string, func()) {
 	require.NoError(t, err)
 
 	cleanup := func() {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		if closeErr := db.Close(); closeErr != nil {
+			t.Errorf("failed to close database: %v", closeErr)
+		}
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("failed to remove temp dir: %v", err)
+		}
 	}
 
 	return db, dbPath, cleanup
 }
 
 func insertTestData(t *testing.T, db *sql.DB) {
+	t.Helper()
 	// Insert test transactions
 	_, err := db.Exec(`
 		INSERT INTO transactions (id, hash, date, name, merchant_name, amount)
@@ -253,7 +259,9 @@ func TestCheckpointManager_Restore(t *testing.T) {
 	assert.Equal(t, 2, count)
 
 	// Close DB before restore
-	db.Close()
+	if closeErr := db.Close(); closeErr != nil {
+		t.Errorf("failed to close database before restore: %v", closeErr)
+	}
 
 	// Restore checkpoint
 	err = manager.Restore(ctx, "restore-test")
@@ -262,7 +270,11 @@ func TestCheckpointManager_Restore(t *testing.T) {
 	// Reopen database to verify restore
 	db, err = sql.Open("sqlite3", dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			t.Errorf("failed to close database: %v", closeErr)
+		}
+	}()
 
 	// Verify transaction was restored
 	err = db.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&count)
@@ -350,7 +362,7 @@ func TestCheckpointManager_IntegrityCheck(t *testing.T) {
 	checkpointPath := filepath.Join(filepath.Dir(dbPath), "checkpoints", "integrity-test.db")
 
 	// Write garbage to the file
-	err = os.WriteFile(checkpointPath, []byte("corrupted data"), 0644)
+	err = os.WriteFile(checkpointPath, []byte("corrupted data"), 0600)
 	require.NoError(t, err)
 
 	// Attempt to restore corrupted checkpoint

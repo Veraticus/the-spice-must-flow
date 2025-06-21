@@ -30,8 +30,8 @@ type MockPrompter struct {
 // MockConfirmCall records details of a single confirmation request.
 type MockConfirmCall struct {
 	Error          error
-	Pending        model.PendingClassification
 	Classification model.Classification
+	Pending        model.PendingClassification
 }
 
 // MockBatchConfirmCall records details of a batch confirmation request.

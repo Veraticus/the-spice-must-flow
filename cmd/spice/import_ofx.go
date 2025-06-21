@@ -85,7 +85,13 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 		slog.Info("Processing file", "file", filepath.Base(filePath))
 
 		// Open file
-		f, err := os.Open(filePath)
+		// Validate path
+		cleanPath := filepath.Clean(filePath)
+		if !filepath.IsAbs(cleanPath) {
+			cleanPath, _ = filepath.Abs(cleanPath)
+		}
+		// #nosec G304 - filePath comes from command line args and is cleaned
+		f, err := os.Open(cleanPath)
 		if err != nil {
 			slog.Error("Failed to open file",
 				"file", filePath,
@@ -95,7 +101,9 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 
 		// Parse OFX
 		transactions, err := parser.ParseFile(ctx, f)
-		f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Error("failed to close file", "error", closeErr, "file", filePath)
+		}
 
 		if err != nil {
 			slog.Error("Failed to parse OFX file",
@@ -134,9 +142,13 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 	}
 
 	// Show summary
-	fmt.Println("\n📁 File import summary:")
+	if _, err := fmt.Fprintln(os.Stdout, "\n📁 File import summary:"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 	for file, count := range fileResults {
-		fmt.Printf("  - %s: %d transactions\n", file, count)
+		if _, err := fmt.Fprintf(os.Stdout, "  - %s: %d transactions\n", file, count); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 	}
 
 	// Analyze combined data
@@ -149,7 +161,11 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to initialize storage: %w", err)
 		}
-		defer storageService.Close()
+		defer func() {
+			if err := storageService.Close(); err != nil {
+				slog.Error("failed to close storage", "error", err)
+			}
+		}()
 
 		// Save transactions
 		if err := storageService.SaveTransactions(ctx, allTransactions); err != nil {
@@ -191,45 +207,69 @@ func analyzeTransactions(transactions []model.Transaction, verbose bool) {
 		"accounts", len(accountMap),
 		"merchants", len(merchantMap))
 
-	fmt.Printf("\n📅 Transaction date range: %s to %s (%d days)\n",
+	if _, err := fmt.Fprintf(os.Stdout, "\n📅 Transaction date range: %s to %s (%d days)\n",
 		oldestDate.Format("2006-01-02"),
 		newestDate.Format("2006-01-02"),
-		int(newestDate.Sub(oldestDate).Hours()/24))
+		int(newestDate.Sub(oldestDate).Hours()/24)); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 
-	fmt.Printf("💰 Total amount: $%.2f\n", totalAmount)
+	if _, err := fmt.Fprintf(os.Stdout, "💰 Total amount: $%.2f\n", totalAmount); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 
 	// Show accounts
-	fmt.Println("\n🏦 Accounts found:")
+	if _, err := fmt.Fprintln(os.Stdout, "\n🏦 Accounts found:"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 	for acct, count := range accountMap {
-		fmt.Printf("  - %s (%d transactions)\n", acct, count)
+		if _, err := fmt.Fprintf(os.Stdout, "  - %s (%d transactions)\n", acct, count); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 	}
 
 	// Show sample transactions
-	fmt.Println("\n📝 Sample transactions (first 5):")
-	fmt.Println("──────────────────────────────────────────────────────")
+	if _, err := fmt.Fprintln(os.Stdout, "\n📝 Sample transactions (first 5):"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
+	if _, err := fmt.Fprintln(os.Stdout, "──────────────────────────────────────────────────────"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 	for i, tx := range transactions {
 		if i >= 5 {
 			break
 		}
-		fmt.Printf("Date: %s | Amount: $%.2f | Merchant: %s\n",
+		if _, err := fmt.Fprintf(os.Stdout, "Date: %s | Amount: $%.2f | Merchant: %s\n",
 			tx.Date.Format("2006-01-02"),
 			tx.Amount,
-			tx.MerchantName)
-		if verbose {
-			fmt.Printf("  Raw Name: %s\n", tx.Name)
-			fmt.Printf("  Account: %s\n", tx.AccountID)
-			fmt.Printf("  ID: %s\n", tx.ID)
+			tx.MerchantName); err != nil {
+			slog.Error("failed to write output", "error", err)
 		}
-		fmt.Println("──────────────────────────────────────────────────────")
+		if verbose {
+			if _, err := fmt.Fprintf(os.Stdout, "  Raw Name: %s\n", tx.Name); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
+			if _, err := fmt.Fprintf(os.Stdout, "  Account: %s\n", tx.AccountID); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
+			if _, err := fmt.Fprintf(os.Stdout, "  ID: %s\n", tx.ID); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
+		}
+		if _, err := fmt.Fprintln(os.Stdout, "──────────────────────────────────────────────────────"); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 	}
 
 	// Show top merchants
-	fmt.Println("\n🏪 Top merchants by transaction count:")
+	if _, err := fmt.Fprintln(os.Stdout, "\n🏪 Top merchants by transaction count:"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 	type merchantCount struct {
 		name  string
 		count int
 	}
-	var merchants []merchantCount
+	merchants := make([]merchantCount, 0, len(merchantMap))
 	for name, count := range merchantMap {
 		merchants = append(merchants, merchantCount{name, count})
 	}
@@ -245,6 +285,8 @@ func analyzeTransactions(transactions []model.Transaction, verbose bool) {
 		if i >= 10 {
 			break
 		}
-		fmt.Printf("  %2d. %s (%d transactions)\n", i+1, m.name, m.count)
+		if _, err := fmt.Fprintf(os.Stdout, "  %2d. %s (%d transactions)\n", i+1, m.name, m.count); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 	}
 }

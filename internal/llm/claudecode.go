@@ -130,19 +130,20 @@ func (c *claudeCodeClient) parseClassification(content string) (ClassificationRe
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "CATEGORY:") {
+		switch {
+		case strings.HasPrefix(line, "CATEGORY:"):
 			category = strings.TrimSpace(strings.TrimPrefix(line, "CATEGORY:"))
-		} else if strings.HasPrefix(line, "CONFIDENCE:") {
+		case strings.HasPrefix(line, "CONFIDENCE:"):
 			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
 			var err error
 			confidence, err = strconv.ParseFloat(confStr, 64)
 			if err != nil {
 				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
 			}
-		} else if strings.HasPrefix(line, "NEW:") {
+		case strings.HasPrefix(line, "NEW:"):
 			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
 			isNew = strings.ToLower(newStr) == "true"
-		} else if strings.HasPrefix(line, "DESCRIPTION:") {
+		case strings.HasPrefix(line, "DESCRIPTION:"):
 			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
 		}
 	}
@@ -236,17 +237,5 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 
 	return DescriptionResponse{
 		Description: strings.TrimSpace(response.Result),
-	}, nil
-}
-
-// generateDescriptionJSON handles description generation via JSON communication.
-func (c *claudeCodeClient) generateDescriptionJSON(ctx context.Context, prompt string) (DescriptionResponse, error) {
-	// This would be used when the Claude CLI isn't available
-	// For now, we'll return a simple response
-	var response claudeCodeResponse
-	response.Result = strings.TrimSpace(prompt)
-
-	return DescriptionResponse{
-		Description: response.Result,
 	}, nil
 }

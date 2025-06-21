@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,8 +113,8 @@ func (cm *CheckpointManager) Create(ctx context.Context, tag, description string
 	}
 
 	// Perform SQLite backup
-	if err := cm.backupDatabase(ctx, checkpointPath); err != nil {
-		return nil, fmt.Errorf("failed to backup database: %w", err)
+	if backupErr := cm.backupDatabase(ctx, checkpointPath); backupErr != nil {
+		return nil, fmt.Errorf("failed to backup database: %w", backupErr)
 	}
 
 	// Get checkpoint file size
@@ -137,14 +138,16 @@ func (cm *CheckpointManager) Create(ctx context.Context, tag, description string
 	metadataPath := filepath.Join(cm.checkpointsDir, tag+".meta.json")
 	if err := cm.saveMetadata(metadataPath, metadata); err != nil {
 		// Clean up checkpoint file on metadata save failure
-		os.Remove(checkpointPath)
+		if rmErr := os.Remove(checkpointPath); rmErr != nil {
+			slog.Error("failed to remove checkpoint file after metadata save failure", "error", rmErr)
+		}
 		return nil, fmt.Errorf("failed to save metadata: %w", err)
 	}
 
 	// Store metadata in database
 	if err := cm.storeMetadataInDB(ctx, metadata); err != nil {
 		// Non-fatal: checkpoint is still valid even if DB metadata fails
-		// Log error but continue
+		slog.Warn("failed to store checkpoint metadata in database", "error", err)
 	}
 
 	return &CheckpointInfo{
@@ -161,13 +164,13 @@ func (cm *CheckpointManager) Create(ctx context.Context, tag, description string
 }
 
 // List returns a list of all checkpoints.
-func (cm *CheckpointManager) List(ctx context.Context) ([]CheckpointInfo, error) {
+func (cm *CheckpointManager) List(_ context.Context) ([]CheckpointInfo, error) {
 	entries, err := os.ReadDir(cm.checkpointsDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read checkpoints directory: %w", err)
 	}
 
-	var checkpoints []CheckpointInfo
+	checkpoints := make([]CheckpointInfo, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta.json") {
 			continue
@@ -206,7 +209,7 @@ func (cm *CheckpointManager) List(ctx context.Context) ([]CheckpointInfo, error)
 }
 
 // Restore restores the database from a checkpoint.
-func (cm *CheckpointManager) Restore(ctx context.Context, checkpointID string) error {
+func (cm *CheckpointManager) Restore(_ context.Context, checkpointID string) error {
 	// Validate checkpoint ID
 	if strings.Contains(checkpointID, "/") || strings.Contains(checkpointID, "\\") || strings.Contains(checkpointID, "..") {
 		return errors.New("invalid checkpoint ID: cannot contain path separators")
@@ -248,12 +251,16 @@ func (cm *CheckpointManager) Restore(ctx context.Context, checkpointID string) e
 	// Restore checkpoint
 	if err := cm.copyFile(checkpointPath, cm.dbPath); err != nil {
 		// Attempt to restore backup on failure
-		cm.copyFile(backupPath, cm.dbPath)
+		if restoreErr := cm.copyFile(backupPath, cm.dbPath); restoreErr != nil {
+			slog.Error("failed to restore backup after checkpoint restore failure", "error", restoreErr)
+		}
 		return fmt.Errorf("failed to restore checkpoint: %w", err)
 	}
 
 	// Remove backup
-	os.Remove(backupPath)
+	if err := os.Remove(backupPath); err != nil {
+		slog.Error("failed to remove backup file", "error", err)
+	}
 
 	return nil
 }
@@ -283,18 +290,20 @@ func (cm *CheckpointManager) Delete(ctx context.Context, checkpointID string) er
 
 	if err := os.Remove(metadataPath); err != nil {
 		// Non-fatal: metadata might not exist
+		slog.Debug("failed to remove metadata file", "error", err, "path", metadataPath)
 	}
 
 	// Remove from database
 	if _, err := cm.db.ExecContext(ctx, "DELETE FROM checkpoint_metadata WHERE id = ?", checkpointID); err != nil {
 		// Non-fatal: DB record might not exist
+		slog.Debug("failed to remove checkpoint metadata from database", "error", err, "id", checkpointID)
 	}
 
 	return nil
 }
 
 // GetCheckpointInfo retrieves information about a specific checkpoint.
-func (cm *CheckpointManager) GetCheckpointInfo(ctx context.Context, checkpointID string) (*CheckpointInfo, error) {
+func (cm *CheckpointManager) GetCheckpointInfo(_ context.Context, checkpointID string) (*CheckpointInfo, error) {
 	metadataPath := filepath.Join(cm.checkpointsDir, checkpointID+".meta.json")
 
 	metadata, err := cm.loadMetadata(metadataPath)
@@ -322,11 +331,18 @@ func (cm *CheckpointManager) GetCheckpointInfo(ctx context.Context, checkpointID
 
 func (cm *CheckpointManager) collectRowCounts(ctx context.Context) (map[string]int, error) {
 	counts := make(map[string]int)
-	tables := []string{"transactions", "vendors", "categories", "classifications", "progress"}
 
-	for _, table := range tables {
+	// Use explicit queries for each table to avoid SQL injection
+	tableQueries := map[string]string{
+		"transactions":    "SELECT COUNT(*) FROM transactions",
+		"vendors":         "SELECT COUNT(*) FROM vendors",
+		"categories":      "SELECT COUNT(*) FROM categories",
+		"classifications": "SELECT COUNT(*) FROM classifications",
+		"progress":        "SELECT COUNT(*) FROM progress",
+	}
+
+	for table, query := range tableQueries {
 		var count int
-		query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
 		if err := cm.db.QueryRowContext(ctx, query).Scan(&count); err != nil {
 			// Table might not exist in older schemas
 			counts[table] = 0
@@ -339,15 +355,31 @@ func (cm *CheckpointManager) collectRowCounts(ctx context.Context) (map[string]i
 }
 
 func (cm *CheckpointManager) hasEnoughDiskSpace(required int64) bool {
-	// This is a simplified check. In production, you'd use syscall.Statfs
-	// For now, we'll assume there's enough space if we can write a small test file
+	// Check if we can create a file of the required size
 	testFile := filepath.Join(cm.checkpointsDir, ".space-test")
+	// Validate path to prevent directory traversal
+	if !strings.HasPrefix(filepath.Clean(testFile), filepath.Clean(cm.checkpointsDir)) {
+		return false
+	}
+	// #nosec G304 - testFile path is validated above
 	f, err := os.Create(testFile)
 	if err != nil {
 		return false
 	}
-	f.Close()
-	os.Remove(testFile)
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Error("failed to close test file", "error", err)
+		}
+		if err := os.Remove(testFile); err != nil {
+			slog.Error("failed to remove test file", "error", err)
+		}
+	}()
+
+	// Try to truncate to required size to check available space
+	if err := f.Truncate(required); err != nil {
+		return false
+	}
+
 	return true
 }
 
@@ -363,13 +395,28 @@ func (cm *CheckpointManager) backupDatabase(ctx context.Context, destPath string
 	if err != nil {
 		return fmt.Errorf("failed to open destination database: %w", err)
 	}
-	defer destDB.Close()
+	defer func() {
+		if err := destDB.Close(); err != nil {
+			slog.Error("failed to close destination database", "error", err)
+		}
+	}()
 
 	// Use VACUUM INTO for atomic copy (SQLite 3.27.0+)
+	// Validate destPath to prevent SQL injection
+	if strings.Contains(destPath, "'") || strings.Contains(destPath, "\"") || strings.Contains(destPath, ";") {
+		return fmt.Errorf("invalid destination path: contains forbidden characters")
+	}
+	// Additional path validation
+	if !filepath.IsAbs(destPath) || strings.Contains(destPath, "..") {
+		return fmt.Errorf("invalid destination path")
+	}
+	// #nosec G201 - destPath is validated above to prevent SQL injection
 	query := fmt.Sprintf("VACUUM INTO '%s'", destPath)
 	if _, err := cm.db.ExecContext(ctx, query); err != nil {
 		// Fallback to file copy if VACUUM INTO not supported
-		destDB.Close()
+		if closeErr := destDB.Close(); closeErr != nil {
+			slog.Error("failed to close destination database before fallback", "error", closeErr)
+		}
 		return cm.copyFile(cm.dbPath, destPath)
 	}
 
@@ -377,28 +424,51 @@ func (cm *CheckpointManager) backupDatabase(ctx context.Context, destPath string
 }
 
 func (cm *CheckpointManager) copyFile(src, dst string) error {
+	// Validate paths to prevent directory traversal
+	cleanSrc := filepath.Clean(src)
+	cleanDst := filepath.Clean(dst)
+	if cleanSrc != src || cleanDst != dst || strings.Contains(src, "..") || strings.Contains(dst, "..") {
+		return fmt.Errorf("invalid file paths")
+	}
+
 	// Create temporary file first for atomic operation
 	tmpDst := dst + ".tmp"
+	// Validate tmpDst path
+	if !filepath.IsAbs(tmpDst) || strings.Contains(tmpDst, "..") {
+		return fmt.Errorf("invalid temporary destination path")
+	}
 
-	source, err := os.Open(src)
+	// #nosec G304 - cleanSrc is validated above
+	source, err := os.Open(cleanSrc)
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() {
+		if closeErr := source.Close(); closeErr != nil {
+			slog.Error("failed to close source file", "error", closeErr)
+		}
+	}()
 
+	// #nosec G304 - tmpDst is validated above
 	destination, err := os.Create(tmpDst)
 	if err != nil {
 		return err
 	}
 
 	if _, err := io.Copy(destination, source); err != nil {
-		destination.Close()
-		os.Remove(tmpDst)
+		if closeErr := destination.Close(); closeErr != nil {
+			slog.Error("failed to close destination file after copy error", "error", closeErr)
+		}
+		if rmErr := os.Remove(tmpDst); rmErr != nil {
+			slog.Error("failed to remove temporary file after copy error", "error", rmErr)
+		}
 		return err
 	}
 
 	if err := destination.Close(); err != nil {
-		os.Remove(tmpDst)
+		if removeErr := os.Remove(tmpDst); removeErr != nil {
+			slog.Error("failed to remove temporary file after close error", "error", removeErr)
+		}
 		return err
 	}
 
@@ -414,7 +484,7 @@ func (cm *CheckpointManager) saveMetadata(path string, metadata CheckpointMetada
 
 	// Write to temporary file first
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return err
 	}
 
@@ -423,6 +493,11 @@ func (cm *CheckpointManager) saveMetadata(path string, metadata CheckpointMetada
 }
 
 func (cm *CheckpointManager) loadMetadata(path string) (*CheckpointMetadata, error) {
+	// Validate path to prevent directory traversal
+	if !filepath.IsAbs(path) || strings.Contains(path, "..") {
+		return nil, fmt.Errorf("invalid metadata path")
+	}
+	// #nosec G304 - path is validated above
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -441,7 +516,11 @@ func (cm *CheckpointManager) verifyCheckpointIntegrity(path string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("failed to close database", "error", err)
+		}
+	}()
 
 	var result string
 	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil {
@@ -497,15 +576,20 @@ func (cm *CheckpointManager) AutoCheckpoint(ctx context.Context, prefix string) 
 	metadata, err := cm.loadMetadata(metadataPath)
 	if err == nil {
 		metadata.IsAuto = true
-		cm.saveMetadata(metadataPath, *metadata)
+		if saveErr := cm.saveMetadata(metadataPath, *metadata); saveErr != nil {
+			slog.Error("failed to save updated metadata for auto-checkpoint", "error", saveErr)
+		}
 
 		// Also update in database if possible
-		cm.storeMetadataInDB(ctx, *metadata)
+		if dbErr := cm.storeMetadataInDB(ctx, *metadata); dbErr != nil {
+			slog.Error("failed to store metadata in database for auto-checkpoint", "error", dbErr)
+		}
 	}
 
 	// Clean up old auto-checkpoints if needed
 	if err := cm.cleanupOldAutoCheckpoints(ctx); err != nil {
 		// Non-fatal: log but continue
+		slog.Warn("failed to clean up old auto-checkpoints", "error", err)
 	}
 
 	return nil
@@ -528,6 +612,7 @@ func (cm *CheckpointManager) cleanupOldAutoCheckpoints(ctx context.Context) erro
 				// Delete old auto-checkpoint
 				if err := cm.Delete(ctx, cp.ID); err != nil {
 					// Non-fatal: continue cleanup
+					slog.Debug("failed to delete old auto-checkpoint during cleanup", "error", err, "checkpoint", cp.ID)
 				}
 			}
 		}
