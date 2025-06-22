@@ -175,3 +175,96 @@ func (m *MockClassifier) GenerateCategoryDescription(_ context.Context, category
 	// Generate a simple description based on the category name
 	return fmt.Sprintf("Expenses related to %s and associated services", strings.ToLower(categoryName)), nil
 }
+
+// SuggestCategoryRankings provides deterministic category rankings for testing.
+func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Create rankings for all provided categories
+	rankings := make(model.CategoryRankings, 0, len(categories)+1) // +1 for potential new category
+
+	merchantLower := strings.ToLower(transaction.MerchantName)
+	if merchantLower == "" {
+		merchantLower = strings.ToLower(transaction.Name)
+	}
+
+	// Score each existing category
+	for _, cat := range categories {
+		var score float64
+		catLower := strings.ToLower(cat.Name)
+
+		// Deterministic scoring based on merchant and category names
+		switch {
+		case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "coffee"):
+			score = 0.95
+		case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "dining"):
+			score = 0.85
+		case strings.Contains(merchantLower, "amazon") && strings.Contains(catLower, "shopping"):
+			score = 0.80
+		case strings.Contains(merchantLower, "amazon") && strings.Contains(catLower, "office"):
+			score = 0.70
+		case strings.Contains(merchantLower, "whole foods") && strings.Contains(catLower, "groceries"):
+			score = 0.95
+		case strings.Contains(merchantLower, "shell") && strings.Contains(catLower, "transportation"):
+			score = 0.90
+		case strings.Contains(merchantLower, "netflix") && strings.Contains(catLower, "entertainment"):
+			score = 0.98
+		default:
+			// Base score on partial matches
+			switch {
+			case strings.Contains(catLower, "shopping"):
+				score = 0.30
+			case strings.Contains(catLower, "misc") || strings.Contains(catLower, "other"):
+				score = 0.20
+			default:
+				score = 0.10
+			}
+		}
+
+		rankings = append(rankings, model.CategoryRanking{
+			Category: cat.Name,
+			Score:    score,
+			IsNew:    false,
+		})
+	}
+
+	// Add a new category suggestion for fitness merchants
+	if strings.Contains(merchantLower, "peloton") || strings.Contains(merchantLower, "fitness") {
+		var alreadyHasFitness bool
+		for _, cat := range categories {
+			if strings.Contains(strings.ToLower(cat.Name), "fitness") || strings.Contains(strings.ToLower(cat.Name), "health") {
+				alreadyHasFitness = true
+				break
+			}
+		}
+
+		if !alreadyHasFitness {
+			rankings = append(rankings, model.CategoryRanking{
+				Category:    "Fitness & Health",
+				Score:       0.75,
+				IsNew:       true,
+				Description: "Expenses related to fitness equipment, gym memberships, and health activities",
+			})
+		}
+	}
+
+	// Apply check pattern boosts if this is a check transaction
+	if transaction.Type == "CHECK" && len(checkPatterns) > 0 {
+		rankings.ApplyCheckPatternBoosts(checkPatterns)
+	}
+
+	// Sort rankings by score
+	rankings.Sort()
+
+	// Record the call
+	call := MockLLMCall{
+		Transaction: transaction,
+		Category:    rankings.Top().Category,
+		Confidence:  rankings.Top().Score,
+		Error:       nil,
+	}
+	m.calls = append(m.calls, call)
+
+	return rankings, nil
+}

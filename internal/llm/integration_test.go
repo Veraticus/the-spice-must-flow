@@ -117,13 +117,13 @@ func TestLLMIntegration_OpenAI(t *testing.T) {
 
 		// First call
 		start := time.Now()
-		category1, confidence1, err := classifier.SuggestCategory(ctx, txn)
+		category1, confidence1, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Entertainment", "Shopping"})
 		require.NoError(t, err)
 		duration1 := time.Since(start)
 
 		// Second call (should hit cache)
 		start = time.Now()
-		category2, confidence2, err := classifier.SuggestCategory(ctx, txn)
+		category2, confidence2, _, _, err := classifier.SuggestCategory(ctx, txn, []string{"Entertainment", "Shopping"})
 		require.NoError(t, err)
 		duration2 := time.Since(start)
 

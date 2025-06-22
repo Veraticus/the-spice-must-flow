@@ -57,6 +57,26 @@ func (m *mockClient) Classify(_ context.Context, prompt string) (ClassificationR
 	return ClassificationResponse{}, fmt.Errorf("no more mock responses (call %d, responses: %d)", callIdx, len(m.responses))
 }
 
+func (m *mockClient) ClassifyWithRankings(_ context.Context, prompt string) (RankingResponse, error) {
+	// For testing, return a simple ranking based on the Classify method
+	classResp, err := m.Classify(context.Background(), prompt)
+	if err != nil {
+		return RankingResponse{}, err
+	}
+
+	// Convert single classification to rankings
+	rankings := []CategoryRanking{
+		{
+			Category:    classResp.Category,
+			Score:       classResp.Confidence,
+			IsNew:       classResp.IsNew,
+			Description: classResp.CategoryDescription,
+		},
+	}
+
+	return RankingResponse{Rankings: rankings}, nil
+}
+
 func (m *mockClient) GenerateDescription(_ context.Context, categoryName string) (DescriptionResponse, error) {
 	return DescriptionResponse{
 		Description: "Mock description for " + categoryName,

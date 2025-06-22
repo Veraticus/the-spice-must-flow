@@ -185,6 +185,69 @@ type openAIResponse struct {
 	Created int64 `json:"created"`
 }
 
+// ClassifyWithRankings sends a ranking classification request to OpenAI.
+func (c *openAIClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
+	requestBody := map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are a financial transaction classifier. You must rank ALL categories by likelihood and follow the exact format requested.",
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": c.temperature,
+		"max_tokens":  c.maxTokens * 3, // More tokens needed for ranking all categories
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return RankingResponse{}, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response openAIResponse
+	if unmarshalErr := json.Unmarshal(body, &response); unmarshalErr != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse response: %w", unmarshalErr)
+	}
+
+	if len(response.Choices) == 0 {
+		return RankingResponse{}, fmt.Errorf("no completion choices returned")
+	}
+
+	rankings, err := parseLLMRankings(response.Choices[0].Message.Content)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
+	}
+
+	return RankingResponse{Rankings: rankings}, nil
+}
+
 // GenerateDescription generates a description for a category.
 func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	requestBody := map[string]any{

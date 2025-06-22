@@ -80,6 +80,7 @@ func NewClassifier(cfg Config, logger *slog.Logger) (*Classifier, error) {
 }
 
 // SuggestCategory suggests a category for a single transaction.
+// This method now uses the ranking system internally for backward compatibility.
 func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, string, error) {
 	// Check cache first
 	if suggestion, found := c.cache.get(transaction.Hash); found {
@@ -89,66 +90,45 @@ func (c *Classifier) SuggestCategory(ctx context.Context, transaction model.Tran
 		return suggestion.Category, suggestion.Confidence, suggestion.IsNew, suggestion.CategoryDescription, nil
 	}
 
-	// Rate limiting
-	if err := c.rateLimiter.wait(ctx); err != nil {
-		return "", 0, false, "", fmt.Errorf("rate limit error: %w", err)
+	// Convert string categories to model.Category slice
+	// Since we don't have descriptions here, we'll use empty descriptions
+	categoryModels := make([]model.Category, len(categories))
+	for i, cat := range categories {
+		categoryModels[i] = model.Category{
+			Name:        cat,
+			Description: "", // Will be populated by LLM if needed
+		}
 	}
 
-	// Prepare the prompt
-	prompt := c.buildPrompt(transaction, categories)
-
-	var category string
-	var confidence float64
-	var isNew bool
-	var description string
-
-	// Use common retry logic
-	err := common.WithRetry(ctx, func() error {
-		c.logger.Debug("attempting LLM classification",
-			"transaction_id", transaction.ID)
-
-		response, err := c.client.Classify(ctx, prompt)
-		if err != nil {
-			c.logger.Warn("LLM classification attempt failed",
-				"error", err,
-				"transaction_id", transaction.ID)
-			// All LLM errors are considered retryable
-			return &common.RetryableError{Err: err, Retryable: true}
-		}
-
-		category = response.Category
-		confidence = response.Confidence
-		isNew = response.IsNew
-		description = response.CategoryDescription
-		c.logger.Debug("classification succeeded",
-			"category", category,
-			"confidence", confidence,
-			"isNew", isNew,
-			"description", description)
-		return nil
-	}, c.retryOpts)
-
+	// Use the new ranking method internally
+	rankings, err := c.SuggestCategoryRankings(ctx, transaction, categoryModels, nil)
 	if err != nil {
-		return "", 0, false, "", fmt.Errorf("classification failed: %w", err)
+		return "", 0, false, "", err
+	}
+
+	// Get the top-ranked category
+	top := rankings.Top()
+	if top == nil {
+		return "", 0, false, "", fmt.Errorf("no category rankings returned")
 	}
 
 	// Cache the result
 	c.cache.set(transaction.Hash, service.LLMSuggestion{
 		TransactionID:       transaction.ID,
-		Category:            category,
-		Confidence:          confidence,
-		IsNew:               isNew,
-		CategoryDescription: description,
+		Category:            top.Category,
+		Confidence:          top.Score,
+		IsNew:               top.IsNew,
+		CategoryDescription: top.Description,
 	})
 
-	c.logger.Info("transaction classified",
+	c.logger.Info("transaction classified (via rankings)",
 		"transaction_id", transaction.ID,
 		"merchant", transaction.MerchantName,
-		"category", category,
-		"confidence", confidence,
-		"isNew", isNew)
+		"category", top.Category,
+		"confidence", top.Score,
+		"isNew", top.IsNew)
 
-	return category, confidence, isNew, description, nil
+	return top.Category, top.Score, top.IsNew, top.Description, nil
 }
 
 // BatchSuggestCategories suggests categories for multiple transactions.
@@ -321,4 +301,164 @@ Respond with ONLY the description text, no additional formatting or explanation.
 		"description", description)
 
 	return description, nil
+}
+
+// SuggestCategoryRankings suggests category rankings for a transaction.
+func (c *Classifier) SuggestCategoryRankings(ctx context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error) {
+	// Check cache first for backward compatibility with SuggestCategory
+	if suggestion, found := c.cache.get(transaction.Hash); found {
+		c.logger.Debug("cache hit for transaction (converting to rankings)",
+			"transaction_id", transaction.ID,
+			"merchant", transaction.MerchantName)
+
+		// Convert cached suggestion to rankings format
+		rankings := model.CategoryRankings{
+			{
+				Category:    suggestion.Category,
+				Score:       suggestion.Confidence,
+				IsNew:       suggestion.IsNew,
+				Description: suggestion.CategoryDescription,
+			},
+		}
+		return rankings, nil
+	}
+
+	// Rate limiting
+	if err := c.rateLimiter.wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limit error: %w", err)
+	}
+
+	// Prepare the ranking prompt
+	prompt := c.buildPromptWithRanking(transaction, categories, checkPatterns)
+
+	var rankings model.CategoryRankings
+
+	// Use common retry logic
+	err := common.WithRetry(ctx, func() error {
+		c.logger.Debug("attempting LLM ranking classification",
+			"transaction_id", transaction.ID)
+
+		response, err := c.client.ClassifyWithRankings(ctx, prompt)
+		if err != nil {
+			c.logger.Warn("LLM ranking classification attempt failed",
+				"error", err,
+				"transaction_id", transaction.ID)
+			return &common.RetryableError{Err: err, Retryable: true}
+		}
+
+		// Convert response to model.CategoryRankings
+		rankings = make(model.CategoryRankings, len(response.Rankings))
+		for i, r := range response.Rankings {
+			rankings[i] = model.CategoryRanking{
+				Category:    r.Category,
+				Score:       r.Score,
+				IsNew:       r.IsNew,
+				Description: r.Description,
+			}
+		}
+
+		// Validate the rankings
+		if err := rankings.Validate(); err != nil {
+			c.logger.Warn("invalid rankings from LLM",
+				"error", err,
+				"transaction_id", transaction.ID)
+			return &common.RetryableError{Err: fmt.Errorf("invalid rankings: %w", err), Retryable: true}
+		}
+
+		return nil
+	}, c.retryOpts)
+
+	if err != nil {
+		return nil, fmt.Errorf("ranking classification failed: %w", err)
+	}
+
+	// Apply check pattern boosts if any patterns matched
+	if len(checkPatterns) > 0 {
+		rankings.ApplyCheckPatternBoosts(checkPatterns)
+		c.logger.Debug("applied check pattern boosts",
+			"transaction_id", transaction.ID,
+			"pattern_count", len(checkPatterns))
+	}
+
+	// Sort rankings by score
+	rankings.Sort()
+
+	c.logger.Info("transaction rankings classified",
+		"transaction_id", transaction.ID,
+		"merchant", transaction.MerchantName,
+		"top_category", rankings.Top().Category,
+		"top_score", rankings.Top().Score,
+		"ranking_count", len(rankings))
+
+	return rankings, nil
+}
+
+// buildPromptWithRanking creates the prompt for transaction ranking classification.
+func (c *Classifier) buildPromptWithRanking(txn model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) string {
+	merchant := txn.MerchantName
+	if merchant == "" {
+		merchant = txn.Name
+	}
+
+	// Build transaction details
+	transactionDetails := fmt.Sprintf("Merchant: %s\nAmount: $%.2f\nDate: %s\nDescription: %s",
+		merchant,
+		txn.Amount,
+		txn.Date.Format("2006-01-02"),
+		txn.Name)
+
+	// Include transaction type if available
+	if txn.Type != "" {
+		transactionDetails += fmt.Sprintf("\nTransaction Type: %s", txn.Type)
+	}
+
+	// Include check number if it's a check
+	if txn.CheckNumber != "" {
+		transactionDetails += fmt.Sprintf("\nCheck Number: %s", txn.CheckNumber)
+	}
+
+	// Add check pattern hints if applicable
+	checkHints := ""
+	if txn.Type == "CHECK" && len(checkPatterns) > 0 {
+		checkHints = "Check Pattern Matches:\n"
+		for _, pattern := range checkPatterns {
+			checkHints += fmt.Sprintf("- Pattern '%s' suggests category '%s' (based on %d previous uses)\n",
+				pattern.PatternName, pattern.Category, pattern.UseCount)
+		}
+		checkHints += "\n"
+	}
+
+	// Build category list with descriptions
+	categoryList := ""
+	for _, cat := range categories {
+		categoryList += fmt.Sprintf("- %s: %s\n", cat.Name, cat.Description)
+	}
+
+	return fmt.Sprintf(`You are a financial transaction classifier. Your task is to rank ALL provided categories by how likely this transaction belongs to each one.
+
+Transaction Details:
+%s
+
+%s
+Categories to rank:
+%s
+
+Instructions:
+1. Analyze the transaction and rank EVERY category by likelihood (0.0 to 1.0)
+2. The scores should be relative probabilities (they don't need to sum to 1.0)
+3. If none of the existing categories fit well, you may suggest ONE new category with score >0.7
+4. Return results in this exact format:
+
+RANKINGS:
+category_name|score
+category_name|score
+...
+
+NEW_CATEGORY (only if needed):
+name: Category Name
+score: 0.75
+description: One sentence description of what belongs in this category`,
+		transactionDetails,
+		checkHints,
+		categoryList)
 }

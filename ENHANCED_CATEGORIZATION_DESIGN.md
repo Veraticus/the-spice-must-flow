@@ -223,19 +223,19 @@ ID  Pattern Name        Amount(s)      Category         Uses  Last Used
 ## Implementation TODO List
 
 ### Phase 1: Database & Model Layer
-- [ ] Create migration for `check_patterns` table
-- [ ] Add `CheckPattern` model to `internal/model/`
-- [ ] Update service interfaces to include check pattern methods
-- [ ] Implement check pattern storage methods in SQLiteStorage
+- [X] Create migration for `check_patterns` table
+- [X] Add `CheckPattern` model to `internal/model/`
+- [X] Update service interfaces to include check pattern methods
+- [X] Implement check pattern storage methods in SQLiteStorage
 
 ### Phase 2: Check Pattern Management CLI
-- [ ] Create `cmd/spice/checks.go` with main command structure
-- [ ] Implement `checks list` command with formatted table output
-- [ ] Implement `checks add` command with interactive prompts
-- [ ] Implement `checks edit` command
-- [ ] Implement `checks delete` command with confirmation
-- [ ] Implement `checks test` command for pattern matching testing
-- [ ] Add unit tests for all check commands
+- [X] Create `cmd/spice/checks.go` with main command structure
+- [X] Implement `checks list` command with formatted table output
+- [X] Implement `checks add` command with interactive prompts
+- [X] Implement `checks edit` command
+- [X] Implement `checks delete` command with confirmation
+- [X] Implement `checks test` command for pattern matching testing
+- [X] Add unit tests for all check commands
 
 ### Phase 3: LLM Enhancement
 - [ ] Create `CategoryRanking` struct in model package

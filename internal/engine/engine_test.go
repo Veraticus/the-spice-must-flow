@@ -618,6 +618,24 @@ func (f *failingClassifier) GenerateCategoryDescription(_ context.Context, categ
 	return "Test description for " + categoryName, nil
 }
 
+func (f *failingClassifier) SuggestCategoryRankings(_ context.Context, transaction model.Transaction, _ []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
+	// Call SuggestCategory to maintain the same behavior
+	cat, conf, isNew, desc, err := f.SuggestCategory(context.Background(), transaction, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return single ranking based on SuggestCategory result
+	return model.CategoryRankings{
+		{
+			Category:    cat,
+			Score:       conf,
+			IsNew:       isNew,
+			Description: desc,
+		},
+	}, nil
+}
+
 // TestNewCategoryFlow tests the flow when AI suggests a new category.
 func TestNewCategoryFlow(t *testing.T) {
 	ctx := context.Background()
@@ -730,6 +748,22 @@ func (n *newCategoryClassifier) BatchSuggestCategories(ctx context.Context, tran
 
 func (n *newCategoryClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
 	return "Generated description for " + categoryName, nil
+}
+
+func (n *newCategoryClassifier) SuggestCategoryRankings(_ context.Context, _ model.Transaction, _ []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
+	// Return the new category suggestion as a ranking
+	description := ""
+	if n.isNew {
+		description = "Description for " + n.suggestedCategory
+	}
+	return model.CategoryRankings{
+		{
+			Category:    n.suggestedCategory,
+			Score:       n.confidence,
+			IsNew:       n.isNew,
+			Description: description,
+		},
+	}, nil
 }
 
 // newCategoryPrompter simulates user accepting a new category.

@@ -182,6 +182,69 @@ type anthropicResponse struct {
 	} `json:"usage"`
 }
 
+// ClassifyWithRankings sends a ranking classification request to Anthropic.
+func (c *anthropicClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
+	systemPrompt := "You are a financial transaction classifier. You must rank ALL categories by likelihood and follow the exact format requested."
+
+	requestBody := map[string]any{
+		"model":       c.model,
+		"max_tokens":  c.maxTokens * 3, // More tokens needed for ranking all categories
+		"temperature": c.temperature,
+		"system":      systemPrompt,
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return RankingResponse{}, fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response anthropicResponse
+	if unmarshalErr := json.Unmarshal(body, &response); unmarshalErr != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse response: %w", unmarshalErr)
+	}
+
+	if len(response.Content) == 0 {
+		return RankingResponse{}, fmt.Errorf("no content in response")
+	}
+
+	rankings, err := parseLLMRankings(response.Content[0].Text)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
+	}
+
+	return RankingResponse{Rankings: rankings}, nil
+}
+
 // GenerateDescription generates a description for a category.
 func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	requestBody := map[string]any{

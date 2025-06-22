@@ -7,6 +7,7 @@ import (
 // Client defines the interface for LLM providers.
 type Client interface {
 	Classify(ctx context.Context, prompt string) (ClassificationResponse, error)
+	ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error)
 	GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error)
 }
 
@@ -21,4 +22,17 @@ type ClassificationResponse struct {
 // DescriptionResponse contains the LLM's generated description.
 type DescriptionResponse struct {
 	Description string
+}
+
+// RankingResponse contains the LLM's category rankings result.
+type RankingResponse struct {
+	Rankings []CategoryRanking
+}
+
+// CategoryRanking represents a single category ranking from the LLM.
+type CategoryRanking struct {
+	Category    string
+	Description string
+	Score       float64
+	IsNew       bool
 }

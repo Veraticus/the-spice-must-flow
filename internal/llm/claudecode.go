@@ -178,6 +178,74 @@ type claudeCodeResponse struct {
 	TotalCost float64 `json:"total_cost_usd"`
 }
 
+// ClassifyWithRankings sends a ranking classification request to Claude Code.
+func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
+	// Build the full prompt with system context
+	fullPrompt := fmt.Sprintf(
+		"You are a financial transaction classifier. You must rank ALL categories by likelihood and follow the exact format requested.\n\n%s",
+		prompt,
+	)
+
+	// Build command arguments
+	args := []string{
+		"-p", fullPrompt,
+		"--output-format", "json",
+		"--model", c.model,
+		"--max-turns", strconv.Itoa(c.maxTurns),
+	}
+
+	// Create command with context
+	cmd := exec.CommandContext(ctx, c.cliPath, args...)
+
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Set timeout if not already set in context
+	cmdCtx := ctx
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		cmdCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+	cmd = exec.CommandContext(cmdCtx, c.cliPath, args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Execute command
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return RankingResponse{}, fmt.Errorf("claude code error: %s", stderr.String())
+		}
+		return RankingResponse{}, fmt.Errorf("failed to execute claude: %w", err)
+	}
+
+	// Parse JSON response
+	var response claudeCodeResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		// If JSON parsing fails, try to parse raw output
+		rankings, err := parseLLMRankings(stdout.String())
+		if err != nil {
+			return RankingResponse{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		return RankingResponse{Rankings: rankings}, nil
+	}
+
+	// Check for errors in response
+	if response.IsError {
+		return RankingResponse{}, fmt.Errorf("claude code error in response")
+	}
+
+	// Parse the content
+	rankings, err := parseLLMRankings(response.Result)
+	if err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
+	}
+
+	return RankingResponse{Rankings: rankings}, nil
+}
+
 // GenerateDescription generates a description for a category.
 func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	// Build the full prompt with system context
