@@ -144,6 +144,7 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 		SELECT 
 			t.id, t.hash, t.date, t.name, t.merchant_name,
 			t.amount, t.categories, t.account_id,
+			t.transaction_type, t.check_number,
 			c.category, c.status, c.confidence, c.classified_at, c.notes
 		FROM classifications c
 		JOIN transactions t ON c.transaction_id = t.id
@@ -161,6 +162,8 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 		var c model.Classification
 		var statusStr string
 		var categories sql.NullString
+		var txType sql.NullString
+		var checkNum sql.NullString
 
 		err := rows.Scan(
 			&c.Transaction.ID,
@@ -171,6 +174,8 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 			&c.Transaction.Amount,
 			&categories,
 			&c.Transaction.AccountID,
+			&txType,
+			&checkNum,
 			&c.Category,
 			&statusStr,
 			&c.Confidence,
@@ -188,6 +193,14 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 			if err := json.Unmarshal([]byte(categories.String), &c.Transaction.Category); err != nil {
 				return nil, fmt.Errorf("failed to parse categories: %w", err)
 			}
+		}
+
+		// Set transaction type and check number
+		if txType.Valid {
+			c.Transaction.Type = txType.String
+		}
+		if checkNum.Valid {
+			c.Transaction.CheckNumber = checkNum.String
 		}
 
 		classifications = append(classifications, c)

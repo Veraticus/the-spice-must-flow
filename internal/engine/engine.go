@@ -212,14 +212,30 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 	// Get AI suggestion for the representative transaction
 	representative := txns[0]
 
-	var category string
-	var confidence float64
-	var isNew bool
-	var description string
+	// Load check patterns for CHECK transactions
+	var checkPatterns []model.CheckPattern
+	if representative.Type == "CHECK" {
+		var err error
+		checkPatterns, err = e.storage.GetMatchingCheckPatterns(ctx, representative)
+		if err != nil {
+			slog.Warn("Failed to get check patterns", "error", err)
+			// Continue without patterns rather than failing
+		}
+	}
 
+	// Convert category strings to model.Category objects
+	categoryModels := make([]model.Category, len(categories))
+	for i, cat := range categories {
+		categoryModels[i] = model.Category{
+			Name:        cat,
+			Description: "", // Will be populated by storage if needed
+		}
+	}
+
+	var rankings model.CategoryRankings
 	err := common.WithRetry(ctx, func() error {
 		var err error
-		category, confidence, isNew, description, err = e.classifier.SuggestCategory(ctx, representative, categories)
+		rankings, err = e.classifier.SuggestCategoryRankings(ctx, representative, categoryModels, checkPatterns)
 		if err != nil {
 			return &common.RetryableError{Err: err, Retryable: true}
 		}
@@ -233,6 +249,70 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	if err != nil {
 		return nil, fmt.Errorf("AI classification failed: %w", err)
+	}
+
+	// Extract top-ranked category
+	top := rankings.Top()
+	if top == nil {
+		return nil, fmt.Errorf("no category rankings returned")
+	}
+
+	category := top.Category
+	confidence := top.Score
+	isNew := top.IsNew
+	description := top.Description
+
+	// Auto-classify if confidence is high enough (≥85%) and it's not a new category
+	if confidence >= 0.85 && !isNew {
+		slog.Info("Auto-classifying with high confidence",
+			"merchant", merchant,
+			"category", category,
+			"confidence", confidence,
+			"transaction_count", len(txns))
+
+		classifications := make([]model.Classification, len(txns))
+		for i, txn := range txns {
+			classifications[i] = model.Classification{
+				Transaction:  txn,
+				Category:     category,
+				Status:       model.StatusClassifiedByAI,
+				Confidence:   confidence,
+				ClassifiedAt: time.Now(),
+			}
+		}
+
+		// Update pattern use counts if check patterns contributed
+		if len(checkPatterns) > 0 {
+			for _, pattern := range checkPatterns {
+				if pattern.Category == category {
+					if incrementErr := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); incrementErr != nil {
+						slog.Warn("Failed to increment pattern use count",
+							"pattern_id", pattern.ID,
+							"error", incrementErr)
+					}
+				}
+			}
+		}
+
+		// Save vendor rule for auto-classified transactions
+		vendor := &model.Vendor{
+			Name:        merchant,
+			Category:    category,
+			LastUpdated: time.Now(),
+			UseCount:    len(classifications),
+		}
+
+		if saveErr := e.storage.SaveVendor(ctx, vendor); saveErr != nil {
+			slog.Warn("Failed to save vendor rule for auto-classified transactions",
+				"merchant", merchant,
+				"error", saveErr)
+		} else {
+			slog.Info("Created vendor rule from auto-classification",
+				"merchant", merchant,
+				"category", vendor.Category)
+		}
+
+		return classifications, nil
 	}
 
 	// Check if this is a high-variance merchant
@@ -253,6 +333,8 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 			SimilarCount:        len(txns),
 			IsNewCategory:       isNew,
 			CategoryDescription: description,
+			CategoryRankings:    rankings,
+			CheckPatterns:       checkPatterns,
 		}
 	}
 
@@ -288,6 +370,20 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 				"merchant", merchant,
 				"category", vendor.Category)
 		}
+
+		// Update pattern use counts if check patterns contributed to the confirmed classification
+		if len(checkPatterns) > 0 && len(classifications) > 0 {
+			confirmedCategory := classifications[0].Category
+			for _, pattern := range checkPatterns {
+				if pattern.Category == confirmedCategory {
+					if incrementErr := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); incrementErr != nil {
+						slog.Warn("Failed to increment pattern use count",
+							"pattern_id", pattern.ID,
+							"error", incrementErr)
+					}
+				}
+			}
+		}
 	}
 
 	return classifications, nil
@@ -297,27 +393,61 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
 	classifications := make([]model.Classification, 0, len(txns))
 
+	// Convert category strings to model.Category objects
+	categoryModels := make([]model.Category, len(categories))
+	for i, cat := range categories {
+		categoryModels[i] = model.Category{
+			Name:        cat,
+			Description: "", // Will be populated by storage if needed
+		}
+	}
+
 	for _, txn := range txns {
+		// Load check patterns for CHECK transactions
+		var checkPatterns []model.CheckPattern
+		if txn.Type == "CHECK" {
+			var err error
+			checkPatterns, err = e.storage.GetMatchingCheckPatterns(ctx, txn)
+			if err != nil {
+				slog.Warn("Failed to get check patterns for individual review", "error", err)
+			}
+		}
+
 		// Get AI suggestion for each transaction
-		category, confidence, isNew, description, err := e.classifier.SuggestCategory(ctx, txn, categories)
+		rankings, err := e.classifier.SuggestCategoryRankings(ctx, txn, categoryModels, checkPatterns)
 		if err != nil {
 			slog.Warn("Failed to get AI suggestion",
 				"transaction_id", txn.ID,
 				"error", err)
 			// Use a default category if AI fails
-			category = "Other Expenses"
-			confidence = 0.0
-			isNew = false
-			description = ""
+			rankings = model.CategoryRankings{{
+				Category:    "Other Expenses",
+				Score:       0.0,
+				IsNew:       false,
+				Description: "",
+			}}
+		}
+
+		// Extract top-ranked category
+		top := rankings.Top()
+		if top == nil {
+			top = &model.CategoryRanking{
+				Category:    "Other Expenses",
+				Score:       0.0,
+				IsNew:       false,
+				Description: "",
+			}
 		}
 
 		pending := model.PendingClassification{
 			Transaction:         txn,
-			SuggestedCategory:   category,
-			Confidence:          confidence,
+			SuggestedCategory:   top.Category,
+			Confidence:          top.Score,
 			SimilarCount:        1,
-			IsNewCategory:       isNew,
-			CategoryDescription: description,
+			IsNewCategory:       top.IsNew,
+			CategoryDescription: top.Description,
+			CategoryRankings:    rankings,
+			CheckPatterns:       checkPatterns,
 		}
 
 		classification, err := e.prompter.ConfirmClassification(ctx, pending)
@@ -326,6 +456,19 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 				"transaction_id", txn.ID,
 				"error", err)
 			continue
+		}
+
+		// Update pattern use counts if check patterns contributed
+		if len(checkPatterns) > 0 && classification.Category != "" {
+			for _, pattern := range checkPatterns {
+				if pattern.Category == classification.Category {
+					if incrementErr := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); incrementErr != nil {
+						slog.Warn("Failed to increment pattern use count in individual review",
+							"pattern_id", pattern.ID,
+							"error", incrementErr)
+					}
+				}
+			}
 		}
 
 		classifications = append(classifications, classification)

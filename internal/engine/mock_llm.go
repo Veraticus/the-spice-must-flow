@@ -194,31 +194,50 @@ func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction 
 		var score float64
 		catLower := strings.ToLower(cat.Name)
 
-		// Deterministic scoring based on merchant and category names
-		switch {
-		case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "coffee"):
-			score = 0.95
-		case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "dining"):
-			score = 0.85
-		case strings.Contains(merchantLower, "amazon") && strings.Contains(catLower, "shopping"):
-			score = 0.80
-		case strings.Contains(merchantLower, "amazon") && strings.Contains(catLower, "office"):
-			score = 0.70
-		case strings.Contains(merchantLower, "whole foods") && strings.Contains(catLower, "groceries"):
-			score = 0.95
-		case strings.Contains(merchantLower, "shell") && strings.Contains(catLower, "transportation"):
-			score = 0.90
-		case strings.Contains(merchantLower, "netflix") && strings.Contains(catLower, "entertainment"):
-			score = 0.98
-		default:
-			// Base score on partial matches
+		// Special handling for CHECK transactions
+		if transaction.Type == "CHECK" {
+			// For checks, give reasonable base scores to common check categories
 			switch {
-			case strings.Contains(catLower, "shopping"):
-				score = 0.30
-			case strings.Contains(catLower, "misc") || strings.Contains(catLower, "other"):
+			case strings.Contains(catLower, "utilities"):
+				score = 0.50
+			case strings.Contains(catLower, "home") && strings.Contains(catLower, "services"):
+				score = 0.45
+			case strings.Contains(catLower, "insurance"):
+				score = 0.40
+			case strings.Contains(catLower, "rent"):
+				score = 0.55
+			case strings.Contains(catLower, "other"):
 				score = 0.20
 			default:
 				score = 0.10
+			}
+		} else {
+			// Deterministic scoring based on merchant and category names
+			switch {
+			case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "coffee"):
+				score = 0.95
+			case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "dining"):
+				score = 0.82
+			case strings.Contains(merchantLower, "amazon") && strings.Contains(catLower, "shopping"):
+				score = 0.80
+			case strings.Contains(merchantLower, "amazon") && strings.Contains(catLower, "office"):
+				score = 0.70
+			case strings.Contains(merchantLower, "whole foods") && strings.Contains(catLower, "groceries"):
+				score = 0.95
+			case strings.Contains(merchantLower, "shell") && strings.Contains(catLower, "transportation"):
+				score = 0.90
+			case strings.Contains(merchantLower, "netflix") && strings.Contains(catLower, "entertainment"):
+				score = 0.98
+			default:
+				// Base score on partial matches
+				switch {
+				case strings.Contains(catLower, "shopping"):
+					score = 0.30
+				case strings.Contains(catLower, "misc") || strings.Contains(catLower, "other"):
+					score = 0.20
+				default:
+					score = 0.10
+				}
 			}
 		}
 

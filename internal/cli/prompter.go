@@ -123,7 +123,7 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 	case "e":
 		// This option is only available for new category suggestions
 		if pending.IsNewCategory {
-			category, err := p.promptCustomCategory(ctx)
+			category, err := p.promptCategorySelection(ctx, pending.CategoryRankings, pending.CheckPatterns)
 			if err != nil {
 				return model.Classification{}, err
 			}
@@ -134,7 +134,7 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 			p.incrementStats(true, false)
 		}
 	case "c":
-		category, err := p.promptCustomCategory(ctx)
+		category, err := p.promptCategorySelection(ctx, pending.CategoryRankings, pending.CheckPatterns)
 		if err != nil {
 			return model.Classification{}, err
 		}
@@ -485,27 +485,176 @@ func (p *Prompter) promptChoice(ctx context.Context, prompt string, validChoices
 	}
 }
 
-func (p *Prompter) promptCustomCategory(ctx context.Context) (string, error) {
+func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.CategoryRankings, checkPatterns []model.CheckPattern) (string, error) {
 	if _, err := fmt.Fprintln(p.writer); err != nil {
 		return "", fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	if len(p.recentCategories) > 0 {
-		if _, err := fmt.Fprintln(p.writer, FormatInfo("Recent categories:")); err != nil {
-			return "", fmt.Errorf("failed to write recent categories header: %w", err)
+	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Select category (ranked by likelihood):")); err != nil {
+		return "", fmt.Errorf("failed to write selection header: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
+	}
+
+	// Build category number map and display options
+	categoryMap := make(map[string]string)  // number -> category name
+	categoryByName := make(map[string]bool) // for name-based selection
+
+	// Display ranked categories
+	for i, ranking := range rankings {
+		if i >= 15 { // Limit display to top 15 categories
+			break
 		}
-		seen := make(map[string]bool)
-		for _, cat := range p.recentCategories {
-			if !seen[cat] {
-				if _, err := fmt.Fprintf(p.writer, "  • %s\n", cat); err != nil {
-					slog.Warn("Failed to write recent category", "error", err)
-				}
-				seen[cat] = true
+
+		num := fmt.Sprintf("%d", i+1)
+		categoryMap[num] = ranking.Category
+		categoryByName[strings.ToLower(ranking.Category)] = true
+
+		// Build the display line
+		var line string
+		if ranking.Score >= 0.01 { // Only show percentage if >= 1%
+			line = fmt.Sprintf("  [%s] %s (%.0f%% match)",
+				num, ranking.Category, ranking.Score*100)
+		} else {
+			line = fmt.Sprintf("  [%s] %s", num, ranking.Category)
+		}
+
+		// Add check pattern indicator
+		for _, pattern := range checkPatterns {
+			if pattern.Category == ranking.Category && pattern.Active {
+				line += fmt.Sprintf(" %s matches pattern \"%s\"",
+					SuccessStyle.Render("⭐"), pattern.PatternName)
+				break
 			}
 		}
-		if _, err := fmt.Fprintln(p.writer); err != nil {
-			return "", fmt.Errorf("failed to write newline after categories: %w", err)
+
+		if _, err := fmt.Fprintln(p.writer, line); err != nil {
+			return "", fmt.Errorf("failed to write category option: %w", err)
 		}
+
+		// Show description if available
+		if ranking.Description != "" {
+			if _, err := fmt.Fprintf(p.writer, "      %s\n",
+				SubtleStyle.Render(ranking.Description)); err != nil {
+				return "", fmt.Errorf("failed to write category description: %w", err)
+			}
+		}
+
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return "", fmt.Errorf("failed to write spacing: %w", err)
+		}
+	}
+
+	// Add option to show more categories if there are more than 15
+	if len(rankings) > 15 {
+		if _, err := fmt.Fprintf(p.writer, "  [M] Show %d more categories\n",
+			len(rankings)-15); err != nil {
+			return "", fmt.Errorf("failed to write show more option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return "", fmt.Errorf("failed to write newline: %w", err)
+		}
+	}
+
+	// Add new category option
+	if _, err := fmt.Fprintln(p.writer, "  [N] Create new category"); err != nil {
+		return "", fmt.Errorf("failed to write new category option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
+	}
+
+	showingAll := false
+
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		if _, err := fmt.Fprint(p.writer, FormatPrompt("Enter number or category name: ")); err != nil {
+			return "", fmt.Errorf("failed to write selection prompt: %w", err)
+		}
+
+		input, err := p.reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+
+		choice := strings.TrimSpace(input)
+		if choice == "" {
+			if _, err := fmt.Fprintln(p.writer, FormatError("Please make a selection.")); err != nil {
+				slog.Warn("Failed to write empty selection error", "error", err)
+			}
+			continue
+		}
+
+		// Handle special options
+		lowerChoice := strings.ToLower(choice)
+		if lowerChoice == "m" && len(rankings) > 15 && !showingAll {
+			// Show all categories
+			showingAll = true
+			if _, err := fmt.Fprintln(p.writer); err != nil {
+				return "", fmt.Errorf("failed to write newline: %w", err)
+			}
+
+			// Display remaining categories
+			for i := 15; i < len(rankings); i++ {
+				ranking := rankings[i]
+				num := fmt.Sprintf("%d", i+1)
+				categoryMap[num] = ranking.Category
+				categoryByName[strings.ToLower(ranking.Category)] = true
+
+				var line string
+				if ranking.Score >= 0.01 {
+					line = fmt.Sprintf("  [%s] %s (%.0f%% match)",
+						num, ranking.Category, ranking.Score*100)
+				} else {
+					line = fmt.Sprintf("  [%s] %s", num, ranking.Category)
+				}
+
+				if _, err := fmt.Fprintln(p.writer, line); err != nil {
+					return "", fmt.Errorf("failed to write category option: %w", err)
+				}
+			}
+
+			if _, err := fmt.Fprintln(p.writer); err != nil {
+				return "", fmt.Errorf("failed to write newline: %w", err)
+			}
+			continue
+		}
+
+		if lowerChoice == "n" {
+			// Prompt for new category name
+			return p.promptNewCategoryName(ctx)
+		}
+
+		// Check if it's a number selection
+		if category, ok := categoryMap[choice]; ok {
+			return category, nil
+		}
+
+		// Check if it's a category name (case-insensitive)
+		if categoryByName[lowerChoice] {
+			// Find the exact category name
+			for _, ranking := range rankings {
+				if strings.ToLower(ranking.Category) == lowerChoice {
+					return ranking.Category, nil
+				}
+			}
+		}
+
+		if _, err := fmt.Fprintln(p.writer, FormatError("Invalid selection. Please enter a number, category name, or 'N' for new category.")); err != nil {
+			slog.Warn("Failed to write invalid selection error", "error", err)
+		}
+	}
+}
+
+func (p *Prompter) promptNewCategoryName(ctx context.Context) (string, error) {
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
 	}
 
 	for {
@@ -515,8 +664,8 @@ func (p *Prompter) promptCustomCategory(ctx context.Context) (string, error) {
 		default:
 		}
 
-		if _, err := fmt.Fprint(p.writer, FormatPrompt("Enter category: ")); err != nil {
-			return "", fmt.Errorf("failed to write category prompt: %w", err)
+		if _, err := fmt.Fprint(p.writer, FormatPrompt("Enter new category name: ")); err != nil {
+			return "", fmt.Errorf("failed to write new category prompt: %w", err)
 		}
 
 		input, err := p.reader.ReadString('\n')
@@ -526,7 +675,7 @@ func (p *Prompter) promptCustomCategory(ctx context.Context) (string, error) {
 
 		category := strings.TrimSpace(input)
 		if category == "" {
-			if _, err := fmt.Fprintln(p.writer, FormatError("Category cannot be empty. Please try again.")); err != nil {
+			if _, err := fmt.Fprintln(p.writer, FormatError("Category name cannot be empty. Please try again.")); err != nil {
 				slog.Warn("Failed to write empty category error", "error", err)
 			}
 			continue
@@ -560,7 +709,15 @@ func (p *Prompter) acceptAllClassifications(pending []model.PendingClassificatio
 }
 
 func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
-	category, err := p.promptCustomCategory(ctx)
+	// Use rankings from the first transaction (they should all be similar for a merchant group)
+	var rankings model.CategoryRankings
+	var checkPatterns []model.CheckPattern
+	if len(pending) > 0 {
+		rankings = pending[0].CategoryRankings
+		checkPatterns = pending[0].CheckPatterns
+	}
+
+	category, err := p.promptCategorySelection(ctx, rankings, checkPatterns)
 	if err != nil {
 		return nil, err
 	}

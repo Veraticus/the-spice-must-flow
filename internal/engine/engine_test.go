@@ -229,6 +229,45 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "auto-classification with high confidence",
+			setupStorage: func(t *testing.T) service.Storage {
+				t.Helper()
+				db, err := storage.NewSQLiteStorage(":memory:")
+				require.NoError(t, err)
+				require.NoError(t, db.Migrate(context.Background()))
+				return db
+			},
+			setupTransactions: []model.Transaction{
+				{
+					ID:           "11",
+					Hash:         "hash11",
+					Date:         time.Now().AddDate(0, 0, -1),
+					Name:         "WHOLE FOODS MARKET #123",
+					MerchantName: "Whole Foods Market",
+					Amount:       89.45,
+					AccountID:    "acc1",
+				},
+				{
+					ID:           "12",
+					Hash:         "hash12",
+					Date:         time.Now().AddDate(0, 0, -2),
+					Name:         "WHOLE FOODS MARKET #456",
+					MerchantName: "Whole Foods Market",
+					Amount:       125.67,
+					AccountID:    "acc1",
+				},
+			},
+			llmAutoAccept: true,
+			// With auto-classification, prompter is never called
+			expectedStats: service.CompletionStats{
+				TotalTransactions: 0,
+				AutoClassified:    0,
+				UserClassified:    0,
+				NewVendorRules:    0,
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

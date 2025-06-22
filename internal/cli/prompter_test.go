@@ -15,6 +15,14 @@ import (
 )
 
 func TestCLIPrompter_ConfirmClassification(t *testing.T) {
+	// Create default rankings for tests that need them
+	defaultRankings := model.CategoryRankings{
+		{Category: "Food & Dining", Score: 0.5},
+		{Category: "Shopping", Score: 0.3},
+		{Category: "Office Supplies", Score: 0.1},
+		{Category: "Other", Score: 0.05},
+	}
+
 	tests := []struct {
 		name             string
 		input            string
@@ -54,8 +62,9 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 				},
 				SuggestedCategory: "Shopping",
 				Confidence:        0.75,
+				CategoryRankings:  defaultRankings,
 			},
-			input:            "c\nOffice Supplies\n",
+			input:            "c\n3\n", // Select Office Supplies by number
 			expectedStatus:   model.StatusUserModified,
 			expectedCategory: "Office Supplies",
 		},
@@ -118,8 +127,9 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 				},
 				SuggestedCategory: "Food & Dining",
 				Confidence:        0.85,
+				CategoryRankings:  defaultRankings,
 			},
-			input:            "c\n\nRestaurants\n",
+			input:            "c\nn\n\nRestaurants\n", // Create new category with empty name then valid
 			expectedStatus:   model.StatusUserModified,
 			expectedCategory: "Restaurants",
 		},
@@ -154,8 +164,13 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 				SuggestedCategory: "Fitness & Health",
 				Confidence:        0.70,
 				IsNewCategory:     true,
+				CategoryRankings: model.CategoryRankings{
+					{Category: "Entertainment", Score: 0.3},
+					{Category: "Shopping", Score: 0.2},
+					{Category: "Other", Score: 0.1},
+				},
 			},
-			input:            "e\nEntertainment\n",
+			input:            "e\n1\n", // Select Entertainment by number
 			expectedStatus:   model.StatusUserModified,
 			expectedCategory: "Entertainment",
 		},
@@ -198,6 +213,14 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 }
 
 func TestCLIPrompter_BatchConfirmClassifications(t *testing.T) {
+	// Default rankings for batch tests
+	defaultBatchRankings := model.CategoryRankings{
+		{Category: "Food & Dining", Score: 0.5},
+		{Category: "Shopping", Score: 0.3},
+		{Category: "Travel", Score: 0.1},
+		{Category: "Other", Score: 0.05},
+	}
+
 	createPendingBatch := func(count int, merchant, category string) []model.PendingClassification {
 		pending := make([]model.PendingClassification, count)
 		for i := 0; i < count; i++ {
@@ -211,6 +234,7 @@ func TestCLIPrompter_BatchConfirmClassifications(t *testing.T) {
 				},
 				SuggestedCategory: category,
 				Confidence:        0.90,
+				CategoryRankings:  defaultBatchRankings,
 			}
 		}
 		return pending
@@ -234,7 +258,7 @@ func TestCLIPrompter_BatchConfirmClassifications(t *testing.T) {
 		{
 			name:             "custom category for all",
 			pending:          createPendingBatch(3, "Amazon", "Shopping"),
-			input:            "c\nOffice Supplies\n",
+			input:            "c\nn\nOffice Supplies\n", // Create new category "Office Supplies"
 			expectedStatuses: repeatStatus(model.StatusUserModified, 3),
 			expectedCategory: "Office Supplies",
 		},
@@ -247,7 +271,7 @@ func TestCLIPrompter_BatchConfirmClassifications(t *testing.T) {
 		{
 			name:    "review each individually",
 			pending: createPendingBatch(3, "Target", "Shopping"),
-			input:   "r\na\nc\nGroceries\ns\n",
+			input:   "r\na\nc\nn\nGroceries\ns\n", // Review -> Accept first, Custom+New "Groceries" for second, Skip third
 			expectedStatuses: []model.ClassificationStatus{
 				model.StatusClassifiedByAI,
 				model.StatusUserModified,
@@ -327,7 +351,14 @@ func TestCLIPrompter_PatternDetection(t *testing.T) {
 }
 
 func TestCLIPrompter_CompletionStats(t *testing.T) {
-	reader := strings.NewReader("a\nc\nFood\ns\n")
+	// Default rankings for stats test
+	statsRankings := model.CategoryRankings{
+		{Category: "Shopping", Score: 0.5},
+		{Category: "Food", Score: 0.3},
+		{Category: "Other", Score: 0.1},
+	}
+
+	reader := strings.NewReader("a\nc\nn\nFood\ns\n") // Accept, Custom+New "Food", Skip
 	var output bytes.Buffer
 	prompter := NewCLIPrompter(reader, &output)
 	prompter.SetTotalTransactions(3)
@@ -340,6 +371,7 @@ func TestCLIPrompter_CompletionStats(t *testing.T) {
 			pending: model.PendingClassification{
 				Transaction:       createTestTransaction("tx1"),
 				SuggestedCategory: "Shopping",
+				CategoryRankings:  statsRankings,
 			},
 			expectedChoice: "a",
 		},
@@ -347,6 +379,7 @@ func TestCLIPrompter_CompletionStats(t *testing.T) {
 			pending: model.PendingClassification{
 				Transaction:       createTestTransaction("tx2"),
 				SuggestedCategory: "Other",
+				CategoryRankings:  statsRankings,
 			},
 			expectedChoice: "c",
 		},
@@ -354,6 +387,7 @@ func TestCLIPrompter_CompletionStats(t *testing.T) {
 			pending: model.PendingClassification{
 				Transaction:       createTestTransaction("tx3"),
 				SuggestedCategory: "Unknown",
+				CategoryRankings:  statsRankings,
 			},
 			expectedChoice: "s",
 		},
@@ -398,11 +432,19 @@ func TestCLIPrompter_ContextCancellation(t *testing.T) {
 }
 
 func TestCLIPrompter_RecentCategories(t *testing.T) {
+	// Default rankings for recent categories test
+	recentRankings := model.CategoryRankings{
+		{Category: "Food & Dining", Score: 0.5},
+		{Category: "Shopping", Score: 0.3},
+		{Category: "Transportation", Score: 0.2},
+		{Category: "Other", Score: 0.1},
+	}
+
 	inputs := []string{
-		"c\nFood & Dining\n",
-		"c\nShopping\n",
-		"c\nTransportation\n",
-		"c\n\n",
+		"c\n1\n", // Select Food & Dining by number
+		"c\n2\n", // Select Shopping by number
+		"c\n3\n", // Select Transportation by number
+		"c\n\n",  // Empty input for error test
 	}
 
 	reader := strings.NewReader(strings.Join(inputs, ""))
@@ -414,6 +456,7 @@ func TestCLIPrompter_RecentCategories(t *testing.T) {
 		pending := model.PendingClassification{
 			Transaction:       createTestTransaction(fmt.Sprintf("tx%d", i)),
 			SuggestedCategory: "Other",
+			CategoryRankings:  recentRankings,
 		}
 		_, err := prompter.ConfirmClassification(context.Background(), pending)
 		require.NoError(t, err)
@@ -422,12 +465,14 @@ func TestCLIPrompter_RecentCategories(t *testing.T) {
 	pending := model.PendingClassification{
 		Transaction:       createTestTransaction("tx4"),
 		SuggestedCategory: "Other",
+		CategoryRankings:  recentRankings,
 	}
 	_, err := prompter.ConfirmClassification(context.Background(), pending)
 	assert.Error(t, err)
 
 	outputStr := output.String()
-	assert.Contains(t, outputStr, "Recent categories:")
+	// The new UI shows categories in ranked order, not "Recent categories"
+	assert.Contains(t, outputStr, "Select category (ranked by likelihood)")
 	assert.Contains(t, outputStr, "Transportation")
 	assert.Contains(t, outputStr, "Shopping")
 	assert.Contains(t, outputStr, "Food & Dining")
@@ -555,4 +600,329 @@ func repeatStatus(status model.ClassificationStatus, count int) []model.Classifi
 		statuses[i] = status
 	}
 	return statuses
+}
+
+func TestCLIPrompter_promptCategorySelection(t *testing.T) {
+	// Create test rankings
+	createTestRankings := func() model.CategoryRankings {
+		return model.CategoryRankings{
+			{Category: "Food & Dining", Score: 0.72, Description: "Restaurants, groceries, and food delivery"},
+			{Category: "Transportation", Score: 0.18, Description: "Gas, parking, public transit, rideshare"},
+			{Category: "Shopping", Score: 0.08, Description: "Clothing, electronics, general retail"},
+			{Category: "Entertainment", Score: 0.05, Description: "Movies, games, streaming services"},
+			{Category: "Home Services", Score: 0.03, Description: "Cleaning, repairs, maintenance"},
+			{Category: "Healthcare", Score: 0.02, Description: "Medical, dental, pharmacy"},
+			{Category: "Personal Care", Score: 0.01, Description: "Hair, beauty, spa services"},
+			{Category: "Other Expenses", Score: 0.00, Description: ""},
+		}
+	}
+
+	// Create test check patterns
+	createTestCheckPatterns := func() []model.CheckPattern {
+		return []model.CheckPattern{
+			{
+				ID:              1,
+				PatternName:     "Monthly cleaning",
+				Category:        "Home Services",
+				Active:          true,
+				ConfidenceBoost: 0.3,
+			},
+		}
+	}
+
+	tests := []struct {
+		name             string
+		input            string
+		expectedCategory string
+		rankings         model.CategoryRankings
+		checkPatterns    []model.CheckPattern
+		expectError      bool
+		contextCancelled bool
+	}{
+		{
+			name:             "select by number",
+			input:            "1\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Food & Dining",
+		},
+		{
+			name:             "select by category name (exact match)",
+			input:            "Transportation\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Transportation",
+		},
+		{
+			name:             "select by category name (case insensitive)",
+			input:            "shopping\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Shopping",
+		},
+		{
+			name:             "create new category",
+			input:            "n\nBusiness Expenses\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Business Expenses",
+		},
+		{
+			name:             "invalid selection then valid number",
+			input:            "xyz\n2\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Transportation",
+		},
+		{
+			name:             "empty input then valid selection",
+			input:            "\n3\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Shopping",
+		},
+		{
+			name:             "select category with check pattern match",
+			input:            "5\n",
+			rankings:         createTestRankings(),
+			checkPatterns:    createTestCheckPatterns(),
+			expectedCategory: "Home Services",
+		},
+		{
+			name:             "create new category with empty name then valid",
+			input:            "n\n\nTravel\n",
+			rankings:         createTestRankings(),
+			expectedCategory: "Travel",
+		},
+		{
+			name:             "context canceled",
+			rankings:         createTestRankings(),
+			contextCancelled: true,
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := strings.NewReader(tt.input)
+			var output bytes.Buffer
+			prompter := NewCLIPrompter(reader, &output)
+
+			ctx := context.Background()
+			if tt.contextCancelled {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+
+			category, err := prompter.promptCategorySelection(ctx, tt.rankings, tt.checkPatterns)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedCategory, category)
+			}
+
+			// Verify output contains expected elements
+			outputStr := output.String()
+			if !tt.expectError {
+				assert.Contains(t, outputStr, "Select category (ranked by likelihood)")
+
+				// Check that categories are displayed with scores
+				if tt.rankings[0].Score > 0.01 {
+					assert.Contains(t, outputStr, fmt.Sprintf("%s (%.0f%% match)",
+						tt.rankings[0].Category, tt.rankings[0].Score*100))
+				}
+
+				// Check for check pattern indicator
+				if len(tt.checkPatterns) > 0 {
+					assert.Contains(t, outputStr, "matches pattern")
+				}
+
+				// Check for descriptions
+				for _, ranking := range tt.rankings {
+					if ranking.Description != "" && ranking.Score > 0.01 {
+						assert.Contains(t, outputStr, ranking.Description)
+					}
+				}
+
+				// Check for new category option
+				assert.Contains(t, outputStr, "[N] Create new category")
+			}
+		})
+	}
+}
+
+func TestCLIPrompter_promptCategorySelection_ManyCategories(t *testing.T) {
+	// Create rankings with more than 15 categories
+	var rankings model.CategoryRankings
+	for i := 0; i < 20; i++ {
+		rankings = append(rankings, model.CategoryRanking{
+			Category: fmt.Sprintf("Category %d", i+1),
+			Score:    float64(20-i) / 100,
+		})
+	}
+
+	tests := []struct {
+		name             string
+		input            string
+		expectedCategory string
+	}{
+		{
+			name:             "show more categories",
+			input:            "m\n16\n",
+			expectedCategory: "Category 16",
+		},
+		{
+			name:             "select category after show more",
+			input:            "m\n20\n",
+			expectedCategory: "Category 20",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := strings.NewReader(tt.input)
+			var output bytes.Buffer
+			prompter := NewCLIPrompter(reader, &output)
+
+			category, err := prompter.promptCategorySelection(context.Background(), rankings, nil)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedCategory, category)
+
+			// Verify "Show more" option appears
+			outputStr := output.String()
+			assert.Contains(t, outputStr, "[M] Show 5 more categories")
+		})
+	}
+}
+
+func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
+	// Test the enhanced UI with category rankings
+	rankings := model.CategoryRankings{
+		{Category: "Shopping", Score: 0.75, Description: "Clothing, electronics, general retail"},
+		{Category: "Office Supplies", Score: 0.15, Description: "Business and office materials"},
+		{Category: "Home & Garden", Score: 0.08, Description: "Home improvement and gardening"},
+		{Category: "Other Expenses", Score: 0.02, Description: ""},
+	}
+
+	checkPatterns := []model.CheckPattern{
+		{
+			ID:              1,
+			PatternName:     "Office supplies check",
+			Category:        "Office Supplies",
+			Active:          true,
+			ConfidenceBoost: 0.3,
+		},
+	}
+
+	tests := []struct {
+		name             string
+		input            string
+		expectedCategory string
+		expectedStatus   model.ClassificationStatus
+		pending          model.PendingClassification
+	}{
+		{
+			name: "select existing category by number",
+			pending: model.PendingClassification{
+				Transaction: model.Transaction{
+					ID:           "tx1",
+					Name:         "STAPLES #123",
+					MerchantName: "Staples",
+					Amount:       89.99,
+					Date:         time.Now(),
+				},
+				SuggestedCategory: "Shopping",
+				Confidence:        0.75,
+				CategoryRankings:  rankings,
+			},
+			input:            "c\n2\n", // Choose custom category, then select #2 (Office Supplies)
+			expectedCategory: "Office Supplies",
+			expectedStatus:   model.StatusUserModified,
+		},
+		{
+			name: "select existing category by name",
+			pending: model.PendingClassification{
+				Transaction: model.Transaction{
+					ID:           "tx2",
+					Name:         "HOME DEPOT",
+					MerchantName: "Home Depot",
+					Amount:       234.56,
+					Date:         time.Now(),
+				},
+				SuggestedCategory: "Shopping",
+				Confidence:        0.75,
+				CategoryRankings:  rankings,
+			},
+			input:            "c\nhome & garden\n", // Case insensitive name selection
+			expectedCategory: "Home & Garden",
+			expectedStatus:   model.StatusUserModified,
+		},
+		{
+			name: "create new category via enhanced UI",
+			pending: model.PendingClassification{
+				Transaction: model.Transaction{
+					ID:           "tx3",
+					Name:         "CHECK #1234",
+					MerchantName: "Check",
+					Amount:       100.00,
+					Date:         time.Now(),
+					Type:         "CHECK",
+				},
+				SuggestedCategory: "Office Supplies",
+				Confidence:        0.45,
+				CategoryRankings:  rankings,
+				CheckPatterns:     checkPatterns,
+			},
+			input:            "c\nn\nBusiness Services\n", // Custom category -> New -> Enter name
+			expectedCategory: "Business Services",
+			expectedStatus:   model.StatusUserModified,
+		},
+		{
+			name: "new category suggestion - use existing instead",
+			pending: model.PendingClassification{
+				Transaction: model.Transaction{
+					ID:           "tx4",
+					Name:         "SPECIALTY STORE",
+					MerchantName: "Specialty Store",
+					Amount:       50.00,
+					Date:         time.Now(),
+				},
+				SuggestedCategory:   "Specialty Shopping",
+				CategoryDescription: "A new category for specialty items",
+				Confidence:          0.65,
+				IsNewCategory:       true,
+				CategoryRankings:    rankings,
+			},
+			input:            "e\n1\n", // Use existing category -> Select #1 (Shopping)
+			expectedCategory: "Shopping",
+			expectedStatus:   model.StatusUserModified,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := strings.NewReader(tt.input)
+			var writer bytes.Buffer
+			prompter := NewCLIPrompter(reader, &writer)
+
+			classification, err := prompter.ConfirmClassification(context.Background(), tt.pending)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedCategory, classification.Category)
+			assert.Equal(t, tt.expectedStatus, classification.Status)
+
+			// Verify enhanced UI elements appear in output
+			output := writer.String()
+			if strings.Contains(tt.input, "c\n") || strings.Contains(tt.input, "e\n") {
+				// Should show ranked categories when custom category is selected
+				assert.Contains(t, output, "Select category (ranked by likelihood)")
+				assert.Contains(t, output, "(75% match)")                           // Shopping score
+				assert.Contains(t, output, "Clothing, electronics, general retail") // Description
+				assert.Contains(t, output, "[N] Create new category")
+			}
+
+			// Check for check pattern indicator
+			if len(tt.pending.CheckPatterns) > 0 {
+				assert.Contains(t, output, "matches pattern")
+			}
+		})
+	}
 }

@@ -238,30 +238,30 @@ ID  Pattern Name        Amount(s)      Category         Uses  Last Used
 - [X] Add unit tests for all check commands
 
 ### Phase 3: LLM Enhancement
-- [ ] Create `CategoryRanking` struct in model package
-- [ ] Update `Classifier` interface to support ranking method
-- [ ] Implement `SuggestCategoryRankings` method in classifier
-- [ ] Create new prompt builder for ranking all categories
-- [ ] Implement LLM response parser for rankings format
-- [ ] Update existing `SuggestCategory` to use rankings internally
-- [ ] Add comprehensive tests for ranking functionality
+- [X] Create `CategoryRanking` struct in model package
+- [X] Update `Classifier` interface to support ranking method
+- [X] Implement `SuggestCategoryRankings` method in classifier
+- [X] Create new prompt builder for ranking all categories
+- [X] Implement LLM response parser for rankings format
+- [X] Update existing `SuggestCategory` to use rankings internally
+- [X] Add comprehensive tests for ranking functionality
 
 ### Phase 4: Check Pattern Integration
-- [ ] Add `GetMatchingPatterns` method to storage layer
-- [ ] Integrate pattern matching into classification engine
-- [ ] Modify LLM prompt to include pattern hints
-- [ ] Add pattern confidence boosting logic
-- [ ] Update pattern use counts when patterns match
-- [ ] Add tests for pattern matching logic
+- [X] Add `GetMatchingPatterns` method to storage layer
+- [X] Integrate pattern matching into classification engine
+- [X] Modify LLM prompt to include pattern hints
+- [X] Add pattern confidence boosting logic
+- [X] Update pattern use counts when patterns match
+- [X] Add tests for pattern matching logic
 
 ### Phase 5: Enhanced UI/UX
-- [ ] Refactor `promptCustomCategory` to `promptCategorySelection`
-- [ ] Implement ranked category display with descriptions
-- [ ] Add pattern match indicators in UI
-- [ ] Support both number and name input for category selection
-- [ ] Add "New Category" option with description generation
-- [ ] Update progress tracking for new workflow
-- [ ] Add comprehensive UI tests
+- [X] Refactor `promptCustomCategory` to `promptCategorySelection`
+- [X] Implement ranked category display with descriptions
+- [X] Add pattern match indicators in UI
+- [X] Support both number and name input for category selection
+- [X] Add "New Category" option with description generation
+- [X] Update progress tracking for new workflow
+- [X] Add comprehensive UI tests
 
 ### Phase 6: Integration & Testing
 - [ ] Update classification engine to use new ranking system

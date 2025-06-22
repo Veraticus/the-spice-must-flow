@@ -46,6 +46,10 @@ var (
 	InfoStyle = lipgloss.NewStyle().
 			Foreground(InfoColor)
 
+	// SubtleStyle formats less prominent text.
+	SubtleStyle = lipgloss.NewStyle().
+			Foreground(SubtleColor)
+
 	// BoldStyle makes text bold.
 	BoldStyle = lipgloss.NewStyle().
 			Bold(true)
