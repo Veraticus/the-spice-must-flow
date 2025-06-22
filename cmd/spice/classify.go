@@ -8,10 +8,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
-	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/engine"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -136,7 +136,7 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
 		if err == context.Canceled {
 			slog.Warn("Classification interrupted")
-			slog.Info("Progress saved. Resume with: spice classify --resume")
+			slog.Info("Progress saved! Resume where you left off with: spice classify --resume")
 			return nil
 		}
 		return fmt.Errorf("classification failed: %w", err)
@@ -154,7 +154,7 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 }
 
 func showCompletionStats(stats service.CompletionStats) {
-	slog.Info("Classification complete!", "total_transactions", stats.TotalTransactions)
+	slog.Info("Excellent! All transactions have been categorized", "total_transactions", stats.TotalTransactions)
 
 	if stats.TotalTransactions > 0 {
 		autoPercent := float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100

@@ -17,6 +17,7 @@ A personal finance categorization engine that ingests financial transactions fro
 - 🏷️ **Dynamic Categories**: Categories evolve based on your spending patterns with AI-generated descriptions
 - 💾 **Database Checkpoints**: Save and restore database states for safe experimentation
 - 🤝 **Category Sharing**: Export and import category configurations with colleagues
+- 💰 **Check Pattern Recognition**: Automatically categorize recurring check payments based on amount and timing patterns
 
 ## Installation
 
@@ -30,7 +31,7 @@ A personal finance categorization engine that ingests financial transactions fro
 
 ```bash
 # Clone the repository
-git clone https://github.com/joshsymonds/the-spice-must-flow.git
+git clone https://github.com/Veraticus/the-spice-must-flow.git
 cd the-spice-must-flow
 
 # Install development tools
@@ -430,6 +431,57 @@ spice checkpoint import colleague-categories.spice
 spice import --auto-checkpoint
 ```
 
+### 6. Check Pattern Management
+
+Automatically categorize check transactions based on patterns:
+
+```bash
+# List all check patterns
+spice checks list
+
+# Create a new pattern interactively
+spice checks add
+
+# Edit existing pattern
+spice checks edit 1
+
+# Delete a pattern
+spice checks delete 1
+
+# Test which patterns match a given amount
+spice checks test 100.00
+```
+
+Check patterns help categorize recurring check payments like:
+- Monthly cleaning services ($100 or $200 → Home Services)
+- Rent payments ($3,000-$3,100 → Housing)
+- Quarterly tax payments ($5,000-$6,000 → Taxes)
+
+Example creating a pattern:
+```bash
+$ spice checks add
+
+🌶️ Create Check Pattern
+
+Pattern name: Monthly cleaning
+Category: Home Services
+
+Amount matching:
+  [1] Exact amount
+  [2] Range
+  [3] Multiple amounts
+Choice: 3
+
+Enter amounts (comma-separated): 100, 200
+
+Day of month restriction? [y/N]: n
+
+Notes (optional): Cleaning service payment
+
+✓ Pattern created: "Monthly cleaning"
+  Matches checks for $100.00 or $200.00 → Home Services
+```
+
 ### Additional Commands
 
 ```bash
@@ -447,6 +499,13 @@ spice categories list                 # List all categories with descriptions
 spice categories add "Travel"         # Add with AI description
 spice categories update 5 --regenerate # Update with new AI description
 spice categories delete 5             # Soft delete category
+
+# Manage check patterns
+spice checks list                     # List all check patterns
+spice checks add                      # Create pattern interactively
+spice checks edit <id>               # Edit existing pattern
+spice checks delete <id>             # Delete pattern
+spice checks test <amount>           # Test pattern matching
 
 # Database operations
 spice migrate                         # Run database migrations

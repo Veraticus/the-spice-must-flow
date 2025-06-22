@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/certs"
-	"github.com/joshsymonds/the-spice-must-flow/internal/plaid"
-	"github.com/joshsymonds/the-spice-must-flow/internal/sheets"
+	"github.com/Veraticus/the-spice-must-flow/internal/certs"
+	"github.com/Veraticus/the-spice-must-flow/internal/plaid"
+	"github.com/Veraticus/the-spice-must-flow/internal/sheets"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -83,7 +83,7 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
 	}
 
 	if clientID == "" || secret == "" {
-		return fmt.Errorf("plaid credentials not found. Please set plaid.client_id and plaid.secret in config")
+		return fmt.Errorf("plaid credentials missing. Please add your Client ID and Secret to the config file or set PLAID_CLIENT_ID and PLAID_SECRET environment variables")
 	}
 
 	slog.Info("Starting Plaid Link flow", "environment", environment)
@@ -103,7 +103,7 @@ func runAuthPlaid(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		// If it fails due to redirect URI, provide helpful message
 		if strings.Contains(err.Error(), "redirect") || strings.Contains(err.Error(), "OAuth") {
-			slog.Error("OAuth configuration required")
+			slog.Error("OAuth setup required for this bank. Please follow the instructions below:")
 			slog.Info("")
 			slog.Info("This error occurs when the redirect URI isn't configured in Plaid Dashboard")
 			slog.Info("")

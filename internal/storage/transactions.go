@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/common"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/common"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // SaveTransactions saves multiple transactions to the database.

@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/aclindsa/ofxgo"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 )
 
 // Parser implements OFX/QFX file parsing.

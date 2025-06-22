@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

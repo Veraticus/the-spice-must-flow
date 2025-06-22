@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
 	"github.com/spf13/cobra"
 )
 

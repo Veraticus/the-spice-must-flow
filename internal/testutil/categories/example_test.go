@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
-	"github.com/joshsymonds/the-spice-must-flow/internal/testutil"
-	"github.com/joshsymonds/the-spice-must-flow/internal/testutil/categories"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/testutil"
+	"github.com/Veraticus/the-spice-must-flow/internal/testutil/categories"
 )
 
 // Example_basicUsage demonstrates the simplest way to use the test infrastructure.

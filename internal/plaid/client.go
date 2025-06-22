@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/common"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/common"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/plaid/plaid-go/v20/plaid"
 )
 

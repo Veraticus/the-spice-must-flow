@@ -9,9 +9,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
 	"github.com/spf13/cobra"
 )
 

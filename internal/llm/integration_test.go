@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

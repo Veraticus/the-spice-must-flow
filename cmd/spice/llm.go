@@ -7,8 +7,8 @@ import (
 
 	"log/slog"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
-	"github.com/joshsymonds/the-spice-must-flow/internal/llm"
+	"github.com/Veraticus/the-spice-must-flow/internal/engine"
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/spf13/viper"
 )
 

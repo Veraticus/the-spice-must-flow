@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // MockClient is a mock implementation of TransactionFetcher for testing.

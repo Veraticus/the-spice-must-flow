@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/engine"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/engine"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -238,7 +238,7 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 		return p.skipAllClassifications(pending)
 	}
 
-	return nil, fmt.Errorf("unexpected choice: %s", choice)
+	return nil, fmt.Errorf("invalid selection '%s'. Please choose from the available options", choice)
 }
 
 // GetCompletionStats returns statistics about the classification session.
@@ -466,7 +466,7 @@ func (p *Prompter) promptChoice(ctx context.Context, prompt string, validChoices
 		input, err := p.reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				return "", fmt.Errorf("input terminated")
+				return "", fmt.Errorf("input canceled by user")
 			}
 			return "", err
 		}

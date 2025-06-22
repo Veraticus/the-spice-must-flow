@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 )
 
 // cacheEntry represents a cached classification suggestion.

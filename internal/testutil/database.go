@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
-	"github.com/joshsymonds/the-spice-must-flow/internal/testutil/categories"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/testutil/categories"
 )
 
 // TestDB represents a test database with associated test utilities.

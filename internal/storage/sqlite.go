@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )

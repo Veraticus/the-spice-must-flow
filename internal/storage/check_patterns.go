@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // ErrCheckPatternNotFound is returned when a check pattern is not found.

@@ -1,4 +1,4 @@
-module github.com/joshsymonds/the-spice-must-flow
+module github.com/Veraticus/the-spice-must-flow
 
 go 1.23.9
 

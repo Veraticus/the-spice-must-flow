@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/plaid"
+	"github.com/Veraticus/the-spice-must-flow/internal/plaid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 )
 
 var (

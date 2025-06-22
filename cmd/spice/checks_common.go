@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // formatPatternAmounts formats the amount range for display.

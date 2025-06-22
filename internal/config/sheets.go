@@ -4,7 +4,7 @@ package config
 import (
 	"os"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/sheets"
+	"github.com/Veraticus/the-spice-must-flow/internal/sheets"
 	"github.com/spf13/viper"
 )
 

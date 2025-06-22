@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // TransactionFetcher defines the contract for fetching transaction data.

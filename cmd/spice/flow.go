@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
-	"github.com/joshsymonds/the-spice-must-flow/internal/sheets"
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/sheets"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -107,7 +107,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 				}
 			}
 
-			errorMsg := fmt.Sprintf("cannot export: %d transactions are not classified", len(unclassifiedInRange))
+			errorMsg := fmt.Sprintf("Cannot export: %d transactions need to be categorized first", len(unclassifiedInRange))
 			if len(exampleMerchants) > 0 {
 				errorMsg += fmt.Sprintf(" (e.g., %s)", strings.Join(exampleMerchants, ", "))
 			}

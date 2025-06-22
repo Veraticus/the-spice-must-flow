@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 )
 
 // MockClassifier is a test implementation of the Classifier interface.

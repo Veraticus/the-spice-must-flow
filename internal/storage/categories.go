@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // ErrCategoryNotFound is returned when a category is not found.

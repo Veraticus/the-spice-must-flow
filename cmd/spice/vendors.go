@@ -117,7 +117,7 @@ func vendorsSearchCmd() *cobra.Command {
 			}
 
 			if !found {
-				slog.Info("No vendors found matching query", "query", query)
+				slog.Info(fmt.Sprintf("No vendor rules found matching '%s'. Try a different search term", query))
 				return nil
 			}
 
@@ -175,7 +175,7 @@ func vendorsEditCmd() *cobra.Command {
 				return fmt.Errorf("failed to update vendor: %w", err)
 			}
 
-			slog.Info("Vendor rule updated successfully",
+			slog.Info("✓ Vendor rule updated successfully",
 				"merchant", merchant,
 				"new_category", newCategory)
 

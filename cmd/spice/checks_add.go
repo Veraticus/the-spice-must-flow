@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +56,7 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to get pattern name: %w", err)
 	}
 	if patternName == "" {
-		return fmt.Errorf("pattern name cannot be empty")
+		return fmt.Errorf("please provide a name for this check pattern")
 	}
 
 	// Get category - validate it exists
@@ -159,7 +159,7 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Day of month restriction
-	useDayRestriction, err := promptYesNo(reader, "Day of month restriction?")
+	useDayRestriction, err := promptYesNo(reader, "Would you like to restrict this pattern to specific days of the month?")
 	if err != nil {
 		return fmt.Errorf("failed to get day restriction choice: %w", err)
 	}
@@ -261,12 +261,12 @@ func promptAmount(reader *bufio.Reader, prompt string) (float64, error) {
 
 		amount, err := strconv.ParseFloat(input, 64)
 		if err != nil {
-			fmt.Println(cli.FormatError("Invalid amount. Please enter a number.")) //nolint:forbidigo // User-facing output
+			fmt.Println(cli.FormatError("Please enter a valid amount (numbers only, no currency symbols needed)")) //nolint:forbidigo // User-facing output
 			continue
 		}
 
 		if amount <= 0 {
-			fmt.Println(cli.FormatError("Amount must be greater than 0.")) //nolint:forbidigo // User-facing output
+			fmt.Println(cli.FormatError("Please enter an amount greater than $0")) //nolint:forbidigo // User-facing output
 			continue
 		}
 
@@ -297,7 +297,7 @@ func promptInt(reader *bufio.Reader, prompt string, minVal, maxVal int) (int, er
 }
 
 func promptMultipleAmounts(reader *bufio.Reader) ([]float64, error) {
-	input, err := promptString(reader, "Enter amounts (comma-separated)")
+	input, err := promptString(reader, "Enter check amounts separated by commas (e.g., 100, 250, 500)")
 	if err != nil {
 		return nil, err
 	}

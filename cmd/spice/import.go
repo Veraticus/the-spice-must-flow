@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/plaid"
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/plaid"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -70,7 +70,7 @@ func runImport(cmd *cobra.Command, _ []string) error {
 	// Get all connected banks
 	connections := getAllPlaidConnections()
 	if len(connections) == 0 {
-		return fmt.Errorf("no banks connected. Run 'spice auth plaid' to connect a bank account")
+		return fmt.Errorf("no bank accounts connected yet. Let's fix that! Run 'spice auth plaid' to connect your first account")
 	}
 
 	// Handle list-accounts flag (list from all banks)

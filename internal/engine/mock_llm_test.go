@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 func TestMockClassifier_SuggestCategoryRankings(t *testing.T) {

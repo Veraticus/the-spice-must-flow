@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -538,13 +538,23 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 			err = db.CreateCheckPattern(ctx, &tt.pattern)
 			require.NoError(t, err)
 
-			// Complete the transaction data
+			// Complete the transaction data with defaults for missing fields
 			if tt.transaction.ID == "" {
 				tt.transaction.ID = "test1"
+			}
+			if tt.transaction.Hash == "" {
 				tt.transaction.Hash = "hashtest1"
+			}
+			if tt.transaction.Date.IsZero() {
 				tt.transaction.Date = time.Now()
+			}
+			if tt.transaction.Name == "" {
 				tt.transaction.Name = "Check Paid #9999"
+			}
+			if tt.transaction.MerchantName == "" {
 				tt.transaction.MerchantName = "Check Paid #9999"
+			}
+			if tt.transaction.AccountID == "" {
 				tt.transaction.AccountID = "checking"
 			}
 

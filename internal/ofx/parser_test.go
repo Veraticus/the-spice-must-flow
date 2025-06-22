@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/aclindsa/ofxgo"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

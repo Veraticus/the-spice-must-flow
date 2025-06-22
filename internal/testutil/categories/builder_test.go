@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/testutil"
-	"github.com/joshsymonds/the-spice-must-flow/internal/testutil/categories"
+	"github.com/Veraticus/the-spice-must-flow/internal/testutil"
+	"github.com/Veraticus/the-spice-must-flow/internal/testutil/categories"
 )
 
 func TestBuilder_WithCategory(t *testing.T) {

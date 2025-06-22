@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
-	"github.com/joshsymonds/the-spice-must-flow/internal/service"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/service"
 )
 
 // MockWriter is a mock implementation of ReportWriter for testing.

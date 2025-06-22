@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // Helper function to create test storage with categories.

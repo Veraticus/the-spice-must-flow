@@ -264,12 +264,12 @@ ID  Pattern Name        Amount(s)      Category         Uses  Last Used
 - [X] Add comprehensive UI tests
 
 ### Phase 6: Integration & Testing
-- [ ] Update classification engine to use new ranking system
-- [ ] Ensure vendor rules still bypass ranking when matched
-- [ ] Test auto-classification threshold (85% confidence)
-- [ ] Add integration tests for full workflow
-- [ ] Test check pattern matching with real data
-- [ ] Performance test ranking all categories
+- [X] Update classification engine to use new ranking system
+- [X] Ensure vendor rules still bypass ranking when matched
+- [X] Test auto-classification threshold (85% confidence)
+- [X] Add integration tests for full workflow
+- [X] Test check pattern matching with real data
+- [X] Performance test ranking all categories
 
 ### Phase 7: Documentation & Polish
 - [ ] Update README with check pattern examples

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // SaveClassification saves a classification for a transaction.

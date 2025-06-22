@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joshsymonds/the-spice-must-flow/internal/cli"
-	"github.com/joshsymonds/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/spf13/cobra"
 )
 
