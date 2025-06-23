@@ -252,7 +252,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a financial category description generator. Respond only with the description text, no additional formatting.\n\n%s",
+		"You are a financial category description generator. Follow the response format exactly as specified in the prompt.\n\n%s",
 		prompt,
 	)
 
@@ -294,9 +294,14 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 	// Parse JSON response
 	var response claudeCodeResponse
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		// If JSON parsing fails, use the raw output
+		// If JSON parsing fails, try to parse the raw output
+		description, confidence, parseErr := parseDescriptionResponse(stdout.String())
+		if parseErr != nil {
+			return DescriptionResponse{}, fmt.Errorf("failed to parse response: %w", parseErr)
+		}
 		return DescriptionResponse{
-			Description: strings.TrimSpace(stdout.String()),
+			Description: description,
+			Confidence:  confidence,
 		}, nil
 	}
 
@@ -305,8 +310,15 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 		return DescriptionResponse{}, fmt.Errorf("claude code error in response")
 	}
 
+	// Parse the structured response
+	description, confidence, err := parseDescriptionResponse(response.Result)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse description response: %w", err)
+	}
+
 	return DescriptionResponse{
-		Description: strings.TrimSpace(response.Result),
+		Description: description,
+		Confidence:  confidence,
 	}, nil
 }
 

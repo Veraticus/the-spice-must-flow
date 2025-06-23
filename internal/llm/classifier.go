@@ -260,10 +260,10 @@ func (c *Classifier) Close() error {
 }
 
 // GenerateCategoryDescription generates a description for a category name.
-func (c *Classifier) GenerateCategoryDescription(ctx context.Context, categoryName string) (string, error) {
+func (c *Classifier) GenerateCategoryDescription(ctx context.Context, categoryName string) (string, float64, error) {
 	// Rate limiting
 	if err := c.rateLimiter.wait(ctx); err != nil {
-		return "", fmt.Errorf("rate limit error: %w", err)
+		return "", 0, fmt.Errorf("rate limit error: %w", err)
 	}
 
 	prompt := fmt.Sprintf(`Generate a concise, helpful description for the financial category "%s".
@@ -274,9 +274,18 @@ The description should:
 - Be clear and specific without being overly technical
 - Help both humans and AI systems understand the category's purpose
 
-Respond with ONLY the description text, no additional formatting or explanation.`, categoryName)
+Respond in the following format:
+DESCRIPTION: <your 1-2 sentence description>
+CONFIDENCE: <0.0-1.0>
+
+Your confidence should reflect how well you understand what this category represents:
+- 0.90-1.00: Very clear understanding of the category
+- 0.70-0.89: Good understanding with minor uncertainty
+- 0.50-0.69: Moderate understanding, category name is somewhat ambiguous
+- 0.00-0.49: Low understanding, category name is unclear or could mean many things`, categoryName)
 
 	var description string
+	var confidence float64
 
 	// Use common retry logic
 	err := common.WithRetry(ctx, func() error {
@@ -289,18 +298,20 @@ Respond with ONLY the description text, no additional formatting or explanation.
 		}
 
 		description = response.Description
+		confidence = response.Confidence
 		return nil
 	}, c.retryOpts)
 
 	if err != nil {
-		return "", fmt.Errorf("description generation failed: %w", err)
+		return "", 0, fmt.Errorf("description generation failed: %w", err)
 	}
 
 	c.logger.Info("generated category description",
 		"category", categoryName,
-		"description", description)
+		"description", description,
+		"confidence", confidence)
 
-	return description, nil
+	return description, confidence, nil
 }
 
 // SuggestCategoryRankings suggests category rankings for a transaction.

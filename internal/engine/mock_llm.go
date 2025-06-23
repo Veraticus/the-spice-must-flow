@@ -171,9 +171,17 @@ func (m *MockClassifier) Reset() {
 }
 
 // GenerateCategoryDescription generates a mock description for testing.
-func (m *MockClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
+func (m *MockClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
 	// Generate a simple description based on the category name
-	return fmt.Sprintf("Expenses related to %s and associated services", strings.ToLower(categoryName)), nil
+	description := fmt.Sprintf("Expenses related to %s and associated services", strings.ToLower(categoryName))
+
+	// Return high confidence for common categories, low for others
+	confidence := 0.95
+	if len(categoryName) <= 5 || strings.Contains(strings.ToLower(categoryName), "unknown") {
+		confidence = 0.45
+	}
+
+	return description, confidence, nil
 }
 
 // SuggestCategoryRankings provides deterministic category rankings for testing.

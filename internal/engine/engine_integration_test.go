@@ -481,8 +481,8 @@ func (c *configuredClassifier) BatchSuggestCategories(_ context.Context, _ []mod
 	return nil, nil
 }
 
-func (c *configuredClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
-	return "Description for " + categoryName, nil
+func (c *configuredClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
+	return "Description for " + categoryName, 0.95, nil
 }
 
 func (c *configuredClassifier) SuggestCategoryRankings(_ context.Context, _ model.Transaction, categories []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
@@ -554,7 +554,7 @@ func (n *neverCallClassifier) BatchSuggestCategories(_ context.Context, _ []mode
 	panic("Classifier should not be called when vendor rule exists")
 }
 
-func (n *neverCallClassifier) GenerateCategoryDescription(_ context.Context, _ string) (string, error) {
+func (n *neverCallClassifier) GenerateCategoryDescription(_ context.Context, _ string) (string, float64, error) {
 	panic("Classifier should not be called when vendor rule exists")
 }
 

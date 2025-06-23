@@ -25,6 +25,7 @@ type ClassificationResponse struct {
 // DescriptionResponse contains the LLM's generated description.
 type DescriptionResponse struct {
 	Description string
+	Confidence  float64
 }
 
 // RankingResponse contains the LLM's category rankings result.

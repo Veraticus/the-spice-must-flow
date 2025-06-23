@@ -253,7 +253,7 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 		"model":       c.model,
 		"max_tokens":  c.maxTokens,
 		"temperature": c.temperature,
-		"system":      "You are a financial category description generator. Respond only with the description text, no additional formatting.",
+		"system":      "You are a financial category description generator. Follow the response format exactly as specified in the prompt.",
 		"messages": []map[string]string{
 			{
 				"role":    "user",
@@ -300,8 +300,14 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 		return DescriptionResponse{}, fmt.Errorf("no content in response")
 	}
 
+	description, confidence, err := parseDescriptionResponse(response.Content[0].Text)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse description response: %w", err)
+	}
+
 	return DescriptionResponse{
-		Description: strings.TrimSpace(response.Content[0].Text),
+		Description: description,
+		Confidence:  confidence,
 	}, nil
 }
 

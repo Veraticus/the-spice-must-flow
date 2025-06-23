@@ -780,13 +780,19 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 	}
 
 	// Use LLM to generate a proper description for the category
-	description, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
+	description, confidence, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
 	if err != nil {
 		// Fall back to a simple description if LLM fails
 		slog.Warn("Failed to generate category description, using fallback",
 			"category", categoryName,
 			"error", err)
 		description = fmt.Sprintf("Category for %s", categoryName)
+	} else if confidence < 0.7 {
+		// Log when confidence is low but still use the description
+		slog.Info("Generated category description with low confidence",
+			"category", categoryName,
+			"confidence", confidence,
+			"description", description)
 	}
 
 	// Determine category type based on transaction direction

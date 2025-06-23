@@ -257,7 +257,7 @@ func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a financial category description generator. Respond only with the description text, no additional formatting.",
+				"content": "You are a financial category description generator. Follow the response format exactly as specified in the prompt.",
 			},
 			{
 				"role":    "user",
@@ -305,8 +305,14 @@ func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (
 		return DescriptionResponse{}, fmt.Errorf("no completion choices returned")
 	}
 
+	description, confidence, err := parseDescriptionResponse(response.Choices[0].Message.Content)
+	if err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse description response: %w", err)
+	}
+
 	return DescriptionResponse{
-		Description: strings.TrimSpace(response.Choices[0].Message.Content),
+		Description: description,
+		Confidence:  confidence,
 	}, nil
 }
 

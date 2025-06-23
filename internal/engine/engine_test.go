@@ -668,8 +668,8 @@ func (f *failingClassifier) BatchSuggestCategories(ctx context.Context, transact
 	return suggestions, nil
 }
 
-func (f *failingClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
-	return "Test description for " + categoryName, nil
+func (f *failingClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
+	return "Test description for " + categoryName, 0.95, nil
 }
 
 func (f *failingClassifier) SuggestCategoryRankings(_ context.Context, transaction model.Transaction, _ []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
@@ -805,8 +805,8 @@ func (n *newCategoryClassifier) BatchSuggestCategories(ctx context.Context, tran
 	return suggestions, nil
 }
 
-func (n *newCategoryClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
-	return "Generated description for " + categoryName, nil
+func (n *newCategoryClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
+	return "Generated description for " + categoryName, 0.95, nil
 }
 
 func (n *newCategoryClassifier) SuggestCategoryRankings(_ context.Context, _ model.Transaction, _ []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {

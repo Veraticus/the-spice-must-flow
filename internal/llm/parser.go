@@ -163,3 +163,36 @@ func parseClassificationWithRankings(content string) ([]CategoryRanking, error) 
 
 	return nil, fmt.Errorf("unable to parse classification response")
 }
+
+// parseDescriptionResponse parses the description and confidence from LLM response.
+func parseDescriptionResponse(content string) (string, float64, error) {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	var description string
+	var confidence float64
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "DESCRIPTION:"):
+			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
+		case strings.HasPrefix(line, "CONFIDENCE:"):
+			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
+			conf, err := strconv.ParseFloat(confStr, 64)
+			if err != nil {
+				return "", 0, fmt.Errorf("failed to parse confidence: %w", err)
+			}
+			confidence = conf
+		}
+	}
+
+	if description == "" {
+		return "", 0, fmt.Errorf("no description found in response")
+	}
+
+	// Default to high confidence if not specified
+	if confidence == 0 {
+		confidence = 0.95
+	}
+
+	return description, confidence, nil
+}

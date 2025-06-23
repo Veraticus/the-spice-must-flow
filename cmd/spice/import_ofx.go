@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
@@ -26,11 +27,14 @@ Examples:
   # Import multiple files
   spice import-ofx ~/Downloads/chase_*.qfx
   
-  # Import all QFX files in a directory
+  # Import all QFX files in a directory (automatically finds all .qfx/.QFX files)
+  spice import-ofx ~/Downloads/
+  
+  # Import all QFX files using glob pattern
   spice import-ofx ~/Downloads/*.qfx
   
   # Import from multiple directories
-  spice import-ofx ~/Downloads/Chase/*.qfx ~/Downloads/Ally/*.qfx`,
+  spice import-ofx ~/Downloads/Chase/ ~/Downloads/Ally/`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: runImportOFX,
 	}
@@ -48,6 +52,31 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 	// Expand globs and collect all files
 	var allFiles []string
 	for _, pattern := range args {
+		// Check if it's a directory first
+		info, err := os.Stat(pattern)
+		if err == nil && info.IsDir() {
+			// If it's a directory, look for all QFX files (case-insensitive)
+			// Use filepath.Walk to find all matching files recursively
+			walkErr := filepath.Walk(pattern, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return nil // Skip files we can't read
+				}
+				if !info.IsDir() {
+					// Check if file has .qfx extension (case-insensitive)
+					ext := strings.ToLower(filepath.Ext(path))
+					if ext == ".qfx" {
+						allFiles = append(allFiles, path)
+					}
+				}
+				return nil
+			})
+			if walkErr != nil {
+				slog.Warn("Error walking directory", "directory", pattern, "error", walkErr)
+			}
+			continue
+		}
+
+		// Try as glob pattern
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return fmt.Errorf("invalid pattern %s: %w", pattern, err)
