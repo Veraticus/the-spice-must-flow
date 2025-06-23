@@ -99,6 +99,7 @@ func TestComplexScenario(t *testing.T) {
 			MerchantName: "Whole Foods",
 			Amount:       125.50,
 			AccountID:    "account-1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "txn-2",
@@ -107,6 +108,7 @@ func TestComplexScenario(t *testing.T) {
 			MerchantName: "Starbucks",
 			Amount:       5.75,
 			AccountID:    "account-1",
+			Direction:    model.DirectionExpense,
 		},
 	}
 
@@ -239,7 +241,7 @@ func TestParallelExecution(t *testing.T) {
 			}
 
 			// Modifications don't affect other tests
-			_, err = db.Storage.CreateCategory(ctx, tc+"-specific", "Test specific category")
+			_, err = db.Storage.CreateCategory(ctx, tc+"-specific", "Test specific category", model.CategoryTypeExpense)
 			if err != nil {
 				t.Fatalf("failed to create category: %v", err)
 			}
@@ -263,7 +265,7 @@ func TestWithTransaction(t *testing.T) {
 		ctx := context.Background()
 
 		// All operations within transaction
-		_, err := tx.CreateCategory(ctx, "Transaction Test Category", "Test transaction category")
+		_, err := tx.CreateCategory(ctx, "Transaction Test Category", "Test transaction category", model.CategoryTypeExpense)
 		if err != nil {
 			return err
 		}

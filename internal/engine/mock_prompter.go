@@ -295,6 +295,21 @@ func (m *MockPrompter) BatchConfirmCallCount() int {
 	return len(m.batchConfirmCalls)
 }
 
+// ConfirmTransactionDirection simulates confirming a transaction direction.
+func (m *MockPrompter) ConfirmTransactionDirection(ctx context.Context, pending PendingDirection) (model.TransactionDirection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// For testing, if confidence is below threshold, accept the AI suggestion
+	// This simulates a user accepting the AI's direction suggestion
+	if m.autoAccept {
+		return pending.SuggestedDirection, nil
+	}
+
+	// Otherwise, simulate user changing to expense (common case)
+	return model.DirectionExpense, nil
+}
+
 // Reset clears all recorded calls and statistics.
 func (m *MockPrompter) Reset() {
 	m.mu.Lock()

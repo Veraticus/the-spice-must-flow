@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +75,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       150.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "lawn1",
@@ -84,6 +86,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       225.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "pest1",
@@ -94,6 +97,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       125.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "unknown1",
@@ -104,6 +108,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       75.00, // No pattern match
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 			},
 			expectedMatches: map[string]string{
@@ -159,6 +164,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       2800.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "water1",
@@ -169,6 +175,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       87.50,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "hoa1",
@@ -179,6 +186,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       325.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 			},
 			expectedMatches: map[string]string{
@@ -232,6 +240,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       1200.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "piano1",
@@ -242,6 +251,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       160.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "afterschool1",
@@ -252,6 +262,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       500.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 			},
 			expectedMatches: map[string]string{
@@ -305,6 +316,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       30.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "dental1",
@@ -315,6 +327,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       175.00,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 				{
 					ID:           "life1",
@@ -325,6 +338,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					Amount:       89.50,
 					Type:         "CHECK",
 					AccountID:    "checking",
+					Direction:    model.DirectionExpense,
 				},
 			},
 			expectedMatches: map[string]string{
@@ -353,7 +367,7 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 				"Education", "Healthcare", "Insurance", "Other Expenses",
 			}
 			for _, cat := range categories {
-				_, catErr := db.CreateCategory(ctx, cat, "Category for "+cat)
+				_, catErr := db.CreateCategory(ctx, cat, "Category for "+cat, model.CategoryTypeExpense)
 				require.NoError(t, catErr)
 			}
 
@@ -367,8 +381,8 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 			err = db.SaveTransactions(ctx, scenario.transactions)
 			require.NoError(t, err)
 
-			// Create engine
-			llm := NewMockClassifier()
+			// Create engine with mock that implements SuggestTransactionDirection
+			llm := &mockClassifierWithDirection{MockClassifier: NewMockClassifier()}
 			prompter := NewMockPrompter(true)
 			engine := New(db, llm, prompter)
 
@@ -433,8 +447,9 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				Active:      true,
 			},
 			transaction: model.Transaction{
-				Amount: 100.00,
-				Type:   "CHECK",
+				Amount:    100.00,
+				Type:      "CHECK",
+				Direction: model.DirectionExpense,
 			},
 			shouldMatch: true,
 		},
@@ -448,8 +463,9 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				Active:      true,
 			},
 			transaction: model.Transaction{
-				Amount: 99.99,
-				Type:   "CHECK",
+				Amount:    99.99,
+				Type:      "CHECK",
+				Direction: model.DirectionExpense,
 			},
 			shouldMatch: false,
 		},
@@ -463,8 +479,9 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				Active:      true,
 			},
 			transaction: model.Transaction{
-				Amount: 200.01,
-				Type:   "CHECK",
+				Amount:    200.01,
+				Type:      "CHECK",
+				Direction: model.DirectionExpense,
 			},
 			shouldMatch: false,
 		},
@@ -480,9 +497,10 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				Active:        true,
 			},
 			transaction: model.Transaction{
-				Amount: 100.00,
-				Date:   time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
-				Type:   "CHECK",
+				Amount:    100.00,
+				Date:      time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
+				Type:      "CHECK",
+				Direction: model.DirectionExpense,
 			},
 			shouldMatch: true,
 		},
@@ -496,8 +514,9 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				Active:      false,
 			},
 			transaction: model.Transaction{
-				Amount: 100.00,
-				Type:   "CHECK",
+				Amount:    100.00,
+				Type:      "CHECK",
+				Direction: model.DirectionExpense,
 			},
 			shouldMatch: false,
 		},
@@ -511,8 +530,9 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				Active:      true,
 			},
 			transaction: model.Transaction{
-				Amount: 100.00,
-				Type:   "DEBIT", // Not a check
+				Amount:    100.00,
+				Type:      "DEBIT", // Not a check
+				Direction: model.DirectionExpense,
 			},
 			shouldMatch: false,
 		},
@@ -531,7 +551,7 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 			}()
 
 			// Create category
-			_, err = db.CreateCategory(ctx, "Test", "Test category")
+			_, err = db.CreateCategory(ctx, "Test", "Test category", model.CategoryTypeExpense)
 			require.NoError(t, err)
 
 			// Save pattern
@@ -588,7 +608,7 @@ func TestCheckPatternPerformance(t *testing.T) {
 	// Create categories
 	categories := []string{"Bills", "Services", "Other"}
 	for _, cat := range categories {
-		_, catErr := db.CreateCategory(ctx, cat, "Test category")
+		_, catErr := db.CreateCategory(ctx, cat, "Test category", model.CategoryTypeExpense)
 		require.NoError(t, catErr)
 	}
 
@@ -631,4 +651,26 @@ func TestCheckPatternPerformance(t *testing.T) {
 
 	t.Logf("Found %d matching patterns out of %d total in %v",
 		len(matches), numPatterns, duration)
+}
+
+// mockClassifierWithDirection wraps MockClassifier to add SuggestTransactionDirection.
+type mockClassifierWithDirection struct {
+	*MockClassifier
+}
+
+func (m *mockClassifierWithDirection) SuggestTransactionDirection(_ context.Context, transaction model.Transaction) (model.TransactionDirection, float64, string, error) {
+	// Simple deterministic direction detection based on merchant patterns
+	merchantLower := strings.ToLower(transaction.MerchantName)
+	if merchantLower == "" {
+		merchantLower = strings.ToLower(transaction.Name)
+	}
+
+	switch {
+	case strings.Contains(merchantLower, "payroll") || strings.Contains(merchantLower, "salary"):
+		return model.DirectionIncome, 0.95, "Payroll/salary transaction", nil
+	case strings.Contains(merchantLower, "transfer"):
+		return model.DirectionTransfer, 0.85, "Transfer between accounts", nil
+	default:
+		return model.DirectionExpense, 0.95, "Merchant purchase", nil
+	}
 }

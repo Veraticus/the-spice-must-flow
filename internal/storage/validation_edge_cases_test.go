@@ -126,6 +126,7 @@ func TestStorageValidation(t *testing.T) {
 			Date:      time.Now(),
 			Name:      "Test Transaction",
 			AccountID: "acc1",
+			Direction: model.DirectionExpense,
 		}
 		validTxn.Hash = validTxn.GenerateHash()
 		if err := store.SaveTransactions(ctx, []model.Transaction{validTxn}); err != nil {

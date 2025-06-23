@@ -22,13 +22,20 @@ func classifyCmd() *cobra.Command {
 		Short: "Categorize transactions",
 		Long: `Categorize financial transactions with AI assistance and smart batching.
 		
-This command fetches transactions from Plaid, groups them by merchant,
-and guides you through categorization with minimal effort.`,
+This command processes ALL unclassified transactions by default, grouping them 
+by merchant to minimize manual effort. Use --year or --month flags to limit
+the date range if needed.
+
+Examples:
+  spice classify              # Classify ALL unclassified transactions
+  spice classify --year 2024  # Classify only 2024 transactions
+  spice classify --month 2024-03  # Classify only March 2024 transactions
+  spice classify --resume     # Resume from previous session`,
 		RunE: runClassify,
 	}
 
 	// Flags
-	cmd.Flags().IntP("year", "y", time.Now().Year(), "Year to classify transactions for")
+	cmd.Flags().IntP("year", "y", 0, "Year to classify transactions for (0 = all years)")
 	cmd.Flags().StringP("month", "m", "", "Specific month to classify (format: 2024-01)")
 	cmd.Flags().BoolP("resume", "r", false, "Resume from previous session")
 	cmd.Flags().Bool("dry-run", false, "Preview without saving changes")
@@ -58,9 +65,9 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	// Initialize storage
 	dbPath := viper.GetString("database.path")
 	if dbPath == "" {
-		dbPath = "~/.local/share/spice/spice.db"
+		dbPath = "$HOME/.local/share/spice/spice.db"
 	}
-	dbPath = expandPath(dbPath)
+	dbPath = os.ExpandEnv(dbPath)
 
 	db, err := storage.NewSQLiteStorage(dbPath)
 	if err != nil {
@@ -89,7 +96,10 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		prompter = engine.NewMockPrompter(true) // Auto-accept in dry-run
 	} else {
 		// Use real prompter for interactive classification
-		prompter = cli.NewCLIPrompter(nil, nil)
+		cliPrompter := cli.NewCLIPrompter(nil, nil)
+		cliPrompter.Start(ctx)
+		defer cliPrompter.Close()
+		prompter = cliPrompter
 
 		// Initialize real LLM classifier
 		var llmErr error
@@ -114,11 +124,12 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 			}
 			startDate := parsedMonth
 			fromDate = &startDate
-		} else {
-			// Use beginning of year
+		} else if year > 0 {
+			// Use beginning of specified year
 			startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 			fromDate = &startDate
 		}
+		// If year == 0 (default), fromDate remains nil, which means classify ALL transactions
 	}
 
 	// Get transaction count for progress tracking
@@ -178,14 +189,4 @@ func showCompletionStats(stats service.CompletionStats) {
 	}
 
 	slog.Info("Ready for export: spice flow --export")
-}
-
-func expandPath(path string) string {
-	if path != "" && path[0] == '~' {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			path = home + path[1:]
-		}
-	}
-	return path
 }

@@ -281,6 +281,9 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 		}
 	}
 
+	// Detect transaction direction
+	direction := c.detectDirection(pt)
+
 	tx := model.Transaction{
 		Date:         date,
 		ID:           pt.GetTransactionId(),
@@ -291,12 +294,65 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 		Category:     categories,
 		Type:         transactionType,
 		CheckNumber:  checkNumber,
+		Direction:    direction,
 	}
 
 	// Generate hash for deduplication
 	tx.Hash = tx.GenerateHash()
 
 	return tx
+}
+
+// detectDirection determines if a transaction is income, expense, or transfer based on Plaid data.
+func (c *Client) detectDirection(pt plaid.Transaction) model.TransactionDirection {
+	// In Plaid, positive amounts are debits (money leaving account = expense)
+	// and negative amounts are credits (money entering account = income)
+	amount := pt.GetAmount()
+
+	// Check for transfers first
+	name := strings.ToLower(pt.GetName())
+	if strings.Contains(name, "transfer from") || strings.Contains(name, "transfer to") ||
+		strings.Contains(name, "xfer") || strings.Contains(name, "transfer") {
+		return model.DirectionTransfer
+	}
+
+	// Check payment channel for income indicators
+	if channel := pt.GetPaymentChannel(); channel != "" {
+		switch strings.ToLower(channel) {
+		case "direct_deposit", "deposit":
+			return model.DirectionIncome
+		case "interest":
+			return model.DirectionIncome
+		}
+	}
+
+	// Check categories for income indicators
+	if categories := pt.GetCategory(); len(categories) > 0 {
+		for _, cat := range categories {
+			catLower := strings.ToLower(cat)
+			if strings.Contains(catLower, "deposit") ||
+				strings.Contains(catLower, "interest") ||
+				strings.Contains(catLower, "dividend") ||
+				strings.Contains(catLower, "income") {
+				return model.DirectionIncome
+			}
+		}
+	}
+
+	// Check name patterns for income
+	if strings.Contains(name, "payroll") || strings.Contains(name, "salary") ||
+		strings.Contains(name, "direct dep") || strings.Contains(name, "interest") ||
+		strings.Contains(name, "dividend") || strings.Contains(name, "refund") {
+		return model.DirectionIncome
+	}
+
+	// Use amount sign as fallback
+	// Plaid uses positive for debits (expenses) and negative for credits (income)
+	if amount < 0 {
+		return model.DirectionIncome
+	}
+
+	return model.DirectionExpense
 }
 
 // cleanMerchantName standardizes merchant names by removing common suffixes and normalizing format.

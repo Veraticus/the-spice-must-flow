@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/classification"
 	"github.com/Veraticus/the-spice-must-flow/internal/common"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
@@ -19,23 +20,26 @@ import (
 
 // ClassificationEngine orchestrates the classification of transactions.
 type ClassificationEngine struct {
-	storage    service.Storage
-	classifier Classifier
-	prompter   Prompter
-	batchSize  int
+	storage         service.Storage
+	classifier      Classifier
+	prompter        Prompter
+	patternDetector *classification.PatternDetector
+	config          Config
 }
 
 // Config holds configuration options for the classification engine.
 type Config struct {
-	BatchSize         int
-	VarianceThreshold float64
+	BatchSize                    int
+	VarianceThreshold            float64
+	DirectionConfidenceThreshold float64
 }
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() Config {
 	return Config{
-		BatchSize:         50,
-		VarianceThreshold: 10.0,
+		BatchSize:                    50,
+		VarianceThreshold:            10.0,
+		DirectionConfidenceThreshold: 0.85, // Same as category auto-classification threshold
 	}
 }
 
@@ -47,11 +51,19 @@ func New(storage service.Storage, classifier Classifier, prompter Prompter) *Cla
 
 // NewWithConfig creates a new classification engine with custom configuration.
 func NewWithConfig(storage service.Storage, classifier Classifier, prompter Prompter, config Config) *ClassificationEngine {
+	// Initialize pattern detector with default patterns
+	detector, err := classification.NewPatternDetector(classification.DefaultPatterns())
+	if err != nil {
+		slog.Warn("Failed to initialize pattern detector, continuing without it", "error", err)
+		detector = nil
+	}
+
 	return &ClassificationEngine{
-		storage:    storage,
-		classifier: classifier,
-		prompter:   prompter,
-		batchSize:  config.BatchSize,
+		storage:         storage,
+		classifier:      classifier,
+		prompter:        prompter,
+		patternDetector: detector,
+		config:          config,
 	}
 }
 
@@ -59,23 +71,17 @@ func NewWithConfig(storage service.Storage, classifier Classifier, prompter Prom
 func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDate *time.Time) error {
 	slog.Info("Starting classification engine", "from_date", fromDate)
 
-	// Load categories from the database
+	// Do an initial check for categories
 	categories, err := e.storage.GetCategories(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load categories: %w", err)
 	}
 
 	if len(categories) == 0 {
-		return fmt.Errorf("no categories found in database - please run migrations first")
+		return fmt.Errorf("no categories found in database - please add categories using 'spice categories add <name>' first")
 	}
 
-	// Convert to string slice for LLM
-	categoryNames := make([]string, len(categories))
-	for i, cat := range categories {
-		categoryNames[i] = cat.Name
-	}
-
-	slog.Info("Loaded categories", "count", len(categories))
+	slog.Info("Initial categories loaded", "count", len(categories))
 
 	// Load previous progress
 	progress, err := e.storage.GetLatestProgress(ctx)
@@ -115,12 +121,12 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 	}
 
 	// Process each merchant group
-	for _, merchant := range sortedMerchants {
+	for _, groupKey := range sortedMerchants {
 		select {
 		case <-ctx.Done():
 			// Save progress before exiting
-			if len(merchantGroups[merchant]) > 0 {
-				lastTxn := merchantGroups[merchant][0]
+			if len(merchantGroups[groupKey]) > 0 {
+				lastTxn := merchantGroups[groupKey][0]
 				if err := e.saveProgress(ctx, lastTxn.ID, lastTxn.Date, totalProcessed); err != nil {
 					slog.Error("Failed to save progress", "error", err)
 				}
@@ -129,9 +135,82 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 		default:
 		}
 
-		txns := merchantGroups[merchant]
+		txns := merchantGroups[groupKey]
+
+		// Extract merchant name and direction from group key
+		parts := strings.Split(groupKey, "|")
+		merchant := parts[0]
+		direction := model.TransactionDirection("")
+		if len(parts) > 1 {
+			direction = model.TransactionDirection(parts[1])
+		}
+
+		// If transactions don't have direction set, detect it
+		if direction == "" && len(txns) > 0 {
+			// Use the first transaction as representative for direction detection
+			repTxn := txns[0]
+			detectedDir, confidence, reasoning, err := e.classifier.SuggestTransactionDirection(ctx, repTxn)
+			if err != nil {
+				slog.Warn("Failed to detect transaction direction",
+					"merchant", merchant,
+					"error", err)
+				// Default to expense if detection fails
+				direction = model.DirectionExpense
+			} else {
+				// Check if we need user confirmation
+				if confidence < e.config.DirectionConfidenceThreshold {
+					// Prepare pending direction for user confirmation
+					pending := PendingDirection{
+						MerchantName:       merchant,
+						TransactionCount:   len(txns),
+						SampleTransaction:  repTxn,
+						SuggestedDirection: detectedDir,
+						Confidence:         confidence,
+						Reasoning:          reasoning,
+					}
+
+					// Get user confirmation
+					confirmedDir, err := e.prompter.ConfirmTransactionDirection(ctx, pending)
+					if err != nil {
+						slog.Error("Failed to confirm transaction direction",
+							"merchant", merchant,
+							"error", err)
+						// Fall back to AI suggestion if user confirmation fails
+						direction = detectedDir
+					} else {
+						direction = confirmedDir
+						slog.Info("User confirmed transaction direction",
+							"merchant", merchant,
+							"direction", direction,
+							"ai_suggestion", detectedDir,
+							"ai_confidence", confidence)
+					}
+				} else {
+					// High confidence, use AI detection
+					direction = detectedDir
+					slog.Info("Auto-detected transaction direction",
+						"merchant", merchant,
+						"direction", direction,
+						"confidence", confidence,
+						"reasoning", reasoning)
+				}
+
+				// Update all transactions in the group with the confirmed direction
+				for i := range txns {
+					txns[i].Direction = direction
+					// Also update in storage
+					if updateErr := e.storage.UpdateTransactionDirection(ctx, txns[i].ID, direction); updateErr != nil {
+						slog.Warn("Failed to update transaction direction",
+							"transaction_id", txns[i].ID,
+							"error", updateErr)
+					}
+				}
+			}
+		}
+
 		slog.Info("Processing merchant group",
 			"merchant", merchant,
+			"direction", direction,
 			"transaction_count", len(txns))
 
 		// Check for existing vendor rule
@@ -154,8 +233,52 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 				slog.Warn("Failed to update vendor use count", "error", saveErr)
 			}
 		} else {
-			// Need classification
-			classifications, err = e.classifyMerchantGroup(ctx, merchant, txns, categoryNames)
+			// Need classification - reload categories to get any newly created ones
+			categories, err := e.storage.GetCategories(ctx)
+			if err != nil {
+				slog.Error("Failed to reload categories", "error", err)
+				continue
+			}
+
+			// Filter categories based on transaction direction
+			var filteredCategories []model.Category
+			for _, cat := range categories {
+				// Match category type to transaction direction
+				switch direction {
+				case model.DirectionIncome:
+					if cat.Type == model.CategoryTypeIncome {
+						filteredCategories = append(filteredCategories, cat)
+					}
+				case model.DirectionExpense:
+					if cat.Type == model.CategoryTypeExpense || cat.Type == "" {
+						// Include categories without type for backward compatibility
+						filteredCategories = append(filteredCategories, cat)
+					}
+				case model.DirectionTransfer:
+					if cat.Type == model.CategoryTypeSystem {
+						filteredCategories = append(filteredCategories, cat)
+					}
+				default:
+					// If no direction is set, include all categories
+					filteredCategories = append(filteredCategories, cat)
+				}
+			}
+
+			// If no categories match the direction, fall back to all categories
+			if len(filteredCategories) == 0 {
+				slog.Warn("No categories found for direction, using all categories",
+					"direction", direction,
+					"total_categories", len(categories))
+				filteredCategories = categories
+			}
+
+			// Convert to string slice for LLM
+			categoryNames := make([]string, len(filteredCategories))
+			for i, cat := range filteredCategories {
+				categoryNames[i] = cat.Name
+			}
+
+			classifications, err = e.classifyMerchantGroup(ctx, merchant, txns, categoryNames, direction)
 			if err != nil {
 				slog.Error("Failed to classify merchant group",
 					"merchant", merchant,
@@ -204,7 +327,7 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 }
 
 // classifyMerchantGroup handles classification for a group of transactions from the same merchant.
-func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, merchant string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
+func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, merchant string, txns []model.Transaction, categories []string, direction model.TransactionDirection) ([]model.Classification, error) {
 	if len(txns) == 0 {
 		return []model.Classification{}, nil
 	}
@@ -320,7 +443,19 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 		slog.Info("High variance detected, reviewing individually",
 			"merchant", merchant,
 			"transaction_count", len(txns))
-		return e.reviewIndividually(ctx, merchant, txns, categories)
+		// Reload categories to get any newly created ones
+		reloadedCategories, reloadErr := e.storage.GetCategories(ctx)
+		if reloadErr != nil {
+			return nil, fmt.Errorf("failed to reload categories: %w", reloadErr)
+		}
+
+		// Convert to string slice for LLM
+		categoryNames := make([]string, len(reloadedCategories))
+		for i, cat := range reloadedCategories {
+			categoryNames[i] = cat.Name
+		}
+
+		return e.reviewIndividually(ctx, merchant, txns, categoryNames, direction)
 	}
 
 	// Prepare for batch review
@@ -335,6 +470,9 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 			CategoryDescription: description,
 			CategoryRankings:    rankings,
 			CheckPatterns:       checkPatterns,
+			SuggestedDirection:  txn.Direction,
+			DirectionConfidence: 1.0, // Already set from import or detection
+			DirectionReasoning:  "Direction was pre-determined",
 		}
 	}
 
@@ -348,7 +486,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 	if len(classifications) > 0 {
 		// Ensure the category exists (in case user created a new one)
 		category := classifications[0].Category
-		if err := e.ensureCategoryExists(ctx, category); err != nil {
+		if err := e.ensureCategoryExists(ctx, category, direction); err != nil {
 			slog.Warn("Failed to ensure category exists",
 				"category", category,
 				"error", err)
@@ -390,7 +528,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 }
 
 // reviewIndividually handles high-variance merchants by reviewing each transaction.
-func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
+func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction, categories []string, direction model.TransactionDirection) ([]model.Classification, error) {
 	classifications := make([]model.Classification, 0, len(txns))
 
 	// Convert category strings to model.Category objects
@@ -420,8 +558,9 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 				"transaction_id", txn.ID,
 				"error", err)
 			// Use a default category if AI fails
+			defaultCategory := getDefaultCategory(direction)
 			rankings = model.CategoryRankings{{
-				Category:    "Other Expenses",
+				Category:    defaultCategory,
 				Score:       0.0,
 				IsNew:       false,
 				Description: "",
@@ -431,8 +570,9 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 		// Extract top-ranked category
 		top := rankings.Top()
 		if top == nil {
+			defaultCategory := getDefaultCategory(direction)
 			top = &model.CategoryRanking{
-				Category:    "Other Expenses",
+				Category:    defaultCategory,
 				Score:       0.0,
 				IsNew:       false,
 				Description: "",
@@ -448,6 +588,9 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 			CategoryDescription: top.Description,
 			CategoryRankings:    rankings,
 			CheckPatterns:       checkPatterns,
+			SuggestedDirection:  txn.Direction,
+			DirectionConfidence: 1.0, // Already set from import or detection
+			DirectionReasoning:  "Direction was pre-determined",
 		}
 
 		classification, err := e.prompter.ConfirmClassification(ctx, pending)
@@ -529,7 +672,7 @@ func (e *ClassificationEngine) hasHighVariance(txns []model.Transaction) bool {
 	return maxAmount/minAmount > 10
 }
 
-// groupByMerchant groups transactions by merchant name.
+// groupByMerchant groups transactions by merchant name and direction.
 func (e *ClassificationEngine) groupByMerchant(transactions []model.Transaction) map[string][]model.Transaction {
 	groups := make(map[string][]model.Transaction)
 
@@ -540,7 +683,11 @@ func (e *ClassificationEngine) groupByMerchant(transactions []model.Transaction)
 		}
 		merchant = strings.TrimSpace(merchant)
 
-		groups[merchant] = append(groups[merchant], txn)
+		// Include direction in the grouping key to ensure income and expense
+		// transactions are classified separately
+		groupKey := fmt.Sprintf("%s|%s", merchant, txn.Direction)
+
+		groups[groupKey] = append(groups[groupKey], txn)
 	}
 
 	return groups
@@ -575,6 +722,20 @@ func (e *ClassificationEngine) sortMerchantsByVolume(groups map[string][]model.T
 	return merchants
 }
 
+// getDefaultCategory returns the appropriate default category based on transaction direction.
+func getDefaultCategory(direction model.TransactionDirection) string {
+	switch direction {
+	case model.DirectionIncome:
+		return "Other Income"
+	case model.DirectionExpense:
+		return "Other Expenses"
+	case model.DirectionTransfer:
+		return "Transfers"
+	default:
+		return "Other Expenses"
+	}
+}
+
 // getVendor retrieves a vendor from storage (which has its own cache).
 func (e *ClassificationEngine) getVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
 	return e.storage.GetVendor(ctx, merchantName)
@@ -606,7 +767,7 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 }
 
 // ensureCategoryExists checks if a category exists and creates it if necessary.
-func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string) error {
+func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string, direction model.TransactionDirection) error {
 	// Check if category already exists
 	existingCategory, err := e.storage.GetCategoryByName(ctx, categoryName)
 	if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
@@ -625,10 +786,24 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 		slog.Warn("Failed to generate category description, using fallback",
 			"category", categoryName,
 			"error", err)
-		description = fmt.Sprintf("Category for %s related expenses", categoryName)
+		description = fmt.Sprintf("Category for %s", categoryName)
 	}
 
-	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description)
+	// Determine category type based on transaction direction
+	var categoryType model.CategoryType
+	switch direction {
+	case model.DirectionIncome:
+		categoryType = model.CategoryTypeIncome
+	case model.DirectionExpense:
+		categoryType = model.CategoryTypeExpense
+	case model.DirectionTransfer:
+		categoryType = model.CategoryTypeSystem
+	default:
+		// Default to expense for backward compatibility
+		categoryType = model.CategoryTypeExpense
+	}
+
+	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description, categoryType)
 	if err != nil {
 		return fmt.Errorf("failed to create category: %w", err)
 	}

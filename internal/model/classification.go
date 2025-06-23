@@ -28,12 +28,16 @@ type Classification struct {
 type PendingClassification struct {
 	SuggestedCategory   string
 	CategoryDescription string
+	SuggestedDirection  TransactionDirection
+	DirectionReasoning  string
 	CategoryRankings    CategoryRankings
 	CheckPatterns       []CheckPattern
 	Transaction         Transaction
+	DirectionConfidence float64
 	Confidence          float64
 	SimilarCount        int
 	IsNewCategory       bool
+	IsCategoryMismatch  bool
 }
 
 // ClassificationProgress tracks where we are in a classification run.

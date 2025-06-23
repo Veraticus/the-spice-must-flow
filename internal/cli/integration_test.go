@@ -26,6 +26,7 @@ func TestPrompterWithEngine(t *testing.T) {
 		Amount:       5.75,
 		Date:         time.Now(),
 		AccountID:    "test-account",
+		Direction:    model.DirectionExpense,
 	}
 
 	// Test single classification
@@ -84,6 +85,7 @@ func TestPrompterWithEngine(t *testing.T) {
 					Amount:       4.25,
 					Date:         time.Now().AddDate(0, 0, -1),
 					AccountID:    "test-account",
+					Direction:    model.DirectionExpense,
 				},
 				SuggestedCategory: "Coffee & Dining",
 				Confidence:        0.92,
@@ -145,7 +147,9 @@ func TestPrompterWithEngine(t *testing.T) {
 // TestPrompterEdgeCases tests edge cases and error conditions.
 func TestPrompterEdgeCases(t *testing.T) {
 	t.Run("empty merchant name", func(t *testing.T) {
-		input := "c\nMiscellaneous\n"
+		// Need to provide input for promptCategorySelection when "c" is chosen
+		// The promptCategorySelection will need a category name or number
+		input := "c\nn\nMiscellaneous\n" // c = custom, n = new category, then the name
 		reader := strings.NewReader(input)
 		var output bytes.Buffer
 
@@ -158,6 +162,8 @@ func TestPrompterEdgeCases(t *testing.T) {
 				MerchantName: "", // Empty merchant name
 				Amount:       50.00,
 				Date:         time.Now(),
+				Direction:    model.DirectionExpense,
+				AccountID:    "test-account",
 			},
 			SuggestedCategory: "Other",
 			Confidence:        0.50,
@@ -190,6 +196,8 @@ func TestPrompterEdgeCases(t *testing.T) {
 				MerchantName: longName,
 				Amount:       100.00,
 				Date:         time.Now(),
+				Direction:    model.DirectionExpense,
+				AccountID:    "test-account",
 			},
 			SuggestedCategory: "Shopping",
 			Confidence:        0.70,

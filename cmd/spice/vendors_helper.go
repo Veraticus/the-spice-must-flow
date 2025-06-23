@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/spf13/viper"
@@ -16,17 +15,11 @@ func getDatabase() (*storage.SQLiteStorage, func(), error) {
 	// Get database path from config
 	dbPath := viper.GetString("database.path")
 	if dbPath == "" {
-		dbPath = "~/.local/share/spice/spice.db"
+		dbPath = "$HOME/.local/share/spice/spice.db"
 	}
 
-	// Expand ~ to home directory
-	if strings.HasPrefix(dbPath, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get home directory: %w", err)
-		}
-		dbPath = home + dbPath[1:]
-	}
+	// Expand environment variables
+	dbPath = os.ExpandEnv(dbPath)
 
 	// Open database
 	db, err := storage.NewSQLiteStorage(dbPath)

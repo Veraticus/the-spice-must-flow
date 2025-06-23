@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -21,7 +20,8 @@ import (
 type Prompter struct {
 	startTime         time.Time
 	writer            io.Writer
-	reader            *bufio.Reader
+	ctx               context.Context
+	reader            *NonBlockingReader
 	progressBar       *progressbar.ProgressBar
 	categoryHistory   map[string][]string
 	recentCategories  []string
@@ -42,10 +42,23 @@ func NewCLIPrompter(reader io.Reader, writer io.Writer) *Prompter {
 	}
 
 	return &Prompter{
-		reader:          bufio.NewReader(reader),
+		reader:          NewNonBlockingReader(reader),
 		writer:          writer,
 		categoryHistory: make(map[string][]string),
 		startTime:       time.Now(),
+	}
+}
+
+// Start initializes the non-blocking reader with the given context.
+func (p *Prompter) Start(ctx context.Context) {
+	p.ctx = ctx
+	p.reader.Start(ctx)
+}
+
+// Close cleans up the prompter resources.
+func (p *Prompter) Close() {
+	if p.reader != nil {
+		p.reader.Close()
 	}
 }
 
@@ -59,9 +72,53 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 
 	p.updateProgress()
 
+	// Add spacing after progress bar
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		slog.Warn("Failed to write newline", "error", err)
+	}
+
 	content := p.formatSingleTransaction(pending)
 	if _, err := fmt.Fprintln(p.writer, RenderBox("Transaction Details", content)); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write transaction box: %w", err)
+	}
+
+	// First handle direction confirmation
+	direction := pending.SuggestedDirection
+	if pending.DirectionConfidence < 0.8 || pending.SuggestedDirection == "" {
+		// Low confidence or missing direction - prompt user
+		if _, err := fmt.Fprintln(p.writer, FormatPrompt("Transaction Direction:")); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write direction prompt: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [I] Income - money coming in"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write income option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [E] Expense - money going out"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write expense option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [T] Transfer - between accounts"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write transfer option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
+		}
+
+		dirChoice, err := p.promptChoice(ctx, "Direction", []string{"i", "e", "t"})
+		if err != nil {
+			return model.Classification{}, err
+		}
+
+		switch dirChoice {
+		case "i":
+			direction = model.DirectionIncome
+		case "e":
+			direction = model.DirectionExpense
+		case "t":
+			direction = model.DirectionTransfer
+		}
+
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
+		}
 	}
 
 	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Category options:")); err != nil {
@@ -84,6 +141,12 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 	if _, err := fmt.Fprintln(p.writer, "  [C] Enter custom category"); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write custom option: %w", err)
 	}
+	if pending.DirectionConfidence >= 0.8 && pending.SuggestedDirection != "" {
+		// Only show direction change option if we didn't already prompt for it
+		if _, err := fmt.Fprintln(p.writer, "  [D] Change transaction direction"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write change direction option: %w", err)
+		}
+	}
 	if _, err := fmt.Fprintln(p.writer, "  [S] Skip this transaction"); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write skip option: %w", err)
 	}
@@ -98,10 +161,17 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 		validChoices = []string{"a", "c", "s"}
 	}
 
+	if pending.DirectionConfidence >= 0.8 && pending.SuggestedDirection != "" {
+		validChoices = append(validChoices, "d")
+	}
+
 	choice, err := p.promptChoice(ctx, "Choice", validChoices)
 	if err != nil {
 		return model.Classification{}, err
 	}
+
+	// Update transaction direction
+	pending.Transaction.Direction = direction
 
 	classification := model.Classification{
 		Transaction:  pending.Transaction,
@@ -142,6 +212,43 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 		classification.Status = model.StatusUserModified
 		p.trackCategorization(pending.Transaction.MerchantName, category)
 		p.incrementStats(true, false)
+	case "d":
+		// Change direction
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, FormatPrompt("Select new direction:")); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write direction prompt: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [I] Income - money coming in"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write income option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [E] Expense - money going out"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write expense option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer, "  [T] Transfer - between accounts"); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write transfer option: %w", err)
+		}
+		if _, err := fmt.Fprintln(p.writer); err != nil {
+			return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
+		}
+
+		dirChoice, err := p.promptChoice(ctx, "Direction", []string{"i", "e", "t"})
+		if err != nil {
+			return model.Classification{}, err
+		}
+
+		switch dirChoice {
+		case "i":
+			pending.Transaction.Direction = model.DirectionIncome
+		case "e":
+			pending.Transaction.Direction = model.DirectionExpense
+		case "t":
+			pending.Transaction.Direction = model.DirectionTransfer
+		}
+
+		// Re-run the classification with the new direction
+		return p.ConfirmClassification(ctx, pending)
 	case "s":
 		classification.Status = model.StatusUnclassified
 	}
@@ -162,6 +269,11 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 	}
 
 	p.updateProgress()
+
+	// Add spacing after progress bar
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		slog.Warn("Failed to write newline", "error", err)
+	}
 
 	merchantName := pending[0].Transaction.MerchantName
 	pattern := p.detectPattern(merchantName)
@@ -239,6 +351,104 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 	}
 
 	return nil, fmt.Errorf("invalid selection '%s'. Please choose from the available options", choice)
+}
+
+// ConfirmTransactionDirection prompts the user to confirm or select a transaction direction.
+func (p *Prompter) ConfirmTransactionDirection(ctx context.Context, pending engine.PendingDirection) (model.TransactionDirection, error) {
+	// Display header
+	header := fmt.Sprintf("Direction Detection - %s", pending.MerchantName)
+	if _, err := fmt.Fprintf(p.writer, "\n%s\n", FormatTitle(header)); err != nil {
+		return "", fmt.Errorf("failed to write header: %w", err)
+	}
+
+	// Show transaction details
+	if _, err := fmt.Fprintf(p.writer, "Found %d transaction(s) from this merchant\n", pending.TransactionCount); err != nil {
+		return "", fmt.Errorf("failed to write transaction count: %w", err)
+	}
+
+	// Show sample transaction
+	if _, err := fmt.Fprintf(p.writer, "\nSample transaction:\n"); err != nil {
+		return "", fmt.Errorf("failed to write sample header: %w", err)
+	}
+	if _, err := fmt.Fprintf(p.writer, "  Description: %s\n", pending.SampleTransaction.Name); err != nil {
+		return "", fmt.Errorf("failed to write description: %w", err)
+	}
+	if _, err := fmt.Fprintf(p.writer, "  Amount: $%.2f\n", pending.SampleTransaction.Amount); err != nil {
+		return "", fmt.Errorf("failed to write amount: %w", err)
+	}
+	if _, err := fmt.Fprintf(p.writer, "  Date: %s\n", pending.SampleTransaction.Date.Format("Jan 2, 2006")); err != nil {
+		return "", fmt.Errorf("failed to write date: %w", err)
+	}
+	if pending.SampleTransaction.Type != "" {
+		if _, err := fmt.Fprintf(p.writer, "  Type: %s\n", pending.SampleTransaction.Type); err != nil {
+			return "", fmt.Errorf("failed to write type: %w", err)
+		}
+	}
+
+	// Show AI suggestion
+	suggestionText := fmt.Sprintf(
+		"Suggested: %s (%.0f%% confidence)\nReasoning: %s",
+		getDirectionDisplay(pending.SuggestedDirection),
+		pending.Confidence*100,
+		pending.Reasoning,
+	)
+	if _, err := fmt.Fprintf(p.writer, "\n%s\n", FormatInfo(suggestionText)); err != nil {
+		return "", fmt.Errorf("failed to write AI suggestion: %w", err)
+	}
+
+	// Show options
+	if _, err := fmt.Fprintln(p.writer, "\nOptions:"); err != nil {
+		return "", fmt.Errorf("failed to write options header: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [1] Income"); err != nil {
+		return "", fmt.Errorf("failed to write income option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [2] Expense"); err != nil {
+		return "", fmt.Errorf("failed to write expense option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [3] Transfer"); err != nil {
+		return "", fmt.Errorf("failed to write transfer option: %w", err)
+	}
+	if _, err := fmt.Fprintf(p.writer, "  [A] Accept AI suggestion (%s)\n", getDirectionDisplay(pending.SuggestedDirection)); err != nil {
+		return "", fmt.Errorf("failed to write accept option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
+	}
+
+	// Get user choice
+	choice, err := p.promptChoice(ctx, "Choice [1/2/3/A]", []string{"1", "2", "3", "a"})
+	if err != nil {
+		return "", err
+	}
+
+	// Map choice to direction
+	switch choice {
+	case "1":
+		return model.DirectionIncome, nil
+	case "2":
+		return model.DirectionExpense, nil
+	case "3":
+		return model.DirectionTransfer, nil
+	case "a":
+		return pending.SuggestedDirection, nil
+	default:
+		return "", fmt.Errorf("invalid choice: %s", choice)
+	}
+}
+
+// getDirectionDisplay returns a user-friendly display string for a direction.
+func getDirectionDisplay(direction model.TransactionDirection) string {
+	switch direction {
+	case model.DirectionIncome:
+		return "Income"
+	case model.DirectionExpense:
+		return "Expense"
+	case model.DirectionTransfer:
+		return "Transfer"
+	default:
+		return string(direction)
+	}
 }
 
 // GetCompletionStats returns statistics about the classification session.
@@ -328,6 +538,25 @@ func (p *Prompter) formatSingleTransaction(pending model.PendingClassification) 
 		fmt.Sprintf("  Amount: $%.2f\n", t.Amount) +
 		fmt.Sprintf("  Description: %s\n", t.Name)
 
+	// Add direction information
+	var directionIcon string
+	switch pending.SuggestedDirection {
+	case model.DirectionIncome:
+		directionIcon = "📈"
+	case model.DirectionExpense:
+		directionIcon = "📉"
+	case model.DirectionTransfer:
+		directionIcon = "➡️"
+	default:
+		directionIcon = "❓"
+	}
+
+	details += fmt.Sprintf("\n%s Direction: %s %s (%.0f%% confidence)",
+		InfoIcon, directionIcon, string(pending.SuggestedDirection), pending.DirectionConfidence*100)
+	if pending.DirectionReasoning != "" {
+		details += fmt.Sprintf("\n  %s %s", InfoIcon, pending.DirectionReasoning)
+	}
+
 	var suggestion string
 	if pending.IsNewCategory {
 		suggestion = fmt.Sprintf("\n%s AI suggests NEW category: %s (%.0f%% confidence)",
@@ -342,6 +571,11 @@ func (p *Prompter) formatSingleTransaction(pending model.PendingClassification) 
 			pending.Confidence*100)
 	}
 
+	if pending.IsCategoryMismatch {
+		suggestion += fmt.Sprintf("\n  %s Warning: Category type mismatch! %s is for %s transactions",
+			WarningIcon, pending.SuggestedCategory, "income/expense") // This will be filled by actual category type
+	}
+
 	if pending.SimilarCount > 0 {
 		suggestion += fmt.Sprintf("\n  %s Similar transactions: %d", InfoIcon, pending.SimilarCount)
 	}
@@ -352,6 +586,7 @@ func (p *Prompter) formatSingleTransaction(pending model.PendingClassification) 
 func (p *Prompter) formatBatchSummary(pending []model.PendingClassification, pattern string) string {
 	merchantName := pending[0].Transaction.MerchantName
 	suggestedCategory := pending[0].SuggestedCategory
+	suggestedDirection := pending[0].SuggestedDirection
 
 	var totalAmount float64
 	var minDate, maxDate time.Time
@@ -374,6 +609,21 @@ func (p *Prompter) formatBatchSummary(pending []model.PendingClassification, pat
 		fmt.Sprintf("  Date range: %s to %s\n",
 			minDate.Format("Jan 2"),
 			maxDate.Format("Jan 2, 2006"))
+
+	// Add direction icon
+	var directionIcon string
+	switch suggestedDirection {
+	case model.DirectionIncome:
+		directionIcon = "📈"
+	case model.DirectionExpense:
+		directionIcon = "📉"
+	case model.DirectionTransfer:
+		directionIcon = "➡️"
+	default:
+		directionIcon = "❓"
+	}
+
+	summary += fmt.Sprintf("  Direction: %s %s\n", directionIcon, string(suggestedDirection))
 
 	var suggestion string
 	if pending[0].IsNewCategory {
@@ -463,15 +713,18 @@ func (p *Prompter) promptChoice(ctx context.Context, prompt string, validChoices
 			return "", fmt.Errorf("failed to write prompt: %w", err)
 		}
 
-		input, err := p.reader.ReadString('\n')
+		choice, err := p.reader.ReadLine(ctx)
 		if err != nil {
+			if err == ErrInputCancelled {
+				return "", context.Canceled
+			}
 			if err == io.EOF {
 				return "", fmt.Errorf("input canceled by user")
 			}
 			return "", err
 		}
 
-		choice := strings.ToLower(strings.TrimSpace(input))
+		choice = strings.ToLower(choice)
 
 		for _, valid := range validChoices {
 			if choice == valid {
@@ -578,12 +831,13 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 			return "", fmt.Errorf("failed to write selection prompt: %w", err)
 		}
 
-		input, err := p.reader.ReadString('\n')
+		choice, err := p.reader.ReadLine(ctx)
 		if err != nil {
+			if err == ErrInputCancelled {
+				return "", context.Canceled
+			}
 			return "", err
 		}
-
-		choice := strings.TrimSpace(input)
 		if choice == "" {
 			if _, err := fmt.Fprintln(p.writer, FormatError("Please make a selection.")); err != nil {
 				slog.Warn("Failed to write empty selection error", "error", err)
@@ -668,12 +922,13 @@ func (p *Prompter) promptNewCategoryName(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("failed to write new category prompt: %w", err)
 		}
 
-		input, err := p.reader.ReadString('\n')
+		category, err := p.reader.ReadLine(ctx)
 		if err != nil {
+			if err == ErrInputCancelled {
+				return "", context.Canceled
+			}
 			return "", err
 		}
-
-		category := strings.TrimSpace(input)
 		if category == "" {
 			if _, err := fmt.Fprintln(p.writer, FormatError("Category name cannot be empty. Please try again.")); err != nil {
 				slog.Warn("Failed to write empty category error", "error", err)
@@ -689,6 +944,9 @@ func (p *Prompter) acceptAllClassifications(pending []model.PendingClassificatio
 	classifications := make([]model.Classification, len(pending))
 
 	for i, pc := range pending {
+		// Set direction on transaction
+		pc.Transaction.Direction = pc.SuggestedDirection
+
 		classifications[i] = model.Classification{
 			Transaction:  pc.Transaction,
 			Category:     pc.SuggestedCategory,
@@ -725,6 +983,9 @@ func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.Pen
 	classifications := make([]model.Classification, len(pending))
 
 	for i, pc := range pending {
+		// Set direction on transaction
+		pc.Transaction.Direction = pc.SuggestedDirection
+
 		classifications[i] = model.Classification{
 			Transaction:  pc.Transaction,
 			Category:     category,

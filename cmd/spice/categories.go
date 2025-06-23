@@ -28,6 +28,7 @@ func categoriesCmd() *cobra.Command {
 	cmd.AddCommand(addCategoryCmd())
 	cmd.AddCommand(updateCategoryCmd())
 	cmd.AddCommand(deleteCategoryCmd())
+	cmd.AddCommand(mergeCategoriesCmd())
 
 	return cmd
 }
@@ -164,8 +165,8 @@ func addCategoryCmd() *cobra.Command {
 				description = categoryDescription
 			}
 
-			// Create category
-			category, err := store.CreateCategory(ctx, categoryName, description)
+			// Create category (default to expense type)
+			category, err := store.CreateCategory(ctx, categoryName, description, model.CategoryTypeExpense)
 			if err != nil {
 				return fmt.Errorf("failed to create category: %w", err)
 			}
@@ -343,6 +344,137 @@ func deleteCategoryCmd() *cobra.Command {
 			if _, err := fmt.Fprintln(os.Stdout, cli.SuccessStyle.Render(fmt.Sprintf("✓ Deleted category %d", id))); err != nil {
 				slog.Error("failed to write output", "error", err)
 			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+
+	return cmd
+}
+
+func mergeCategoriesCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "merge <from-category-id> <to-category-id>",
+		Short: "Merge one category into another",
+		Long: `Merge all transactions from one category into another, then delete the source category.
+This is useful for consolidating duplicate or similar categories.
+
+Example:
+  spice categories merge 5 7
+  
+This will move all transactions from category ID 5 to category ID 7 and delete category 5.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			ctx := context.Background()
+
+			// Parse category IDs
+			fromCategoryID, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid source category ID: %w", err)
+			}
+
+			toCategoryID, err := strconv.Atoi(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid target category ID: %w", err)
+			}
+
+			// Initialize storage with auto-migration
+			store, err := initStorage(ctx)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
+			}()
+
+			// Get both categories
+			fromCat, err := store.GetCategoryByID(ctx, fromCategoryID)
+			if err != nil {
+				if errors.Is(err, storage.ErrCategoryNotFound) {
+					return fmt.Errorf("source category with ID %d not found", fromCategoryID)
+				}
+				return fmt.Errorf("failed to get source category: %w", err)
+			}
+
+			toCat, err := store.GetCategoryByID(ctx, toCategoryID)
+			if err != nil {
+				if errors.Is(err, storage.ErrCategoryNotFound) {
+					return fmt.Errorf("target category with ID %d not found", toCategoryID)
+				}
+				return fmt.Errorf("failed to get target category: %w", err)
+			}
+
+			// Count affected transactions
+			txns, err := store.GetTransactionsByCategoryID(ctx, fromCategoryID)
+			if err != nil {
+				return fmt.Errorf("failed to count affected transactions: %w", err)
+			}
+
+			// Count affected vendors
+			vendors, err := store.GetVendorsByCategoryID(ctx, fromCategoryID)
+			if err != nil {
+				return fmt.Errorf("failed to count affected vendors: %w", err)
+			}
+
+			// Confirm merge
+			if !force {
+				fmt.Printf("\n%s Merge Summary:\n", cli.InfoIcon)                              //nolint:forbidigo // User-facing output
+				fmt.Printf("  From: %s (ID: %d)\n", fromCat.Name, fromCat.ID)                  //nolint:forbidigo // User-facing output
+				fmt.Printf("  To:   %s (ID: %d)\n", toCat.Name, toCat.ID)                      //nolint:forbidigo // User-facing output
+				fmt.Printf("\n  This will affect:\n")                                          //nolint:forbidigo // User-facing output
+				fmt.Printf("    • %d transactions\n", len(txns))                               //nolint:forbidigo // User-facing output
+				fmt.Printf("    • %d vendor rules\n", len(vendors))                            //nolint:forbidigo // User-facing output
+				fmt.Printf("\n  The category %q will be deleted after merge.\n", fromCat.Name) //nolint:forbidigo // User-facing output
+				fmt.Printf("\nProceed with merge? (y/N): ")                                    //nolint:forbidigo // User prompt
+
+				var response string
+				if _, err := fmt.Scanln(&response); err != nil {
+					// EOF or empty input is treated as "N"
+					response = "n"
+				}
+				if strings.ToLower(response) != "y" {
+					fmt.Println("Merge canceled.") //nolint:forbidigo // User-facing output
+					return nil
+				}
+			}
+
+			// Perform the merge
+			fmt.Printf("\n%s Merging categories...\n", cli.SpiceIcon) //nolint:forbidigo // User-facing output
+
+			// Update transactions
+			if len(txns) > 0 {
+				fmt.Printf("  Updating %d transactions... ", len(txns)) //nolint:forbidigo // User-facing output
+				if err := store.UpdateTransactionCategoriesByID(ctx, fromCategoryID, toCategoryID); err != nil {
+					fmt.Println(cli.ErrorIcon) //nolint:forbidigo // User-facing output
+					return fmt.Errorf("failed to update transactions: %w", err)
+				}
+				fmt.Println(cli.SuccessIcon) //nolint:forbidigo // User-facing output
+			}
+
+			// Update vendor rules
+			if len(vendors) > 0 {
+				fmt.Printf("  Updating %d vendor rules... ", len(vendors)) //nolint:forbidigo // User-facing output
+				if err := store.UpdateVendorCategoriesByID(ctx, fromCategoryID, toCategoryID); err != nil {
+					fmt.Println(cli.ErrorIcon) //nolint:forbidigo // User-facing output
+					return fmt.Errorf("failed to update vendor rules: %w", err)
+				}
+				fmt.Println(cli.SuccessIcon) //nolint:forbidigo // User-facing output
+			}
+
+			// Delete the source category
+			fmt.Printf("  Deleting category %q... ", fromCat.Name) //nolint:forbidigo // User-facing output
+			if err := store.DeleteCategory(ctx, fromCat.ID); err != nil {
+				fmt.Println(cli.ErrorIcon) //nolint:forbidigo // User-facing output
+				return fmt.Errorf("failed to delete source category: %w", err)
+			}
+			fmt.Println(cli.SuccessIcon) //nolint:forbidigo // User-facing output
+
+			fmt.Printf("\n%s Successfully merged %q into %q\n", cli.SuccessStyle.Render("✓"), fromCat.Name, toCat.Name) //nolint:forbidigo // User-facing output
 			return nil
 		},
 	}

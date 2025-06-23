@@ -44,6 +44,7 @@ func createTestTransactions(count int) []model.Transaction {
 			Amount:       float64(i+1) * 10.50,
 			AccountID:    "acc1",
 			Category:     []string{"Food", "Restaurants"},
+			Direction:    model.DirectionExpense,
 		}
 		txns[i].Hash = txns[i].GenerateHash()
 	}
@@ -118,6 +119,7 @@ func TestSQLiteStorage_SaveTransactions(t *testing.T) {
 					Amount:       50.00,
 					AccountID:    "acc1",
 					Category:     []string{"Travel", "Airlines"},
+					Direction:    model.DirectionExpense,
 				},
 			},
 			wantErr: false,
@@ -125,7 +127,10 @@ func TestSQLiteStorage_SaveTransactions(t *testing.T) {
 				t.Helper()
 				txn, err := s.GetTransactionByID(ctx, "txn-json-1")
 				if err != nil {
-					t.Errorf("Failed to get transaction: %v", err)
+					t.Fatalf("Failed to get transaction: %v", err)
+				}
+				if txn == nil {
+					t.Fatal("Transaction is nil")
 				}
 				expectedCategories := []string{"Travel", "Airlines"}
 				if len(txn.Category) != len(expectedCategories) {
@@ -208,7 +213,7 @@ func TestSQLiteStorage_GetTransactionsToClassify(t *testing.T) {
 				_ = s.SaveTransactions(ctx, txns)
 
 				// Create category and classify one transaction
-				_, _ = s.CreateCategory(ctx, "Food", "Food and dining expenses")
+				_, _ = s.CreateCategory(ctx, "Food", "Food and dining expenses", model.CategoryTypeExpense)
 				classification := &model.Classification{
 					Transaction: txns[0],
 					Category:    "Food",
@@ -390,7 +395,7 @@ func TestSQLiteStorage_VendorOperations(t *testing.T) {
 			// Seed required categories for vendor tests
 			categories := []string{"Coffee & Dining", "Online Shopping", "Shopping", "Test"}
 			for _, cat := range categories {
-				if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
+				if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat, model.CategoryTypeExpense); err != nil {
 					t.Fatalf("Failed to create category %q: %v", cat, err)
 				}
 			}
@@ -422,9 +427,9 @@ func TestSQLiteStorage_GetAllVendors(t *testing.T) {
 			name: "get multiple vendors",
 			setup: func(s *SQLiteStorage, ctx context.Context) {
 				// Create categories first
-				_, _ = s.CreateCategory(ctx, "Cat1", "Description for Cat1")
-				_, _ = s.CreateCategory(ctx, "Cat2", "Description for Cat2")
-				_, _ = s.CreateCategory(ctx, "Cat3", "Description for Cat3")
+				_, _ = s.CreateCategory(ctx, "Cat1", "Description for Cat1", model.CategoryTypeExpense)
+				_, _ = s.CreateCategory(ctx, "Cat2", "Description for Cat2", model.CategoryTypeExpense)
+				_, _ = s.CreateCategory(ctx, "Cat3", "Description for Cat3", model.CategoryTypeExpense)
 
 				vendors := []*model.Vendor{
 					{Name: "Vendor1", Category: "Cat1", UseCount: 1},
@@ -522,10 +527,10 @@ func TestSQLiteStorage_ClassificationOperations(t *testing.T) {
 			ctx := context.Background()
 
 			// Seed required categories for this test
-			if _, err := store.CreateCategory(ctx, "Food & Dining", "Food and dining expenses"); err != nil {
+			if _, err := store.CreateCategory(ctx, "Food & Dining", "Food and dining expenses", model.CategoryTypeExpense); err != nil {
 				t.Fatalf("Failed to create Food & Dining category: %v", err)
 			}
-			if _, err := store.CreateCategory(ctx, "Transportation", "Transportation expenses"); err != nil {
+			if _, err := store.CreateCategory(ctx, "Transportation", "Transportation expenses", model.CategoryTypeExpense); err != nil {
 				t.Fatalf("Failed to create Transportation category: %v", err)
 			}
 
@@ -569,6 +574,7 @@ func TestSQLiteStorage_GetClassificationsByDateRange(t *testing.T) {
 						MerchantName: "Old Merchant",
 						Amount:       10.00,
 						AccountID:    "acc1",
+						Direction:    model.DirectionExpense,
 					},
 					{
 						ID:           "recent-txn-1",
@@ -577,6 +583,7 @@ func TestSQLiteStorage_GetClassificationsByDateRange(t *testing.T) {
 						MerchantName: "Recent Merchant",
 						Amount:       20.00,
 						AccountID:    "acc1",
+						Direction:    model.DirectionExpense,
 					},
 					{
 						ID:           "recent-txn-2",
@@ -585,6 +592,7 @@ func TestSQLiteStorage_GetClassificationsByDateRange(t *testing.T) {
 						MerchantName: "Recent Merchant",
 						Amount:       30.00,
 						AccountID:    "acc1",
+						Direction:    model.DirectionExpense,
 					},
 				}
 
@@ -595,7 +603,7 @@ func TestSQLiteStorage_GetClassificationsByDateRange(t *testing.T) {
 				_ = s.SaveTransactions(ctx, txns)
 
 				// Create category and classify all transactions
-				_, _ = s.CreateCategory(ctx, "Test Category", "Test category description")
+				_, _ = s.CreateCategory(ctx, "Test Category", "Test category description", model.CategoryTypeExpense)
 				for _, txn := range txns {
 					classification := &model.Classification{
 						Transaction: txn,
@@ -872,6 +880,7 @@ func TestSQLiteStorage_ConcurrentAccess(t *testing.T) {
 				MerchantName: "TestMerchant",
 				Amount:       float64(id) * 10,
 				AccountID:    "acc1",
+				Direction:    model.DirectionExpense,
 			}
 			txn.Hash = txn.GenerateHash()
 

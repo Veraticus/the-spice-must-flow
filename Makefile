@@ -94,6 +94,28 @@ vet:
 run: build
 	./$(BINARY_NAME) $(ARGS)
 
+# Run TUI demo with test data
+tui-demo:
+	@echo "Building and running TUI demo..."
+	@$(GO) build -o .tui-demo internal/tui/demo/main.go
+	@echo ""
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║                    TUI Demo Mode                         ║"
+	@echo "║                                                          ║"
+	@echo "║  Navigation:  ↑/↓ or j/k to move                        ║"
+	@echo "║  Actions:     Enter to classify, / to search             ║"
+	@echo "║  Help:        ? for help, q to quit                     ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@echo ""
+	@./.tui-demo || true
+	@rm -f .tui-demo
+	@echo "Demo complete. Cleaning up..."
+
+# View TUI visual test output
+tui-test:
+	@echo "Running TUI visual tests..."
+	@$(GOTEST) -v ./internal/tui -run TestVisualOutput
+
 # Install the binary
 install: build
 	@echo "Installing $(BINARY_NAME)..."
@@ -190,6 +212,10 @@ help:
 	@echo "  make quick          - Format and test (for development)"
 	@echo "  make setup-hooks    - Setup git hooks"
 	@echo "  make install-tools  - Install required development tools"
+	@echo ""
+	@echo "TUI Development:"
+	@echo "  make tui-demo       - Run interactive TUI demo with test data"
+	@echo "  make tui-test       - View TUI visual test output"
 	@echo ""
 	@echo "CI/Release:"
 	@echo "  make ci             - Run full CI workflow"

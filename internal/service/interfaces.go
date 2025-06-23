@@ -8,17 +8,38 @@ import (
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
+// TransactionFilter defines filtering options for transaction queries.
+type TransactionFilter struct {
+	StartDate *time.Time
+	EndDate   *time.Time
+	Limit     int
+	Offset    int
+}
+
 // Storage defines the contract for our persistence layer.
 type Storage interface {
 	// Transaction operations
 	SaveTransactions(ctx context.Context, transactions []model.Transaction) error
 	GetTransactionsToClassify(ctx context.Context, fromDate *time.Time) ([]model.Transaction, error)
 	GetTransactionByID(ctx context.Context, id string) (*model.Transaction, error)
+	GetTransactionsByCategory(ctx context.Context, category string) ([]model.Transaction, error)
+	GetTransactionsByCategoryID(ctx context.Context, categoryID int) ([]model.Transaction, error)
+	UpdateTransactionCategories(ctx context.Context, fromCategory, toCategory string) error
+	UpdateTransactionCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error
+	GetTransactions(ctx context.Context, filter TransactionFilter) ([]model.Transaction, error)
+	UpdateTransactionDirection(ctx context.Context, transactionID string, direction model.TransactionDirection) error
+	GetIncomeByPeriod(ctx context.Context, start, end time.Time) ([]model.Transaction, error)
+	GetExpensesByPeriod(ctx context.Context, start, end time.Time) ([]model.Transaction, error)
+	GetCashFlow(ctx context.Context, start, end time.Time) (*CashFlowSummary, error)
 
 	// Vendor operations
 	GetVendor(ctx context.Context, merchantName string) (*model.Vendor, error)
 	SaveVendor(ctx context.Context, vendor *model.Vendor) error
 	GetAllVendors(ctx context.Context) ([]model.Vendor, error)
+	GetVendorsByCategory(ctx context.Context, category string) ([]model.Vendor, error)
+	GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error)
+	UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error
+	UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error
 
 	// Classification operations
 	SaveClassification(ctx context.Context, classification *model.Classification) error
@@ -31,7 +52,8 @@ type Storage interface {
 	// Category operations
 	GetCategories(ctx context.Context) ([]model.Category, error)
 	GetCategoryByName(ctx context.Context, name string) (*model.Category, error)
-	CreateCategory(ctx context.Context, name, description string) (*model.Category, error)
+	GetCategoryByID(ctx context.Context, id int) (*model.Category, error)
+	CreateCategory(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error)
 	UpdateCategory(ctx context.Context, id int, name, description string) error
 	DeleteCategory(ctx context.Context, id int) error
 
@@ -102,4 +124,16 @@ type RetryOptions struct {
 	InitialDelay time.Duration
 	MaxDelay     time.Duration
 	Multiplier   float64
+}
+
+// CashFlowSummary contains income, expense, and net flow calculations.
+type CashFlowSummary struct {
+	DateRange          DateRange
+	IncomeByCategory   map[string]CategorySummary
+	ExpensesByCategory map[string]CategorySummary
+	Insights           []string
+	TotalIncome        float64
+	TotalExpenses      float64
+	NetCashFlow        float64
+	TransferTotal      float64
 }

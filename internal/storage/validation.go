@@ -73,6 +73,17 @@ func validateTransaction(txn *model.Transaction) error {
 	if txn.AccountID == "" {
 		return fmt.Errorf("%w: missing account ID", ErrInvalidTransaction)
 	}
+	// Validate direction is set
+	if txn.Direction == "" {
+		return fmt.Errorf("%w: missing direction (income/expense/transfer)", ErrInvalidTransaction)
+	}
+	// Validate direction is a known value
+	switch txn.Direction {
+	case model.DirectionIncome, model.DirectionExpense, model.DirectionTransfer:
+		// Valid direction
+	default:
+		return fmt.Errorf("%w: invalid direction %q", ErrInvalidTransaction, txn.Direction)
+	}
 	return nil
 }
 

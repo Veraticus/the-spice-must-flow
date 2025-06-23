@@ -39,12 +39,14 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 		classification.ClassifiedAt = time.Now()
 	}
 
-	// Validate category exists (only if status is not unclassified)
+	// Validate category exists and type matches direction (only if status is not unclassified)
 	if classification.Status != model.StatusUnclassified && classification.Category != "" {
 		var categoryExists bool
+		var categoryType sql.NullString
 		err := tx.QueryRowContext(ctx, `
-			SELECT EXISTS(SELECT 1 FROM categories WHERE name = ? AND is_active = 1)
-		`, classification.Category).Scan(&categoryExists)
+			SELECT EXISTS(SELECT 1 FROM categories WHERE name = ? AND is_active = 1),
+			       (SELECT type FROM categories WHERE name = ? AND is_active = 1)
+		`, classification.Category, classification.Category).Scan(&categoryExists, &categoryType)
 
 		if err != nil {
 			return fmt.Errorf("failed to check category existence: %w", err)
@@ -52,6 +54,27 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 
 		if !categoryExists {
 			return fmt.Errorf("category '%s' does not exist", classification.Category)
+		}
+
+		// Validate category type matches transaction direction
+		if classification.Transaction.Direction != "" && categoryType.Valid && categoryType.String != "" {
+			var expectedType model.CategoryType
+			switch classification.Transaction.Direction {
+			case model.DirectionIncome:
+				expectedType = model.CategoryTypeIncome
+			case model.DirectionExpense:
+				expectedType = model.CategoryTypeExpense
+			case model.DirectionTransfer:
+				expectedType = model.CategoryTypeSystem
+			}
+
+			if expectedType != "" && model.CategoryType(categoryType.String) != expectedType {
+				// For backward compatibility, allow expense categories for transactions without explicit type
+				if classification.Transaction.Direction != model.DirectionExpense || categoryType.String != "" {
+					return fmt.Errorf("category '%s' is type '%s' but transaction is '%s'",
+						classification.Category, categoryType.String, classification.Transaction.Direction)
+				}
+			}
 		}
 	}
 

@@ -29,7 +29,7 @@ func TestCheckPatternsIntegration(t *testing.T) {
 	}
 
 	for _, cat := range categories {
-		_, err := store.CreateCategory(ctx, cat.name, cat.description)
+		_, err := store.CreateCategory(ctx, cat.name, cat.description, model.CategoryTypeExpense)
 		require.NoError(t, err)
 	}
 

@@ -23,6 +23,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				Name:      "STARBUCKS",
 				Amount:    5.25,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			txn2: model.Transaction{
 				ID:        "txn1",
@@ -30,6 +31,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				Name:      "STARBUCKS",
 				Amount:    5.25,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantSame: true,
 		},
@@ -41,6 +43,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				Name:      "STARBUCKS",
 				Amount:    5.25,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			txn2: model.Transaction{
 				ID:        "txn1",
@@ -48,6 +51,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				Name:      "STARBUCKS",
 				Amount:    6.25,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantSame: false,
 		},
@@ -59,6 +63,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				Name:      "STARBUCKS",
 				Amount:    5.25,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			txn2: model.Transaction{
 				ID:        "txn1",
@@ -66,6 +71,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				Name:      "STARBUCKS",
 				Amount:    5.25,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantSame: false,
 		},
@@ -78,6 +84,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				MerchantName: "Starbucks",
 				Amount:       5.25,
 				AccountID:    "acc1",
+				Direction:    model.DirectionExpense,
 			},
 			txn2: model.Transaction{
 				ID:           "txn1",
@@ -86,6 +93,7 @@ func TestTransaction_GenerateHash(t *testing.T) {
 				MerchantName: "Coffee Shop",
 				Amount:       5.25,
 				AccountID:    "acc1",
+				Direction:    model.DirectionExpense,
 			},
 			wantSame: false,
 		},
@@ -124,6 +132,7 @@ func TestSQLiteStorage_TransactionDeduplication(t *testing.T) {
 		MerchantName: "Test Merchant",
 		Amount:       99.99,
 		AccountID:    "acc1",
+		Direction:    model.DirectionExpense,
 	}
 	baseTxn.Hash = baseTxn.GenerateHash()
 
@@ -196,6 +205,7 @@ func TestSQLiteStorage_TransactionBatchOperations(t *testing.T) {
 			Amount:       float64(i+1) * 1.50,
 			AccountID:    "acc1",
 			Category:     []string{"Batch", "Test"},
+			Direction:    model.DirectionExpense,
 		}
 		txns[i].Hash = txns[i].GenerateHash()
 	}
@@ -238,6 +248,7 @@ func TestSQLiteStorage_TransactionFiltering(t *testing.T) {
 			MerchantName: "Old Merchant",
 			Amount:       10.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "old-2",
@@ -246,6 +257,7 @@ func TestSQLiteStorage_TransactionFiltering(t *testing.T) {
 			MerchantName: "Old Merchant",
 			Amount:       20.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "recent-1",
@@ -254,6 +266,7 @@ func TestSQLiteStorage_TransactionFiltering(t *testing.T) {
 			MerchantName: "Recent Merchant",
 			Amount:       30.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "recent-2",
@@ -262,6 +275,7 @@ func TestSQLiteStorage_TransactionFiltering(t *testing.T) {
 			MerchantName: "Recent Merchant",
 			Amount:       40.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "current",
@@ -270,6 +284,7 @@ func TestSQLiteStorage_TransactionFiltering(t *testing.T) {
 			MerchantName: "Current Merchant",
 			Amount:       50.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 	}
 
@@ -329,7 +344,7 @@ func TestSQLiteStorage_TransactionClassificationState(t *testing.T) {
 	// Seed required categories
 	categories := []string{"Food", "Transport", "Shopping"}
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat, model.CategoryTypeExpense); err != nil {
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
 	}

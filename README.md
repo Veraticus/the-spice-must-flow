@@ -368,6 +368,9 @@ spice categories add "Pets" --description "Pet supplies, vet visits, grooming"
 spice categories update 5 --name "Medical & Health"
 spice categories update 5 --regenerate  # Generate new AI description
 
+# Merge duplicate categories
+spice categories merge "Home Goods" "Home & Kitchen"
+
 # Delete unused category
 spice categories delete 5
 ```
@@ -388,20 +391,33 @@ spice classify
 # - Suggest new categories when confidence is low
 ```
 
-### 5. Export to Google Sheets
+### 5. View Financial Flow and Export to Google Sheets
 
-Export your categorized transactions:
+Analyze your financial flow and optionally export to Google Sheets:
 
 ```bash
-# Export current month
-spice export
+# View financial flow for current year
+spice flow
 
-# Export specific month
-spice export --month 2024-01
+# View specific month
+spice flow --month 2024-01
 
-# Export custom date range
-spice export --from 2024-01-01 --to 2024-03-31
+# View specific year
+spice flow --year 2023
+
+# Export current year to Google Sheets
+spice flow --export
+
+# Export specific month to Google Sheets
+spice flow --month 2024-01 --export
 ```
+
+The `flow` command will:
+- Show total outflow and transaction count
+- Display top spending categories
+- Warn about any data gaps (30+ days without transactions)
+- Verify all transactions are classified before export
+- Create a formatted Google Sheets report when using `--export`
 
 ### 6. Database Checkpoints
 
@@ -499,6 +515,7 @@ spice categories list                 # List all categories with descriptions
 spice categories add "Travel"         # Add with AI description
 spice categories update 5 --regenerate # Update with new AI description
 spice categories delete 5             # Soft delete category
+spice categories merge "Old" "New"    # Merge categories (move all transactions)
 
 # Manage check patterns
 spice checks list                     # List all check patterns
@@ -509,7 +526,8 @@ spice checks test <amount>           # Test pattern matching
 
 # Database operations
 spice migrate                         # Run database migrations
-spice flow                           # Run full workflow (import → classify → export)
+spice flow                           # View financial flow and optionally export
+spice flow --export                   # Export categorized data to Google Sheets
 
 # Checkpoint management
 spice checkpoint create               # Create timestamped checkpoint
@@ -577,6 +595,32 @@ make lint
 # Auto-fix common issues
 make fix
 ```
+
+### TUI Development
+
+The project includes a modern Terminal User Interface (TUI) built with Bubble Tea:
+
+```bash
+# Run interactive TUI demo with test data
+make tui-demo
+
+# View TUI component layouts
+make tui-test
+```
+
+The TUI features:
+- **Responsive Design**: Adapts to terminal size (compact/medium/full layouts)
+- **Transaction Browser**: Virtual scrolling, search, filtering, batch selection
+- **AI Classification**: Visual confidence bars, keyboard shortcuts for quick selection
+- **Real-time Stats**: Progress tracking, time saved calculations
+- **Keyboard Navigation**: Vim-style keys, visual mode, quick actions
+
+When using `make tui-demo`:
+- Use arrow keys or j/k to navigate
+- Press Enter to classify a transaction
+- Press / to search
+- Press ? for help
+- Press q to quit
 
 ### Contributing
 

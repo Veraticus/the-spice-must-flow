@@ -52,7 +52,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 	export := viper.GetBool("flow.export")
 	format := viper.GetString("flow.format")
 
-	slog.Info(cli.FormatTitle("Analyzing your financial flow..."))
+	fmt.Println(cli.FormatTitle("Analyzing your financial flow...")) //nolint:forbidigo // User-facing output
 
 	// Calculate date range
 	var start, end time.Time
@@ -76,18 +76,12 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
 
-	// Fetch classifications
-	classifications, err := storageService.GetClassificationsByDateRange(ctx, start, end)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve classifications: %w", err)
-	}
-
 	// Check data coverage and classification status if exporting
 	if export {
 		// Get unclassified transactions to check completeness
-		unclassifiedTxns, err := storageService.GetTransactionsToClassify(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("failed to check for unclassified transactions: %w", err)
+		unclassifiedTxns, getErr := storageService.GetTransactionsToClassify(ctx, nil)
+		if getErr != nil {
+			return fmt.Errorf("failed to check for unclassified transactions: %w", getErr)
 		}
 
 		// Filter unclassified transactions to our date range
@@ -116,16 +110,23 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 		}
 
 		// For full year exports, validate we have adequate data coverage
-		// Use classifications as a proxy for transaction coverage
+		classifications, classErr := storageService.GetClassificationsByDateRange(ctx, start, end)
+		if classErr != nil {
+			return fmt.Errorf("failed to retrieve classifications: %w", classErr)
+		}
+
 		if month == "" {
-			if err := validateDataCoverageFromClassifications(classifications, start, end); err != nil {
-				return err
+			if validateErr := validateDataCoverageFromClassifications(classifications, start, end); validateErr != nil {
+				return validateErr
 			}
 		}
 	}
 
-	// Generate summary
-	summary := generateReportSummary(classifications, start, end)
+	// Generate cash flow summary
+	summary, err := generateCashFlowSummary(ctx, storageService, start, end)
+	if err != nil {
+		return fmt.Errorf("failed to generate cash flow summary: %w", err)
+	}
 
 	// Display period
 	period := fmt.Sprintf("%d", year)
@@ -134,17 +135,17 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Build report content
-	content := formatReportContent(classifications, summary)
+	content := formatCashFlowContent(summary)
 
-	// Display styled box
-	slog.Info(cli.RenderBox(fmt.Sprintf("%s Financial Flow", period), content))
+	// Display styled box with the exact format from design doc
+	fmt.Println(cli.RenderBox(fmt.Sprintf("💰 Cash Flow Summary - %s", period), content)) //nolint:forbidigo // User-facing output
 
 	// Handle export to Google Sheets
 	if export {
-		if err := exportToSheets(ctx, classifications, summary); err != nil {
+		if err := exportToSheets(ctx, storageService, summary); err != nil {
 			return fmt.Errorf("failed to export to Google Sheets: %w", err)
 		}
-		slog.Info(cli.FormatSuccess("Successfully exported to Google Sheets!"))
+		fmt.Println(cli.FormatSuccess("Successfully exported to Google Sheets!")) //nolint:forbidigo // User-facing output
 	}
 
 	// Handle other formats
@@ -157,7 +158,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 
 func initStorage(ctx context.Context) (service.Storage, error) {
 	// Get database path from config
-	dbPath := viper.GetString("storage.database_path")
+	dbPath := viper.GetString("database.path")
 	if dbPath == "" {
 		dbPath = "$HOME/.local/share/spice/spice.db"
 	}
@@ -179,76 +180,203 @@ func initStorage(ctx context.Context) (service.Storage, error) {
 	return store, nil
 }
 
-func generateReportSummary(classifications []model.Classification, start, end time.Time) *service.ReportSummary {
-	summary := &service.ReportSummary{
+func generateCashFlowSummary(ctx context.Context, store service.Storage, start, end time.Time) (*service.CashFlowSummary, error) {
+	// Get cash flow summary from storage
+	summary, err := store.GetCashFlow(ctx, start, end)
+	if err != nil {
+		// Fallback to manual calculation if the method is not implemented yet
+		return calculateCashFlowSummary(ctx, store, start, end)
+	}
+	return summary, nil
+}
+
+func calculateCashFlowSummary(ctx context.Context, store service.Storage, start, end time.Time) (*service.CashFlowSummary, error) {
+	summary := &service.CashFlowSummary{
 		DateRange: service.DateRange{
 			Start: start,
 			End:   end,
 		},
-		ByCategory:   make(map[string]service.CategorySummary),
-		ClassifiedBy: make(map[model.ClassificationStatus]int),
-		TotalAmount:  0,
+		IncomeByCategory:   make(map[string]service.CategorySummary),
+		ExpensesByCategory: make(map[string]service.CategorySummary),
+		Insights:           []string{},
 	}
 
-	// Calculate totals
+	// Get all classifications for the period
+	classifications, err := store.GetClassificationsByDateRange(ctx, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate totals by direction
 	for _, c := range classifications {
-		summary.TotalAmount += c.Transaction.Amount
-
-		// Update category summary
-		catSum := summary.ByCategory[c.Category]
-		catSum.Count++
-		catSum.Amount += c.Transaction.Amount
-		summary.ByCategory[c.Category] = catSum
-
-		// Update classification status counts
-		summary.ClassifiedBy[c.Status]++
+		switch c.Transaction.Direction {
+		case model.DirectionIncome:
+			summary.TotalIncome += c.Transaction.Amount
+			catSum := summary.IncomeByCategory[c.Category]
+			catSum.Count++
+			catSum.Amount += c.Transaction.Amount
+			summary.IncomeByCategory[c.Category] = catSum
+		case model.DirectionExpense:
+			summary.TotalExpenses += c.Transaction.Amount
+			catSum := summary.ExpensesByCategory[c.Category]
+			catSum.Count++
+			catSum.Amount += c.Transaction.Amount
+			summary.ExpensesByCategory[c.Category] = catSum
+		case model.DirectionTransfer:
+			summary.TransferTotal += c.Transaction.Amount
+		}
 	}
 
-	return summary
+	// Calculate net cash flow
+	summary.NetCashFlow = summary.TotalIncome - summary.TotalExpenses
+
+	// Generate insights
+	summary.Insights = generateInsights(summary)
+
+	return summary, nil
 }
 
-func formatReportContent(classifications []model.Classification, summary *service.ReportSummary) string {
-	if len(classifications) == 0 {
+func generateInsights(summary *service.CashFlowSummary) []string {
+	insights := []string{}
+
+	// Savings rate insight
+	if summary.TotalIncome > 0 {
+		savingsRate := (summary.NetCashFlow / summary.TotalIncome) * 100
+		if savingsRate > 0 {
+			insights = append(insights, fmt.Sprintf("You saved %.1f%% of your income", savingsRate))
+		} else {
+			insights = append(insights, fmt.Sprintf("You spent %.1f%% more than you earned", -savingsRate))
+		}
+	}
+
+	// Largest expense category
+	var largestCategory string
+	var largestAmount float64
+	for cat, sum := range summary.ExpensesByCategory {
+		if sum.Amount > largestAmount {
+			largestCategory = cat
+			largestAmount = sum.Amount
+		}
+	}
+	if largestCategory != "" && summary.TotalExpenses > 0 {
+		percentage := (largestAmount / summary.TotalExpenses) * 100
+		insights = append(insights, fmt.Sprintf("Largest expense: %s (%.1f%% of expenses)", largestCategory, percentage))
+	}
+
+	// Income trend (would need historical data for real comparison)
+	if summary.TotalIncome > 0 {
+		insights = append(insights, "Income tracking enabled - trends will appear next month")
+	}
+
+	return insights
+}
+
+func formatCashFlowContent(summary *service.CashFlowSummary) string {
+	if summary.TotalIncome == 0 && summary.TotalExpenses == 0 && summary.TransferTotal == 0 {
 		return `No data available yet.
 Run 'spice classify' to categorize transactions first.`
 	}
 
-	content := fmt.Sprintf(`Total outflow: $%.2f
-Transactions: %d
-Categories: %d
+	var content strings.Builder
 
-Top Categories:`, summary.TotalAmount, len(classifications), len(summary.ByCategory))
-
-	// Sort categories by amount
-	type catAmount struct {
-		name   string
-		amount float64
-		count  int
-	}
-	categories := make([]catAmount, 0, len(summary.ByCategory))
-	for cat, sum := range summary.ByCategory {
-		categories = append(categories, catAmount{cat, sum.Amount, sum.Count})
-	}
-
-	// Sort by amount descending
-	for i := 0; i < len(categories)-1; i++ {
-		for j := i + 1; j < len(categories); j++ {
-			if categories[j].amount > categories[i].amount {
-				categories[i], categories[j] = categories[j], categories[i]
+	// Income section
+	content.WriteString(fmt.Sprintf("📈 INCOME                              $%.2f\n", summary.TotalIncome))
+	if len(summary.IncomeByCategory) > 0 {
+		// Sort income categories by amount
+		incomeCategories := sortCategories(summary.IncomeByCategory)
+		for i, cat := range incomeCategories {
+			if i < 3 { // Show top 3
+				content.WriteString(fmt.Sprintf("├─ %-30s $%.2f\n", cat.name, cat.amount))
+			} else if i == 3 {
+				// Sum remaining categories
+				var remainingAmount float64
+				remainingCount := 0
+				for j := i; j < len(incomeCategories); j++ {
+					remainingAmount += incomeCategories[j].amount
+					remainingCount++
+				}
+				content.WriteString(fmt.Sprintf("└─ Other (%d categories)              $%.2f\n", remainingCount, remainingAmount))
+				break
 			}
 		}
 	}
 
-	// Show top 5 categories
-	for i := 0; i < len(categories) && i < 5; i++ {
-		cat := categories[i]
-		content += fmt.Sprintf("\n  %-20s $%10.2f (%d transactions)", cat.name, cat.amount, cat.count)
+	content.WriteString("\n")
+
+	// Expenses section
+	content.WriteString(fmt.Sprintf("📉 EXPENSES                            $%.2f\n", summary.TotalExpenses))
+	if len(summary.ExpensesByCategory) > 0 {
+		// Sort expense categories by amount
+		expenseCategories := sortCategories(summary.ExpensesByCategory)
+		for i, cat := range expenseCategories {
+			if i < 3 { // Show top 3
+				content.WriteString(fmt.Sprintf("├─ %-30s $%.2f\n", cat.name, cat.amount))
+			} else if i == 3 {
+				// Sum remaining categories
+				var remainingAmount float64
+				remainingCount := 0
+				for j := i; j < len(expenseCategories); j++ {
+					remainingAmount += expenseCategories[j].amount
+					remainingCount++
+				}
+				content.WriteString(fmt.Sprintf("└─ Other (%d categories)              $%.2f\n", remainingCount, remainingAmount))
+				break
+			}
+		}
 	}
 
-	return content
+	// Transfers section (only if present)
+	if summary.TransferTotal > 0 {
+		content.WriteString("\n")
+		content.WriteString(fmt.Sprintf("➡️  TRANSFERS (excluded)                 $%.2f\n", summary.TransferTotal))
+	}
+
+	// Net cash flow
+	content.WriteString("\n")
+	content.WriteString("═══════════════════════════════════════════════\n")
+	netFlowSign := ""
+	if summary.NetCashFlow >= 0 {
+		netFlowSign = "+"
+	}
+	content.WriteString(fmt.Sprintf("✨ NET CASH FLOW                      %s$%.2f\n", netFlowSign, summary.NetCashFlow))
+
+	// Insights
+	if len(summary.Insights) > 0 {
+		content.WriteString("\n")
+		content.WriteString("📊 Insights:\n")
+		for _, insight := range summary.Insights {
+			content.WriteString(fmt.Sprintf("• %s\n", insight))
+		}
+	}
+
+	return content.String()
 }
 
-func exportToSheets(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary) error {
+type categoryAmount struct {
+	name   string
+	amount float64
+	count  int
+}
+
+func sortCategories(categories map[string]service.CategorySummary) []categoryAmount {
+	result := make([]categoryAmount, 0, len(categories))
+	for name, summary := range categories {
+		result = append(result, categoryAmount{name, summary.Amount, summary.Count})
+	}
+
+	// Sort by amount descending
+	for i := 0; i < len(result)-1; i++ {
+		for j := i + 1; j < len(result); j++ {
+			if result[j].amount > result[i].amount {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+
+	return result
+}
+
+func exportToSheets(ctx context.Context, storage service.Storage, summary *service.CashFlowSummary) error {
 	// Load Google Sheets config from environment
 	sheetsConfig := sheets.DefaultConfig()
 	if err := sheetsConfig.LoadFromEnv(); err != nil {
@@ -267,9 +395,15 @@ func exportToSheets(ctx context.Context, classifications []model.Classification,
 		return fmt.Errorf("failed to create sheets writer: %w", err)
 	}
 
-	// Write the report
-	if err := writer.Write(ctx, classifications, summary); err != nil {
-		return fmt.Errorf("failed to write report: %w", err)
+	// Get all classifications for detailed export
+	classifications, err := storage.GetClassificationsByDateRange(ctx, summary.DateRange.Start, summary.DateRange.End)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve classifications for export: %w", err)
+	}
+
+	// Write the cash flow report
+	if err := writer.WriteCashFlow(ctx, classifications, summary); err != nil {
+		return fmt.Errorf("failed to write cash flow report: %w", err)
 	}
 
 	return nil
@@ -351,7 +485,7 @@ func validateDataCoverageFromClassifications(classifications []model.Classificat
 	actualDays := int(actualEnd.Sub(actualStart).Hours()/24) + 1
 	coveragePercent := float64(actualDays) / float64(requiredDays) * 100
 
-	slog.Info(cli.FormatInfo(fmt.Sprintf("Data coverage: %s to %s (%.0f%% of requested period)",
+	fmt.Println(cli.FormatInfo(fmt.Sprintf("Data coverage: %s to %s (%.0f%% of requested period)", //nolint:forbidigo // User-facing output
 		actualStart.Format("Jan 2"),
 		actualEnd.Format("Jan 2"),
 		coveragePercent)))

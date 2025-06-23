@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // claudeCodeClient implements the Client interface using Claude Code CLI.
@@ -305,5 +307,100 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 
 	return DescriptionResponse{
 		Description: strings.TrimSpace(response.Result),
+	}, nil
+}
+
+// ClassifyDirection sends a direction detection request to Claude Code.
+func (c *claudeCodeClient) ClassifyDirection(ctx context.Context, prompt string) (DirectionResponse, error) {
+	fullPrompt := fmt.Sprintf("%s\n\nPlease analyze this transaction and respond in the exact format requested.", prompt)
+
+	// Build command arguments
+	args := []string{
+		"-p", fullPrompt,
+		"--output-format", "json",
+		"--model", c.model,
+		"--max-turns", strconv.Itoa(c.maxTurns),
+	}
+
+	// Create command with context
+	cmd := exec.CommandContext(ctx, c.cliPath, args...)
+
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Execute command
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return DirectionResponse{}, fmt.Errorf("claude code error: %s", stderr.String())
+		}
+		return DirectionResponse{}, fmt.Errorf("failed to execute claude: %w", err)
+	}
+
+	// Parse JSON response
+	var response claudeCodeResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		// If JSON parsing fails, try to parse as plain text
+		return c.parseDirectionResponse(stdout.String())
+	}
+
+	// Check for errors in response
+	if response.IsError {
+		return DirectionResponse{}, fmt.Errorf("claude code error in response")
+	}
+
+	return c.parseDirectionResponse(response.Result)
+}
+
+// parseDirectionResponse extracts direction, confidence, and reasoning from the LLM response.
+func (c *claudeCodeClient) parseDirectionResponse(content string) (DirectionResponse, error) {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	var direction string
+	var confidence float64
+	var reasoning string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "DIRECTION:"):
+			direction = strings.TrimSpace(strings.TrimPrefix(line, "DIRECTION:"))
+		case strings.HasPrefix(line, "CONFIDENCE:"):
+			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
+			var err error
+			confidence, err = strconv.ParseFloat(confStr, 64)
+			if err != nil {
+				return DirectionResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
+			}
+		case strings.HasPrefix(line, "REASONING:"):
+			reasoning = strings.TrimSpace(strings.TrimPrefix(line, "REASONING:"))
+		}
+	}
+
+	if direction == "" {
+		return DirectionResponse{}, fmt.Errorf("no direction found in response: %s", content)
+	}
+
+	if confidence == 0 {
+		confidence = 0.7 // Default confidence if not provided
+	}
+
+	// Map string to TransactionDirection
+	var txnDirection model.TransactionDirection
+	switch strings.ToLower(direction) {
+	case "income":
+		txnDirection = model.DirectionIncome
+	case "expense":
+		txnDirection = model.DirectionExpense
+	case "transfer":
+		txnDirection = model.DirectionTransfer
+	default:
+		return DirectionResponse{}, fmt.Errorf("invalid direction: %s", direction)
+	}
+
+	return DirectionResponse{
+		Direction:  txnDirection,
+		Confidence: confidence,
+		Reasoning:  reasoning,
 	}, nil
 }

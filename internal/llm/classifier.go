@@ -393,6 +393,112 @@ func (c *Classifier) SuggestCategoryRankings(ctx context.Context, transaction mo
 	return rankings, nil
 }
 
+// SuggestTransactionDirection suggests the direction for a transaction (income/expense/transfer).
+func (c *Classifier) SuggestTransactionDirection(ctx context.Context, transaction model.Transaction) (model.TransactionDirection, float64, string, error) {
+	// Rate limiting
+	if err := c.rateLimiter.wait(ctx); err != nil {
+		return "", 0, "", fmt.Errorf("rate limit error: %w", err)
+	}
+
+	prompt := c.buildDirectionPrompt(transaction)
+
+	var direction model.TransactionDirection
+	var confidence float64
+	var reasoning string
+
+	// Use common retry logic
+	err := common.WithRetry(ctx, func() error {
+		c.logger.Debug("attempting LLM direction detection",
+			"transaction_id", transaction.ID)
+
+		response, err := c.client.ClassifyDirection(ctx, prompt)
+		if err != nil {
+			c.logger.Warn("LLM direction detection attempt failed",
+				"error", err,
+				"transaction_id", transaction.ID)
+			return &common.RetryableError{Err: err, Retryable: true}
+		}
+
+		direction = response.Direction
+		confidence = response.Confidence
+		reasoning = response.Reasoning
+
+		// Validate the direction
+		switch direction {
+		case model.DirectionIncome, model.DirectionExpense, model.DirectionTransfer:
+			// Valid
+		default:
+			return &common.RetryableError{
+				Err:       fmt.Errorf("invalid direction returned: %s", direction),
+				Retryable: true,
+			}
+		}
+
+		return nil
+	}, c.retryOpts)
+
+	if err != nil {
+		return "", 0, "", fmt.Errorf("direction detection failed: %w", err)
+	}
+
+	c.logger.Info("transaction direction detected",
+		"transaction_id", transaction.ID,
+		"merchant", transaction.MerchantName,
+		"direction", direction,
+		"confidence", confidence)
+
+	return direction, confidence, reasoning, nil
+}
+
+// buildDirectionPrompt creates the prompt for transaction direction detection.
+func (c *Classifier) buildDirectionPrompt(txn model.Transaction) string {
+	merchant := txn.MerchantName
+	if merchant == "" {
+		merchant = txn.Name
+	}
+
+	// Build transaction details
+	transactionDetails := fmt.Sprintf("Merchant: %s\nAmount: $%.2f\nDate: %s\nDescription: %s",
+		merchant,
+		txn.Amount,
+		txn.Date.Format("2006-01-02"),
+		txn.Name)
+
+	// Include transaction type if available
+	if txn.Type != "" {
+		transactionDetails += fmt.Sprintf("\nTransaction Type: %s", txn.Type)
+	}
+
+	// Include check number if it's a check
+	if txn.CheckNumber != "" {
+		transactionDetails += fmt.Sprintf("\nCheck Number: %s", txn.CheckNumber)
+	}
+
+	// Include category hints if available
+	if len(txn.Category) > 0 {
+		categoryHint := strings.Join(txn.Category, " > ")
+		transactionDetails += fmt.Sprintf("\nCategory Hint: %s", categoryHint)
+	}
+
+	return fmt.Sprintf(`Analyze this financial transaction and determine its direction (income, expense, or transfer).
+
+Transaction Details:
+%s
+
+Common patterns:
+- INCOME: salary, payroll, interest, dividends, refunds (positive amounts back to account), deposits, rewards
+- EXPENSE: purchases, payments, fees, withdrawals, services (money leaving the account)
+- TRANSFER: moving money between your own accounts, internal transfers, credit card payments
+
+Respond in this exact format:
+DIRECTION: <income|expense|transfer>
+CONFIDENCE: <0.0-1.0>
+REASONING: <brief explanation of why this direction was chosen>
+
+Focus on transaction patterns and merchant types, not assumptions about personal vs business use.`,
+		transactionDetails)
+}
+
 // buildPromptWithRanking creates the prompt for transaction ranking classification.
 func (c *Classifier) buildPromptWithRanking(txn model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) string {
 	merchant := txn.MerchantName

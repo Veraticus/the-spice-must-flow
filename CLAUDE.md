@@ -220,3 +220,43 @@ Before marking any task complete:
 - When design feels complex
 - Every 30 minutes of coding
 - Before asking for review
+
+## TUI Development Commands
+
+### View TUI with Test Data
+```bash
+# Run the interactive TUI demo with test data (preferred method)
+make tui-demo
+
+# View static TUI layouts for debugging
+make tui-test
+
+# Manual run if needed
+go run internal/tui/demo/main.go
+```
+
+### Test TUI Components
+```bash
+# Run all TUI tests
+go test ./internal/tui/...
+
+# Run specific component tests
+go test ./internal/tui/components -v
+
+# Update golden files for visual tests
+go test ./internal/tui -update-golden
+```
+
+### TUI Keyboard Shortcuts
+- **Navigation**: ↑/k, ↓/j (up/down), g/G (start/end)
+- **Classification**: Enter (classify), a/y (accept), s (skip), c (custom)
+- **Quick Select**: 1-5 (select suggestion by number)
+- **Search**: / (search mode)
+- **Visual Mode**: v (enter), y (confirm selection)
+- **Application**: q (quit), ? (help)
+
+### Development Tips
+- The TUI implements `engine.Prompter` for backward compatibility
+- Test with different terminal sizes: 80x24 (compact), 120x40 (medium), 160x50 (full)
+- Use `WithTestMode(true)` to generate fake transactions
+- Components are in `internal/tui/components/` - each is independently testable

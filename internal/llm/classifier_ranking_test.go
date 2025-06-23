@@ -52,6 +52,17 @@ func (m *mockRankingClient) GenerateDescription(_ context.Context, _ string) (De
 	return DescriptionResponse{Description: "Test description"}, nil
 }
 
+func (m *mockRankingClient) ClassifyDirection(_ context.Context, _ string) (DirectionResponse, error) {
+	if m.err != nil {
+		return DirectionResponse{}, m.err
+	}
+	return DirectionResponse{
+		Direction:  model.DirectionExpense,
+		Confidence: 0.95,
+		Reasoning:  "Test reasoning",
+	}, nil
+}
+
 func TestClassifier_SuggestCategoryRankings(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 

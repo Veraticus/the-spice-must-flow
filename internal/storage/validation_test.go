@@ -107,6 +107,7 @@ func TestValidateTransaction(t *testing.T) {
 				Date:      validDate,
 				Name:      "Test Transaction",
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantErr: false,
 		},
@@ -122,6 +123,7 @@ func TestValidateTransaction(t *testing.T) {
 				Date:      validDate,
 				Name:      "Test Transaction",
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantErr: true,
 			errMsg:  "missing ID",
@@ -132,6 +134,7 @@ func TestValidateTransaction(t *testing.T) {
 				ID:        "txn123",
 				Name:      "Test Transaction",
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantErr: true,
 			errMsg:  "missing date",
@@ -142,6 +145,7 @@ func TestValidateTransaction(t *testing.T) {
 				ID:        "txn123",
 				Date:      validDate,
 				AccountID: "acc1",
+				Direction: model.DirectionExpense,
 			},
 			wantErr: true,
 			errMsg:  "missing name",
@@ -149,12 +153,36 @@ func TestValidateTransaction(t *testing.T) {
 		{
 			name: "missing account ID",
 			txn: &model.Transaction{
-				ID:   "txn123",
-				Date: validDate,
-				Name: "Test Transaction",
+				ID:        "txn123",
+				Date:      validDate,
+				Name:      "Test Transaction",
+				Direction: model.DirectionExpense,
 			},
 			wantErr: true,
 			errMsg:  "missing account ID",
+		},
+		{
+			name: "missing direction",
+			txn: &model.Transaction{
+				ID:        "txn123",
+				Date:      validDate,
+				Name:      "Test Transaction",
+				AccountID: "acc1",
+			},
+			wantErr: true,
+			errMsg:  "missing direction",
+		},
+		{
+			name: "invalid direction",
+			txn: &model.Transaction{
+				ID:        "txn123",
+				Date:      validDate,
+				Name:      "Test Transaction",
+				AccountID: "acc1",
+				Direction: "invalid",
+			},
+			wantErr: true,
+			errMsg:  "invalid direction",
 		},
 	}
 
@@ -239,6 +267,7 @@ func TestValidateClassification(t *testing.T) {
 		Date:      validDate,
 		Name:      "Test Transaction",
 		AccountID: "acc1",
+		Direction: model.DirectionExpense,
 	}
 
 	tests := []struct {
@@ -348,6 +377,7 @@ func TestValidateTransactions(t *testing.T) {
 		Date:      validDate,
 		Name:      "Test Transaction",
 		AccountID: "acc1",
+		Direction: model.DirectionExpense,
 	}
 
 	tests := []struct {
@@ -381,6 +411,7 @@ func TestValidateTransactions(t *testing.T) {
 					Date:      validDate,
 					Name:      "Missing ID",
 					AccountID: "acc1",
+					Direction: model.DirectionExpense,
 				},
 			},
 			wantErr: true,

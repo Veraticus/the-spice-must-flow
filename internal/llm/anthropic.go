@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
 
 // anthropicClient implements the Client interface for Anthropic API.
@@ -300,5 +302,113 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 
 	return DescriptionResponse{
 		Description: strings.TrimSpace(response.Content[0].Text),
+	}, nil
+}
+
+// ClassifyDirection sends a direction detection request to Anthropic.
+func (c *anthropicClient) ClassifyDirection(ctx context.Context, prompt string) (DirectionResponse, error) {
+	requestBody := map[string]any{
+		"model":       c.model,
+		"max_tokens":  c.maxTokens,
+		"temperature": c.temperature,
+		"system":      "You are a financial transaction analyzer. Determine if transactions are income, expenses, or transfers based on their details.",
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return DirectionResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return DirectionResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return DirectionResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return DirectionResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return DirectionResponse{}, fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response anthropicResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return DirectionResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Content) == 0 {
+		return DirectionResponse{}, fmt.Errorf("no content in response")
+	}
+
+	return c.parseDirectionResponse(response.Content[0].Text)
+}
+
+// parseDirectionResponse extracts direction, confidence, and reasoning from the LLM response.
+func (c *anthropicClient) parseDirectionResponse(content string) (DirectionResponse, error) {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	var direction string
+	var confidence float64
+	var reasoning string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "DIRECTION:"):
+			direction = strings.TrimSpace(strings.TrimPrefix(line, "DIRECTION:"))
+		case strings.HasPrefix(line, "CONFIDENCE:"):
+			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
+			var err error
+			confidence, err = strconv.ParseFloat(confStr, 64)
+			if err != nil {
+				return DirectionResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
+			}
+		case strings.HasPrefix(line, "REASONING:"):
+			reasoning = strings.TrimSpace(strings.TrimPrefix(line, "REASONING:"))
+		}
+	}
+
+	if direction == "" {
+		return DirectionResponse{}, fmt.Errorf("no direction found in response: %s", content)
+	}
+
+	if confidence == 0 {
+		confidence = 0.7 // Default confidence if not provided
+	}
+
+	// Map string to TransactionDirection
+	var txnDirection model.TransactionDirection
+	switch strings.ToLower(direction) {
+	case "income":
+		txnDirection = model.DirectionIncome
+	case "expense":
+		txnDirection = model.DirectionExpense
+	case "transfer":
+		txnDirection = model.DirectionTransfer
+	default:
+		return DirectionResponse{}, fmt.Errorf("invalid direction: %s", direction)
+	}
+
+	return DirectionResponse{
+		Direction:  txnDirection,
+		Confidence: confidence,
+		Reasoning:  reasoning,
 	}, nil
 }

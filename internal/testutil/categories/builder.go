@@ -225,7 +225,7 @@ func (b *categoryBuilder) Build(ctx context.Context, storage service.Storage) (C
 	result := make(Categories, 0, len(names))
 
 	for _, name := range names {
-		createdCat, err := storage.CreateCategory(ctx, name.String(), "Test description for "+name.String())
+		createdCat, err := storage.CreateCategory(ctx, name.String(), "Test description for "+name.String(), model.CategoryTypeExpense)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create category %q: %w", name, err)
 		}

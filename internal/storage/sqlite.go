@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -206,4 +207,189 @@ func (t *sqliteTransaction) BeginTx(_ context.Context) (service.Transaction, err
 func (t *sqliteTransaction) Close() error {
 	// Transactions should be committed or rolled back, not closed
 	return fmt.Errorf("transactions must be committed or rolled back, not closed")
+}
+
+func (t *sqliteTransaction) GetTransactionsByCategory(ctx context.Context, category string) ([]model.Transaction, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	// For now, we'll use the non-transactional version since this is a read operation
+	return t.storage.GetTransactionsByCategory(ctx, category)
+}
+
+func (t *sqliteTransaction) UpdateTransactionCategories(ctx context.Context, fromCategory, toCategory string) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if fromCategory == "" || toCategory == "" {
+		return fmt.Errorf("both fromCategory and toCategory must be provided")
+	}
+
+	query := `
+		UPDATE classifications 
+		SET category = ?
+		WHERE category = ? AND status != 'unclassified'
+	`
+
+	result, err := t.tx.ExecContext(ctx, query, toCategory, fromCategory)
+	if err != nil {
+		return fmt.Errorf("failed to update transaction categories: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	slog.Info("Updated transaction categories in transaction",
+		"from", fromCategory,
+		"to", toCategory,
+		"transactions_updated", rowsAffected)
+
+	return nil
+}
+
+func (t *sqliteTransaction) GetTransactionsByCategoryID(ctx context.Context, categoryID int) ([]model.Transaction, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	// Use the storage version since this is a read operation
+	return t.storage.GetTransactionsByCategoryID(ctx, categoryID)
+}
+
+func (t *sqliteTransaction) UpdateTransactionCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	if fromCategoryID <= 0 || toCategoryID <= 0 {
+		return fmt.Errorf("invalid category IDs: from=%d, to=%d", fromCategoryID, toCategoryID)
+	}
+
+	// Get both categories
+	fromCategory, err := t.storage.GetCategoryByID(ctx, fromCategoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get source category: %w", err)
+	}
+
+	toCategory, err := t.storage.GetCategoryByID(ctx, toCategoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get target category: %w", err)
+	}
+
+	// Use the existing transaction method
+	return t.UpdateTransactionCategories(ctx, fromCategory.Name, toCategory.Name)
+}
+
+func (t *sqliteTransaction) GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	// Use the storage version since this is a read operation
+	return t.storage.GetVendorsByCategoryID(ctx, categoryID)
+}
+
+func (t *sqliteTransaction) UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	if fromCategoryID <= 0 || toCategoryID <= 0 {
+		return fmt.Errorf("invalid category IDs: from=%d, to=%d", fromCategoryID, toCategoryID)
+	}
+
+	// Get both categories
+	fromCategory, err := t.storage.GetCategoryByID(ctx, fromCategoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get source category: %w", err)
+	}
+
+	toCategory, err := t.storage.GetCategoryByID(ctx, toCategoryID)
+	if err != nil {
+		return fmt.Errorf("failed to get target category: %w", err)
+	}
+
+	// Use the existing transaction method
+	return t.UpdateVendorCategories(ctx, fromCategory.Name, toCategory.Name)
+}
+
+func (t *sqliteTransaction) GetVendorsByCategory(ctx context.Context, category string) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	// For now, we'll use the non-transactional version since this is a read operation
+	return t.storage.GetVendorsByCategory(ctx, category)
+}
+
+func (t *sqliteTransaction) UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if fromCategory == "" || toCategory == "" {
+		return fmt.Errorf("both fromCategory and toCategory must be provided")
+	}
+
+	query := `
+		UPDATE vendors 
+		SET category = ?, last_updated = ?
+		WHERE category = ?
+	`
+
+	result, err := t.tx.ExecContext(ctx, query, toCategory, time.Now(), fromCategory)
+	if err != nil {
+		return fmt.Errorf("failed to update vendor categories: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// Clear cache after update
+	t.storage.cacheMutex.Lock()
+	t.storage.vendorCache = nil
+	t.storage.cacheExpiry = time.Time{}
+	t.storage.cacheMutex.Unlock()
+
+	slog.Info("Updated vendor categories in transaction",
+		"from", fromCategory,
+		"to", toCategory,
+		"vendors_updated", rowsAffected)
+
+	return nil
+}
+
+func (t *sqliteTransaction) GetTransactions(ctx context.Context, filter service.TransactionFilter) ([]model.Transaction, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	return t.storage.getTransactionsTx(ctx, t.tx, filter)
+}
+
+func (t *sqliteTransaction) UpdateTransactionDirection(ctx context.Context, transactionID string, direction model.TransactionDirection) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if err := validateString(transactionID, "transactionID"); err != nil {
+		return err
+	}
+	return t.storage.updateTransactionDirectionTx(ctx, t.tx, transactionID, direction)
+}
+
+func (t *sqliteTransaction) GetIncomeByPeriod(ctx context.Context, start, end time.Time) ([]model.Transaction, error) {
+	// For transactional reads, we delegate to the main storage instance
+	// since this is a read-only operation that doesn't need transaction isolation
+	return t.storage.GetIncomeByPeriod(ctx, start, end)
+}
+
+func (t *sqliteTransaction) GetExpensesByPeriod(ctx context.Context, start, end time.Time) ([]model.Transaction, error) {
+	// For transactional reads, we delegate to the main storage instance
+	// since this is a read-only operation that doesn't need transaction isolation
+	return t.storage.GetExpensesByPeriod(ctx, start, end)
+}
+
+func (t *sqliteTransaction) GetCashFlow(ctx context.Context, start, end time.Time) (*service.CashFlowSummary, error) {
+	// For transactional reads, we delegate to the main storage instance
+	// since this is a read-only operation that doesn't need transaction isolation
+	return t.storage.GetCashFlow(ctx, start, end)
 }

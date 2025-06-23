@@ -16,7 +16,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 	// Seed required categories for workflow test
 	categories := []string{"Coffee & Dining", "Online Shopping", "Shopping", "Groceries", "Transportation"}
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat, model.CategoryTypeExpense); err != nil {
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
 	}
@@ -32,6 +32,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 			Amount:       5.75,
 			AccountID:    "checking",
 			Category:     []string{"Food and Drink", "Coffee Shop"},
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "workflow-2",
@@ -41,6 +42,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 			Amount:       49.99,
 			AccountID:    "credit",
 			Category:     []string{"Shops", "Digital Purchase"},
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "workflow-3",
@@ -50,6 +52,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 			Amount:       6.25,
 			AccountID:    "checking",
 			Category:     []string{"Food and Drink", "Coffee Shop"},
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "workflow-4",
@@ -59,6 +62,7 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 			Amount:       15.50,
 			AccountID:    "credit",
 			Category:     []string{"Travel", "Taxi"},
+			Direction:    model.DirectionExpense,
 		},
 	}
 
@@ -266,7 +270,7 @@ func TestSQLiteStorage_ResumableSession(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed required category
-	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category"); err != nil {
+	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category", model.CategoryTypeExpense); err != nil {
 		t.Fatalf("Failed to create Test Category: %v", err)
 	}
 
@@ -357,6 +361,7 @@ func TestSQLiteStorage_ErrorRecovery(t *testing.T) {
 		MerchantName: "Valid Merchant",
 		Amount:       50.00,
 		AccountID:    "acc1",
+		Direction:    model.DirectionExpense,
 	}
 	validTxn.Hash = validTxn.GenerateHash()
 
@@ -396,7 +401,7 @@ func TestSQLiteStorage_DataIntegrity(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed required category
-	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category"); err != nil {
+	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category", model.CategoryTypeExpense); err != nil {
 		t.Fatalf("Failed to create Test Category: %v", err)
 	}
 
@@ -408,6 +413,7 @@ func TestSQLiteStorage_DataIntegrity(t *testing.T) {
 		MerchantName: "Test Merchant",
 		Amount:       100.00,
 		AccountID:    "acc1",
+		Direction:    model.DirectionExpense,
 	}
 	txn.Hash = txn.GenerateHash()
 

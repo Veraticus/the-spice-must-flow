@@ -47,6 +47,7 @@ func init() {
 	rootCmd.AddCommand(flowCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(institutionsCmd())
+	rootCmd.AddCommand(recategorizeCmd())
 	rootCmd.AddCommand(versionCmd())
 }
 
@@ -56,18 +57,31 @@ func main() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	interrupted := make(chan struct{})
 	go func() {
 		<-sigChan
 		slog.Info("Received interrupt signal, shutting down gracefully...")
 		cancel()
+		close(interrupted)
 	}()
 
 	err := rootCmd.ExecuteContext(ctx)
 	cancel() // Always cleanup
 
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	// Check if we were interrupted
+	select {
+	case <-interrupted:
+		// Give time for interrupt messages to be displayed
+		// This is a reasonable compromise between clean architecture
+		// and ensuring messages are shown before exit
+		os.Exit(130) // Standard exit code for SIGINT
+	default:
+		// Normal exit
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 }
 

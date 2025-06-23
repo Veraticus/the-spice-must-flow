@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
-	"time"
 
-	"github.com/Veraticus/the-spice-must-flow/internal/common"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"golang.org/x/oauth2"
@@ -43,9 +41,9 @@ func NewWriter(ctx context.Context, config Config, logger *slog.Logger) (*Writer
 	}, nil
 }
 
-// Write implements the ReportWriter interface.
-func (w *Writer) Write(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary) error {
-	w.logger.Info("starting report generation",
+// WriteCashFlow writes a cash flow report with income and expense separation.
+func (w *Writer) WriteCashFlow(ctx context.Context, classifications []model.Classification, summary *service.CashFlowSummary) error {
+	w.logger.Info("starting cash flow report generation",
 		"classifications", len(classifications),
 		"date_range", fmt.Sprintf("%s to %s", summary.DateRange.Start.Format("2006-01-02"), summary.DateRange.End.Format("2006-01-02")))
 
@@ -55,44 +53,44 @@ func (w *Writer) Write(ctx context.Context, classifications []model.Classificati
 		return fmt.Errorf("failed to get spreadsheet: %w", err)
 	}
 
-	// Clear existing data
-	if clearErr := w.clearSheet(ctx, spreadsheetID); clearErr != nil {
-		return fmt.Errorf("failed to clear sheet: %w", clearErr)
-	}
-
-	// Prepare the data
-	values := w.prepareReportData(classifications, summary)
-
-	// Write data in batches with retry
-	retryOpts := service.RetryOptions{
-		MaxAttempts:  w.config.RetryAttempts,
-		InitialDelay: w.config.RetryDelay,
-		MaxDelay:     30 * time.Second,
-		Multiplier:   2.0,
-	}
-
-	err = common.WithRetry(ctx, func() error {
-		return w.writeData(ctx, spreadsheetID, values)
-	}, retryOpts)
-
-	if err != nil {
-		return fmt.Errorf("failed to write data: %w", err)
-	}
-
-	// Apply formatting if enabled
-	if w.config.EnableFormatting {
-		err = common.WithRetry(ctx, func() error {
-			return w.applyFormatting(ctx, spreadsheetID, len(values))
-		}, retryOpts)
-		if err != nil {
-			w.logger.Warn("failed to apply formatting", "error", err)
-			// Don't fail the whole operation if formatting fails
+	// Separate classifications by direction
+	var incomeClassifications []model.Classification
+	var expenseClassifications []model.Classification
+	for _, c := range classifications {
+		switch c.Transaction.Direction {
+		case model.DirectionIncome:
+			incomeClassifications = append(incomeClassifications, c)
+		case model.DirectionExpense:
+			expenseClassifications = append(expenseClassifications, c)
+			// Skip transfers - they're excluded from cash flow
 		}
 	}
 
-	w.logger.Info("report generation completed",
+	// Ensure all sheets exist
+	if err := w.ensureSheets(ctx, spreadsheetID, []string{"Summary", "Income", "Expenses"}); err != nil {
+		return fmt.Errorf("failed to ensure sheets: %w", err)
+	}
+
+	// Write summary sheet
+	if err := w.writeSummarySheet(ctx, spreadsheetID, summary); err != nil {
+		return fmt.Errorf("failed to write summary sheet: %w", err)
+	}
+
+	// Write income sheet
+	if err := w.writeTransactionSheet(ctx, spreadsheetID, "Income", incomeClassifications); err != nil {
+		return fmt.Errorf("failed to write income sheet: %w", err)
+	}
+
+	// Write expenses sheet
+	if err := w.writeTransactionSheet(ctx, spreadsheetID, "Expenses", expenseClassifications); err != nil {
+		return fmt.Errorf("failed to write expenses sheet: %w", err)
+	}
+
+	w.logger.Info("cash flow report generation completed",
 		"spreadsheet_id", spreadsheetID,
-		"rows_written", len(values))
+		"income_count", len(incomeClassifications),
+		"expense_count", len(expenseClassifications),
+		"total_count", len(classifications))
 
 	return nil
 }
@@ -179,10 +177,21 @@ func (w *Writer) getOrCreateSpreadsheet(ctx context.Context) (string, error) {
 	return created.SpreadsheetId, nil
 }
 
-// clearSheet clears all data from the sheet.
-func (w *Writer) clearSheet(ctx context.Context, spreadsheetID string) error {
-	_, err := w.service.Spreadsheets.Values.Clear(spreadsheetID, "A:Z", &sheets.ClearValuesRequest{}).Context(ctx).Do()
-	return err
+type categorySummary struct {
+	name   string
+	count  int
+	amount float64
+}
+
+func sortCategoriesByAmount(categories map[string]service.CategorySummary) []categorySummary {
+	result := make([]categorySummary, 0, len(categories))
+	for name, summary := range categories {
+		result = append(result, categorySummary{name, summary.Count, summary.Amount})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].amount > result[j].amount
+	})
+	return result
 }
 
 // prepareReportData prepares the data for the report.
@@ -273,89 +282,219 @@ func (w *Writer) prepareReportData(classifications []model.Classification, summa
 	return values
 }
 
-// writeData writes the data to the spreadsheet.
-func (w *Writer) writeData(ctx context.Context, spreadsheetID string, values [][]any) error {
-	// Write in batches to avoid API limits
-	for i := 0; i < len(values); i += w.config.BatchSize {
-		end := i + w.config.BatchSize
-		if end > len(values) {
-			end = len(values)
+// ensureSheets ensures that all required sheets exist in the spreadsheet.
+func (w *Writer) ensureSheets(ctx context.Context, spreadsheetID string, sheetNames []string) error {
+	// Get current spreadsheet to check existing sheets
+	spreadsheet, err := w.service.Spreadsheets.Get(spreadsheetID).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to get spreadsheet: %w", err)
+	}
+
+	// Create a map of existing sheet names
+	existingSheets := make(map[string]bool)
+	for _, sheet := range spreadsheet.Sheets {
+		existingSheets[sheet.Properties.Title] = true
+	}
+
+	// Create requests for missing sheets
+	var requests []*sheets.Request
+	for i, name := range sheetNames {
+		if !existingSheets[name] {
+			requests = append(requests, &sheets.Request{
+				AddSheet: &sheets.AddSheetRequest{
+					Properties: &sheets.SheetProperties{
+						Title: name,
+						Index: int64(i),
+					},
+				},
+			})
 		}
+	}
 
-		batch := values[i:end]
-		valueRange := &sheets.ValueRange{
-			Values: batch,
+	// Execute batch update if there are sheets to create
+	if len(requests) > 0 {
+		batchUpdate := &sheets.BatchUpdateSpreadsheetRequest{
+			Requests: requests,
 		}
-
-		rangeStr := fmt.Sprintf("A%d", i+1)
-		_, err := w.service.Spreadsheets.Values.Update(spreadsheetID, rangeStr, valueRange).
-			ValueInputOption("USER_ENTERED").
-			Context(ctx).
-			Do()
-
+		_, err := w.service.Spreadsheets.BatchUpdate(spreadsheetID, batchUpdate).Context(ctx).Do()
 		if err != nil {
-			return fmt.Errorf("failed to write batch starting at row %d: %w", i+1, err)
+			return fmt.Errorf("failed to create sheets: %w", err)
 		}
-
-		w.logger.Debug("wrote batch", "start_row", i+1, "rows", len(batch))
 	}
 
 	return nil
 }
 
-// applyFormatting applies formatting to the spreadsheet.
-func (w *Writer) applyFormatting(ctx context.Context, spreadsheetID string, totalRows int) error {
+// writeSummarySheet writes the cash flow summary to the Summary sheet.
+func (w *Writer) writeSummarySheet(ctx context.Context, spreadsheetID string, summary *service.CashFlowSummary) error {
+	// Prepare summary data
+	values := [][]any{
+		{"Cash Flow Summary", fmt.Sprintf("%s - %s", summary.DateRange.Start.Format("Jan 2, 2006"), summary.DateRange.End.Format("Jan 2, 2006"))},
+		{}, // Empty row
+		{"Total Income", summary.TotalIncome},
+		{"Total Expenses", summary.TotalExpenses},
+		{"Net Cash Flow", summary.NetCashFlow},
+		{}, // Empty row
+		{"Income by Category"},
+		{"Category", "Count", "Amount"},
+	}
+
+	// Add income categories
+	incomeCategories := sortCategoriesByAmount(summary.IncomeByCategory)
+	for _, cat := range incomeCategories {
+		values = append(values, []any{cat.name, cat.count, cat.amount})
+	}
+
+	values = append(values, []any{}) // Empty row
+	values = append(values, []any{"Expenses by Category"})
+	values = append(values, []any{"Category", "Count", "Amount"})
+
+	// Add expense categories
+	expenseCategories := sortCategoriesByAmount(summary.ExpensesByCategory)
+	for _, cat := range expenseCategories {
+		values = append(values, []any{cat.name, cat.count, cat.amount})
+	}
+
+	// Clear and write to Summary sheet
+	clearRange := "Summary!A1:Z1000"
+	_, err := w.service.Spreadsheets.Values.Clear(spreadsheetID, clearRange, &sheets.ClearValuesRequest{}).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to clear summary sheet: %w", err)
+	}
+
+	valueRange := &sheets.ValueRange{
+		Range:  "Summary!A1",
+		Values: values,
+	}
+
+	_, err = w.service.Spreadsheets.Values.Update(spreadsheetID, "Summary!A1", valueRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+
+	return err
+}
+
+// writeTransactionSheet writes transaction data to a specific sheet.
+func (w *Writer) writeTransactionSheet(ctx context.Context, spreadsheetID, sheetName string, classifications []model.Classification) error {
+	// Prepare transaction data
+	values := [][]any{
+		{"Date", "Description", "Merchant", "Category", "Amount"},
+	}
+
+	// Sort by date descending
+	sort.Slice(classifications, func(i, j int) bool {
+		return classifications[i].Transaction.Date.After(classifications[j].Transaction.Date)
+	})
+
+	// Add transaction rows
+	for _, c := range classifications {
+		values = append(values, []any{
+			c.Transaction.Date.Format("2006-01-02"),
+			c.Transaction.Name,
+			c.Transaction.MerchantName,
+			c.Category,
+			c.Transaction.Amount,
+		})
+	}
+
+	// Add totals row
+	if len(classifications) > 0 {
+		total := 0.0
+		for _, c := range classifications {
+			total += c.Transaction.Amount
+		}
+		values = append(values, []any{})
+		values = append(values, []any{"Total", "", "", "", total})
+	}
+
+	// Clear and write to sheet
+	clearRange := fmt.Sprintf("%s!A1:Z10000", sheetName)
+	_, err := w.service.Spreadsheets.Values.Clear(spreadsheetID, clearRange, &sheets.ClearValuesRequest{}).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to clear %s sheet: %w", sheetName, err)
+	}
+
+	valueRange := &sheets.ValueRange{
+		Range:  fmt.Sprintf("%s!A1", sheetName),
+		Values: values,
+	}
+
+	_, err = w.service.Spreadsheets.Values.Update(spreadsheetID, fmt.Sprintf("%s!A1", sheetName), valueRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+
+	if err != nil {
+		return fmt.Errorf("failed to write %s sheet: %w", sheetName, err)
+	}
+
+	// Apply formatting
+	if w.config.EnableFormatting {
+		if err := w.applyTransactionSheetFormatting(ctx, spreadsheetID, sheetName, len(values)); err != nil {
+			w.logger.Warn("failed to apply formatting", "sheet", sheetName, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// applyTransactionSheetFormatting applies formatting to transaction sheets.
+func (w *Writer) applyTransactionSheetFormatting(ctx context.Context, spreadsheetID, sheetName string, rowCount int) error {
+	// Get sheet ID
+	spreadsheet, err := w.service.Spreadsheets.Get(spreadsheetID).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to get spreadsheet: %w", err)
+	}
+
+	var sheetID int64
+	for _, sheet := range spreadsheet.Sheets {
+		if sheet.Properties.Title == sheetName {
+			sheetID = sheet.Properties.SheetId
+			break
+		}
+	}
+
 	requests := []*sheets.Request{
-		// Format header
+		// Format header row
 		{
 			RepeatCell: &sheets.RepeatCellRequest{
 				Range: &sheets.GridRange{
-					SheetId:          0,
+					SheetId:          sheetID,
 					StartRowIndex:    0,
 					EndRowIndex:      1,
 					StartColumnIndex: 0,
-					EndColumnIndex:   2,
+					EndColumnIndex:   5,
 				},
 				Cell: &sheets.CellData{
 					UserEnteredFormat: &sheets.CellFormat{
-						TextFormat: &sheets.TextFormat{
-							Bold:     true,
-							FontSize: 16,
+						BackgroundColor: &sheets.Color{
+							Red:   0.2,
+							Green: 0.2,
+							Blue:  0.2,
 						},
-					},
-				},
-				Fields: "userEnteredFormat.textFormat",
-			},
-		},
-		// Format section headers
-		{
-			RepeatCell: &sheets.RepeatCellRequest{
-				Range: &sheets.GridRange{
-					SheetId:          0,
-					StartRowIndex:    2,
-					EndRowIndex:      int64(totalRows),
-					StartColumnIndex: 0,
-					EndColumnIndex:   1,
-				},
-				Cell: &sheets.CellData{
-					UserEnteredFormat: &sheets.CellFormat{
 						TextFormat: &sheets.TextFormat{
 							Bold: true,
+							ForegroundColor: &sheets.Color{
+								Red:   1,
+								Green: 1,
+								Blue:  1,
+							},
 						},
 					},
 				},
-				Fields: "userEnteredFormat.textFormat",
+				Fields: "userEnteredFormat(backgroundColor,textFormat)",
 			},
 		},
-		// Format currency columns
+		// Format currency column
 		{
 			RepeatCell: &sheets.RepeatCellRequest{
 				Range: &sheets.GridRange{
-					SheetId:          0,
-					StartRowIndex:    0,
-					EndRowIndex:      int64(totalRows),
-					StartColumnIndex: 2,
-					EndColumnIndex:   3,
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      int64(rowCount),
+					StartColumnIndex: 4,
+					EndColumnIndex:   5,
 				},
 				Cell: &sheets.CellData{
 					UserEnteredFormat: &sheets.CellFormat{
@@ -372,20 +511,20 @@ func (w *Writer) applyFormatting(ctx context.Context, spreadsheetID string, tota
 		{
 			AutoResizeDimensions: &sheets.AutoResizeDimensionsRequest{
 				Dimensions: &sheets.DimensionRange{
-					SheetId:    0,
+					SheetId:    sheetID,
 					Dimension:  "COLUMNS",
 					StartIndex: 0,
-					EndIndex:   7,
+					EndIndex:   5,
 				},
 			},
 		},
-		// Freeze header rows
+		// Freeze header row
 		{
 			UpdateSheetProperties: &sheets.UpdateSheetPropertiesRequest{
 				Properties: &sheets.SheetProperties{
-					SheetId: 0,
+					SheetId: sheetID,
 					GridProperties: &sheets.GridProperties{
-						FrozenRowCount: 2,
+						FrozenRowCount: 1,
 					},
 				},
 				Fields: "gridProperties.frozenRowCount",
@@ -393,10 +532,39 @@ func (w *Writer) applyFormatting(ctx context.Context, spreadsheetID string, tota
 		},
 	}
 
+	// Format total row if it exists
+	if rowCount > 2 {
+		requests = append(requests, &sheets.Request{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    int64(rowCount - 1),
+					EndRowIndex:      int64(rowCount),
+					StartColumnIndex: 0,
+					EndColumnIndex:   5,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						Borders: &sheets.Borders{
+							Top: &sheets.Border{
+								Style: "SOLID",
+								Width: 2,
+							},
+						},
+					},
+				},
+				Fields: "userEnteredFormat(textFormat,borders)",
+			},
+		})
+	}
+
 	batchUpdate := &sheets.BatchUpdateSpreadsheetRequest{
 		Requests: requests,
 	}
 
-	_, err := w.service.Spreadsheets.BatchUpdate(spreadsheetID, batchUpdate).Context(ctx).Do()
+	_, err = w.service.Spreadsheets.BatchUpdate(spreadsheetID, batchUpdate).Context(ctx).Do()
 	return err
 }

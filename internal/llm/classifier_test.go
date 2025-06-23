@@ -83,6 +83,18 @@ func (m *mockClient) GenerateDescription(_ context.Context, categoryName string)
 	}, nil
 }
 
+func (m *mockClient) ClassifyDirection(_ context.Context, _ string) (DirectionResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Simple mock that returns expense by default
+	return DirectionResponse{
+		Direction:  model.DirectionExpense,
+		Confidence: 0.95,
+		Reasoning:  "Mock reasoning for direction detection",
+	}, nil
+}
+
 func TestNewClassifier(t *testing.T) {
 	logger := slog.Default()
 

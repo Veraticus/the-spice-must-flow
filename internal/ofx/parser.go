@@ -143,6 +143,9 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 		amount = -amount
 	}
 
+	// Detect transaction direction
+	direction := p.detectDirection(ofxTx, amountFloat)
+
 	// Create transaction
 	tx := model.Transaction{
 		ID:           string(ofxTx.FiTID),
@@ -152,6 +155,7 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 		Amount:       amount,
 		AccountID:    accountID,
 		Type:         fmt.Sprintf("%v", ofxTx.TrnType), // e.g., DEBIT, CHECK, PAYMENT, ATM
+		Direction:    direction,
 	}
 
 	// Add check number if present
@@ -240,6 +244,48 @@ func isGenericDescription(name string) bool {
 		}
 	}
 	return false
+}
+
+// detectDirection determines if a transaction is income, expense, or transfer based on OFX data.
+func (p *Parser) detectDirection(ofxTx ofxgo.Transaction, originalAmount float64) model.TransactionDirection {
+	// Check transaction type first
+	trnType := strings.ToUpper(fmt.Sprintf("%v", ofxTx.TrnType))
+	name := strings.ToLower(string(ofxTx.Name))
+	memo := strings.ToLower(string(ofxTx.Memo))
+
+	// Check for transfers
+	if strings.Contains(name, "transfer") || strings.Contains(memo, "transfer") ||
+		strings.Contains(name, "xfer") || trnType == "XFER" {
+		return model.DirectionTransfer
+	}
+
+	// Check specific transaction types
+	switch trnType {
+	case "INT", "DIV", "DIRECTDEP", "DEP", "CREDIT":
+		return model.DirectionIncome
+	case "DEBIT", "CHECK", "PAYMENT", "ATM", "POS", "FEE", "SRVCHG":
+		return model.DirectionExpense
+	}
+
+	// Check name patterns for income
+	incomePatterns := []string{
+		"payroll", "salary", "direct dep", "deposit", "interest",
+		"dividend", "refund", "reimbursement", "cashback", "reward",
+	}
+	for _, pattern := range incomePatterns {
+		if strings.Contains(name, pattern) || strings.Contains(memo, pattern) {
+			return model.DirectionIncome
+		}
+	}
+
+	// Use amount sign as fallback
+	// In OFX, negative amounts typically represent money coming into the account (credits/income)
+	// and positive amounts represent money leaving (debits/expenses)
+	if originalAmount < 0 {
+		return model.DirectionIncome
+	}
+
+	return model.DirectionExpense
 }
 
 // GetAccounts extracts unique account IDs from the OFX file.

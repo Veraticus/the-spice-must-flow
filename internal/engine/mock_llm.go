@@ -287,3 +287,41 @@ func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction 
 
 	return rankings, nil
 }
+
+// SuggestTransactionDirection provides deterministic direction suggestions for testing.
+func (m *MockClassifier) SuggestTransactionDirection(_ context.Context, transaction model.Transaction) (model.TransactionDirection, float64, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	merchantLower := strings.ToLower(transaction.MerchantName)
+	if merchantLower == "" {
+		merchantLower = strings.ToLower(transaction.Name)
+	}
+
+	var direction model.TransactionDirection
+	var confidence float64
+	var reasoning string
+
+	// Deterministic direction based on merchant patterns
+	switch {
+	case strings.Contains(merchantLower, "payroll") || strings.Contains(merchantLower, "salary"):
+		direction = model.DirectionIncome
+		confidence = 0.95
+		reasoning = "Payroll/salary transaction"
+	case strings.Contains(merchantLower, "interest") || strings.Contains(merchantLower, "dividend"):
+		direction = model.DirectionIncome
+		confidence = 0.90
+		reasoning = "Interest or dividend payment"
+	case strings.Contains(merchantLower, "transfer"):
+		direction = model.DirectionTransfer
+		confidence = 0.85
+		reasoning = "Transfer between accounts"
+	default:
+		// Default to expense for most merchants
+		direction = model.DirectionExpense
+		confidence = 0.95
+		reasoning = "Merchant purchase"
+	}
+
+	return direction, confidence, reasoning, nil
+}

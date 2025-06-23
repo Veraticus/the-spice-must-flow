@@ -28,7 +28,7 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 	// Create categories
 	categories := []string{"Utilities", "Home Services", "Insurance", "Other"}
 	for _, cat := range categories {
-		_, createErr := db.CreateCategory(ctx, cat, "Test category: "+cat)
+		_, createErr := db.CreateCategory(ctx, cat, "Test category: "+cat, model.CategoryTypeExpense)
 		require.NoError(t, createErr)
 	}
 
@@ -82,6 +82,7 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			Amount:       150.0,
 			Type:         "CHECK",
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "check2",
@@ -92,6 +93,7 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			Amount:       250.0, // Match cleaning service pattern
 			Type:         "CHECK",
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "check3",
@@ -102,6 +104,7 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			Amount:       600.0,
 			Type:         "CHECK",
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "non-check",
@@ -112,6 +115,7 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			Amount:       150.0,
 			Type:         "DEBIT",
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 	}
 
@@ -223,9 +227,9 @@ func TestClassificationEngine_CheckPatternAutoClassification(t *testing.T) {
 	require.NoError(t, db.Migrate(ctx))
 
 	// Create categories
-	_, err = db.CreateCategory(ctx, "Rent", "Monthly rent payment")
+	_, err = db.CreateCategory(ctx, "Rent", "Monthly rent payment", model.CategoryTypeExpense)
 	require.NoError(t, err)
-	_, err = db.CreateCategory(ctx, "Other", "Other expenses")
+	_, err = db.CreateCategory(ctx, "Other", "Other expenses", model.CategoryTypeExpense)
 	require.NoError(t, err)
 
 	// Create a high-confidence check pattern
@@ -250,6 +254,7 @@ func TestClassificationEngine_CheckPatternAutoClassification(t *testing.T) {
 		Amount:       2000.0,
 		Type:         "CHECK",
 		AccountID:    "acc1",
+		Direction:    model.DirectionExpense,
 	}
 	err = db.SaveTransactions(ctx, []model.Transaction{transaction})
 	require.NoError(t, err)

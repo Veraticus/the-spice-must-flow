@@ -197,6 +197,9 @@ func (c *Client) GetTransactions(ctx context.Context, startDate, endDate time.Ti
 			// Try to infer transaction type from description or payee
 			transactionType := inferTransactionType(tx.Description, tx.Payee)
 
+			// Detect transaction direction
+			direction := detectDirection(tx)
+
 			// Create our transaction model
 			modelTx := model.Transaction{
 				ID:           fmt.Sprintf("%s_%s", account.ID, tx.ID),
@@ -207,6 +210,7 @@ func (c *Client) GetTransactions(ctx context.Context, startDate, endDate time.Ti
 				AccountID:    account.ID,
 				Category:     categories,
 				Type:         transactionType,
+				Direction:    direction,
 			}
 
 			// Generate hash for deduplication
@@ -327,4 +331,42 @@ func inferTransactionType(description, payee string) string {
 		// Default to DEBIT for purchases
 		return "DEBIT"
 	}
+}
+
+// detectDirection determines if a transaction is income, expense, or transfer based on SimpleFIN data.
+func detectDirection(tx transaction) model.TransactionDirection {
+	// Convert description and payee to lowercase for matching
+	desc := strings.ToLower(tx.Description)
+	payee := strings.ToLower(tx.Payee)
+	combined := desc + " " + payee
+
+	// Check for transfers first
+	if strings.Contains(combined, "transfer") || strings.Contains(combined, "xfer") {
+		return model.DirectionTransfer
+	}
+
+	// Check for income patterns
+	incomePatterns := []string{
+		"direct deposit", "direct dep", "payroll", "salary",
+		"deposit", "interest", "dividend", "refund", "reimbursement",
+		"cashback", "reward", "payment received", "income",
+	}
+	for _, pattern := range incomePatterns {
+		if strings.Contains(combined, pattern) {
+			return model.DirectionIncome
+		}
+	}
+
+	// Parse amount to check sign
+	// SimpleFIN uses negative amounts for debits (expenses)
+	var cents int64
+	if _, err := fmt.Sscanf(tx.Amount, "%d", &cents); err == nil {
+		// Negative amounts in SimpleFIN typically mean money leaving account (expense)
+		// Positive amounts mean money entering account (income)
+		if cents > 0 {
+			return model.DirectionIncome
+		}
+	}
+
+	return model.DirectionExpense
 }

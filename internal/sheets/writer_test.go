@@ -322,12 +322,6 @@ func TestWriter_clearSheet(t *testing.T) {
 	t.Skip("Requires Google Sheets API mock")
 }
 
-func TestWriter_applyFormatting(t *testing.T) {
-	// This test would require mocking the Google Sheets API
-	// For now, we'll just verify the function exists and can be called
-	t.Skip("Requires Google Sheets API mock")
-}
-
 // TestWriter_Write tests the main Write method with mocked dependencies.
 func TestWriter_Write(t *testing.T) {
 	// This is a more complex test that would require mocking the Google Sheets service

@@ -47,7 +47,7 @@ func SetupTestDB(t *testing.T, cats categories.Categories) *TestDB {
 	// Seed categories if provided
 	if len(cats) > 0 {
 		for _, cat := range cats {
-			if _, err := storage.CreateCategory(ctx, cat.Name, cat.Description); err != nil {
+			if _, err := storage.CreateCategory(ctx, cat.Name, cat.Description, cat.Type); err != nil {
 				t.Fatalf("failed to seed category %q: %v", cat.Name, err)
 			}
 		}
@@ -172,7 +172,7 @@ func SetupTestDBWithOptions(t *testing.T, opts TestDBOptions) *TestDB {
 	// Seed categories
 	if len(opts.Categories) > 0 {
 		for _, cat := range opts.Categories {
-			if _, err := storage.CreateCategory(ctx, cat.Name, cat.Description); err != nil {
+			if _, err := storage.CreateCategory(ctx, cat.Name, cat.Description, cat.Type); err != nil {
 				t.Fatalf("failed to seed category %q: %v", cat.Name, err)
 			}
 		}

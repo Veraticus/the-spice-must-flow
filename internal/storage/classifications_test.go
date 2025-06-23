@@ -16,7 +16,7 @@ func createTestStorageWithCategories(t *testing.T, categories ...string) (*SQLit
 
 	// Seed categories
 	for _, cat := range categories {
-		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat); err != nil {
+		if _, err := store.CreateCategory(ctx, cat, "Test description for "+cat, model.CategoryTypeExpense); err != nil {
 			cleanup()
 			t.Fatalf("Failed to create category %q: %v", cat, err)
 		}
@@ -42,6 +42,7 @@ func TestSQLiteStorage_ClassificationHistory(t *testing.T) {
 		MerchantName: "Test Merchant",
 		Amount:       50.00,
 		AccountID:    "acc1",
+		Direction:    model.DirectionExpense,
 	}
 	txn.Hash = txn.GenerateHash()
 
@@ -126,6 +127,7 @@ func TestSQLiteStorage_ClassificationWithVendorRule(t *testing.T) {
 			MerchantName: merchant,
 			Amount:       25.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "vendor-rule-2",
@@ -134,6 +136,7 @@ func TestSQLiteStorage_ClassificationWithVendorRule(t *testing.T) {
 			MerchantName: merchant,
 			Amount:       30.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 	}
 
@@ -298,6 +301,7 @@ func TestSQLiteStorage_ClassificationDateFiltering(t *testing.T) {
 			MerchantName: "Merchant 1",
 			Amount:       10.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "jan-15",
@@ -306,6 +310,7 @@ func TestSQLiteStorage_ClassificationDateFiltering(t *testing.T) {
 			MerchantName: "Merchant 2",
 			Amount:       20.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "jan-31",
@@ -314,6 +319,7 @@ func TestSQLiteStorage_ClassificationDateFiltering(t *testing.T) {
 			MerchantName: "Merchant 3",
 			Amount:       30.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "feb-1",
@@ -322,6 +328,7 @@ func TestSQLiteStorage_ClassificationDateFiltering(t *testing.T) {
 			MerchantName: "Merchant 4",
 			Amount:       40.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 	}
 
@@ -422,6 +429,7 @@ func TestSQLiteStorage_ClassificationAmountAggregation(t *testing.T) {
 			MerchantName: "Restaurant 1",
 			Amount:       25.50,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "food-2",
@@ -430,6 +438,7 @@ func TestSQLiteStorage_ClassificationAmountAggregation(t *testing.T) {
 			MerchantName: "Restaurant 2",
 			Amount:       30.25,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "transport-1",
@@ -438,6 +447,7 @@ func TestSQLiteStorage_ClassificationAmountAggregation(t *testing.T) {
 			MerchantName: "Gas Station",
 			Amount:       45.00,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 		{
 			ID:           "shopping-1",
@@ -446,6 +456,7 @@ func TestSQLiteStorage_ClassificationAmountAggregation(t *testing.T) {
 			MerchantName: "Online Store",
 			Amount:       99.99,
 			AccountID:    "acc1",
+			Direction:    model.DirectionExpense,
 		},
 	}
 

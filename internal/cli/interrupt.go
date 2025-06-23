@@ -6,15 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 )
 
 // InterruptHandler manages graceful shutdown with friendly messages.
 type InterruptHandler struct {
 	writer       io.Writer
-	cancelFunc   context.CancelFunc
 	interrupted  bool
 	showProgress bool
 	mu           sync.Mutex
@@ -30,24 +27,19 @@ func NewInterruptHandler(writer io.Writer) *InterruptHandler {
 	}
 }
 
-// HandleInterrupts sets up signal handling and returns a context that will be canceled on interrupt.
+// HandleInterrupts monitors the context for cancellation and shows a message when interrupted.
 func (h *InterruptHandler) HandleInterrupts(ctx context.Context, showProgress bool) context.Context {
-	ctx, cancel := context.WithCancel(ctx)
-	h.cancelFunc = cancel
 	h.showProgress = showProgress
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
+	// Monitor the context for cancellation
 	go func() {
-		<-sigChan
+		<-ctx.Done()
 		h.mu.Lock()
 		if !h.interrupted {
 			h.interrupted = true
 			h.showInterruptMessage()
 		}
 		h.mu.Unlock()
-		cancel()
 	}()
 
 	return ctx
