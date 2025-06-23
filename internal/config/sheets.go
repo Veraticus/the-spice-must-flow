@@ -18,7 +18,7 @@ func LoadSheetsConfig() (*sheets.Config, error) {
 
 	// Load from Viper first
 	if v := viper.GetString("sheets.service_account_path"); v != "" {
-		config.ServiceAccountPath = expandPath(v)
+		config.ServiceAccountPath = ExpandPath(v)
 	}
 	if v := viper.GetString("sheets.client_id"); v != "" {
 		config.ClientID = v
@@ -39,7 +39,7 @@ func LoadSheetsConfig() (*sheets.Config, error) {
 	// Override with direct environment variables if not set
 	if config.ServiceAccountPath == "" {
 		if v := os.Getenv("GOOGLE_SHEETS_SERVICE_ACCOUNT_PATH"); v != "" {
-			config.ServiceAccountPath = expandPath(v)
+			config.ServiceAccountPath = ExpandPath(v)
 		}
 	}
 	if config.ClientID == "" {
@@ -66,14 +66,4 @@ func LoadSheetsConfig() (*sheets.Config, error) {
 	}
 
 	return &config, nil
-}
-
-func expandPath(path string) string {
-	if path != "" && path[0] == '~' {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			path = home + path[1:]
-		}
-	}
-	return os.ExpandEnv(path)
 }

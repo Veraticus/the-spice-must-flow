@@ -13,9 +13,9 @@ import (
 // Prompter implements engine.Prompter with a rich TUI.
 type Prompter struct {
 	program    *tea.Program
-	model      Model
 	resultChan chan promptResult
 	errorChan  chan error
+	model      Model
 	stats      service.CompletionStats
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/config"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
@@ -81,7 +82,7 @@ func runRecategorize(cmd *cobra.Command, _ []string) error {
 	if dbPath == "" {
 		dbPath = "$HOME/.local/share/spice/spice.db"
 	}
-	dbPath = os.ExpandEnv(dbPath)
+	dbPath = config.ExpandPath(dbPath)
 
 	db, err := storage.NewSQLiteStorage(dbPath)
 	if err != nil {

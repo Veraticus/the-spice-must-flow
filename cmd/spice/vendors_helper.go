@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/config"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/spf13/viper"
 )
@@ -18,8 +18,8 @@ func getDatabase() (*storage.SQLiteStorage, func(), error) {
 		dbPath = "$HOME/.local/share/spice/spice.db"
 	}
 
-	// Expand environment variables
-	dbPath = os.ExpandEnv(dbPath)
+	// Expand tilde and environment variables
+	dbPath = config.ExpandPath(dbPath)
 
 	// Open database
 	db, err := storage.NewSQLiteStorage(dbPath)

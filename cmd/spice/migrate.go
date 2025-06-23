@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/config"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 
 	"github.com/spf13/cobra"
@@ -43,6 +44,9 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
 		dbPath = filepath.Join(home, ".local", "share", "spice", "spice.db")
+	} else {
+		// Expand tilde and environment variables if path was provided
+		dbPath = config.ExpandPath(dbPath)
 	}
 
 	slog.Info("Starting database migration",

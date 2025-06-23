@@ -43,13 +43,13 @@ func (m Model) renderCompactView() string {
 		// Account for borders (2) and status bar (1)
 		usableWidth := m.width - 2
 		usableHeight := m.height - 3
-		
+
 		// Reserve space for stats if enabled
 		listHeight := usableHeight
 		if m.config.ShowStats {
 			listHeight = usableHeight - 3 // 2 for stats + 1 for spacing
 		}
-		
+
 		// Full width transaction list
 		m.transactionList.Resize(usableWidth, listHeight)
 		content = m.transactionList.View()

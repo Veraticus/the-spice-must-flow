@@ -134,10 +134,10 @@ func NewTransactionList(transactions []model.Transaction, theme themes.Theme) Tr
 			Ascending: false,
 		},
 	}
-	
+
 	// Set initial column widths
 	model.updateColumnWidths()
-	
+
 	return model
 }
 
@@ -488,12 +488,12 @@ func (m TransactionListModel) ensureVisible() tea.Cmd {
 func (m *TransactionListModel) Resize(width, height int) {
 	m.width = width
 	m.height = height
-	
+
 	// Account for chrome:
 	// - Header: 1 line for title + 1 line spacing + 1 line column headers = 3
 	// - Footer: 1 line for controls = 1
 	// Total chrome: 4 lines
-	tableHeight := max(1, height - 4)
+	tableHeight := max(1, height-4)
 	m.table.SetHeight(tableHeight)
 	m.updateColumnWidths()
 }
@@ -505,7 +505,7 @@ func (m *TransactionListModel) updateColumnWidths() {
 	if availableWidth < 60 {
 		availableWidth = 60 // Minimum width
 	}
-	
+
 	// Calculate proportional widths
 	columns := []table.Column{
 		{Title: "Date", Width: max(10, int(float64(availableWidth)*0.13))},
@@ -514,7 +514,7 @@ func (m *TransactionListModel) updateColumnWidths() {
 		{Title: "Category", Width: max(12, int(float64(availableWidth)*0.26))},
 		{Title: "Status", Width: max(8, int(float64(availableWidth)*0.13))},
 	}
-	
+
 	m.table.SetColumns(columns)
 }
 

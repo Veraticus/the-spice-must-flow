@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/sheets"
-	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -154,30 +152,6 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 	}
 
 	return nil
-}
-
-func initStorage(ctx context.Context) (service.Storage, error) {
-	// Get database path from config
-	dbPath := viper.GetString("database.path")
-	if dbPath == "" {
-		dbPath = "$HOME/.local/share/spice/spice.db"
-	}
-
-	// Expand environment variables
-	dbPath = os.ExpandEnv(dbPath)
-
-	// Initialize storage
-	store, err := storage.NewSQLiteStorage(dbPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// Run migrations
-	if err := store.Migrate(ctx); err != nil {
-		return nil, fmt.Errorf("failed to run migrations: %w", err)
-	}
-
-	return store, nil
 }
 
 func generateCashFlowSummary(ctx context.Context, store service.Storage, start, end time.Time) (*service.CashFlowSummary, error) {
