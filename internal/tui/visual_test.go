@@ -141,7 +141,27 @@ func TestComponentViews(t *testing.T) {
 		classifier.Resize(80, 30)
 
 		output := classifier.View()
-		fmt.Printf("\n=== Classifier ===\n%s\n", output)
+		fmt.Printf("\n=== Classifier (Suggestion Mode) ===\n%s\n", output)
+
+		// Simulate pressing 'c' to show category picker
+		classifier, _ = classifier.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+		output = classifier.View()
+		fmt.Printf("\n=== Classifier (Category Picker) ===\n%s\n", output)
+
+		// Simulate scrolling down a few times
+		for i := 0; i < 5; i++ {
+			classifier, _ = classifier.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		}
+
+		output = classifier.View()
+		fmt.Printf("\n=== Classifier (Category Picker - Scrolled) ===\n%s\n", output)
+
+		// Simulate typing a category ID number
+		classifier, _ = classifier.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+
+		output = classifier.View()
+		fmt.Printf("\n=== Classifier (Entering Category ID) ===\n%s\n", output)
 	})
 
 	t.Run("stats_panel", func(t *testing.T) {

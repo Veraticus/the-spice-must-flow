@@ -3,6 +3,8 @@ package components
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,22 +19,25 @@ import (
 
 // ClassifierModel manages the classification interface.
 type ClassifierModel struct {
-	theme       themes.Theme
-	error       error
-	classifier  engine.Classifier
-	result      *model.Classification
-	rankings    model.CategoryRankings
-	categories  []model.Category
-	customInput textinput.Model
-	spinner     spinner.Model
-	transaction model.Transaction
-	pending     model.PendingClassification
-	mode        ClassifierMode
-	cursor      int
-	width       int
-	height      int
-	loading     bool
-	complete    bool
+	theme            themes.Theme
+	error            error
+	classifier       engine.Classifier
+	result           *model.Classification
+	rankings         model.CategoryRankings
+	categories       []model.Category
+	sortedCategories []model.Category // Sorted by AI confidence then alphabetically
+	customInput      textinput.Model
+	spinner          spinner.Model
+	transaction      model.Transaction
+	pending          model.PendingClassification
+	mode             ClassifierMode
+	cursor           int
+	categoryCursor   int // Cursor for category selection
+	categoryOffset   int // Offset for scrolling through categories
+	width            int
+	height           int
+	loading          bool
+	complete         bool
 }
 
 // ClassifierMode represents the current mode.
@@ -41,6 +46,7 @@ type ClassifierMode int
 const (
 	ModeSelectingSuggestion ClassifierMode = iota
 	ModeEnteringCustom
+	ModeSelectingCategory
 	ModeConfirming
 )
 
@@ -116,6 +122,10 @@ func (m ClassifierModel) Update(msg tea.Msg) (ClassifierModel, tea.Cmd) {
 		case ModeEnteringCustom:
 			cmd := m.handleCustomMode(msg)
 			cmds = append(cmds, cmd)
+
+		case ModeSelectingCategory:
+			cmd := m.handleCategoryMode(msg)
+			cmds = append(cmds, cmd)
 		}
 
 	case spinner.TickMsg:
@@ -149,10 +159,11 @@ func (m *ClassifierModel) handleSuggestionMode(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "c":
-		// Custom category
-		m.mode = ModeEnteringCustom
-		m.customInput.Focus()
-		return textinput.Blink
+		// Show category picker
+		m.mode = ModeSelectingCategory
+		m.prepareCategoryList()
+		m.categoryCursor = 0
+		m.categoryOffset = 0
 
 	case "s", "space":
 		// Skip
@@ -178,13 +189,31 @@ func (m *ClassifierModel) handleSuggestionMode(msg tea.KeyMsg) tea.Cmd {
 func (m *ClassifierModel) handleCustomMode(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "enter":
-		category := strings.TrimSpace(m.customInput.Value())
-		if category != "" {
-			return m.createCustomCategory(category)
+		input := strings.TrimSpace(m.customInput.Value())
+		if input != "" {
+			// Check if input is a number (category ID)
+			if categoryID, err := strconv.Atoi(input); err == nil {
+				// Find category by ID
+				for _, cat := range m.categories {
+					if cat.ID == categoryID {
+						m.customInput.Blur()
+						m.customInput.SetValue("")
+						return m.confirmCategoryByName(cat.Name, 1.0)
+					}
+				}
+				// Category ID not found, treat as custom category name
+			}
+			// Not a number or ID not found, create custom category
+			return m.createCustomCategory(input)
 		}
 
 	case "esc":
-		m.mode = ModeSelectingSuggestion
+		// Return to previous mode
+		if m.categoryCursor >= 0 {
+			m.mode = ModeSelectingCategory
+		} else {
+			m.mode = ModeSelectingSuggestion
+		}
 		m.customInput.Blur()
 		m.customInput.SetValue("")
 		return nil
@@ -210,10 +239,14 @@ func (m ClassifierModel) View() string {
 
 	sections := []string{
 		m.renderTransaction(),
-		m.renderSuggestions(),
 	}
 
-	if m.mode == ModeEnteringCustom {
+	switch m.mode {
+	case ModeSelectingSuggestion:
+		sections = append(sections, m.renderSuggestions())
+	case ModeSelectingCategory:
+		sections = append(sections, m.renderCategoryPicker())
+	case ModeEnteringCustom:
 		sections = append(sections, m.renderCustomInput())
 	}
 
@@ -378,6 +411,92 @@ func (m ClassifierModel) renderCustomInput() string {
 	)
 }
 
+// renderCategoryPicker renders the full category selection interface.
+func (m ClassifierModel) renderCategoryPicker() string {
+	title := m.theme.Subtitle.Render("Select Category (All Categories):")
+
+	visibleItems := 10
+	var categories []string
+
+	// Calculate visible range
+	start := m.categoryOffset
+	end := min(start+visibleItems, len(m.sortedCategories))
+
+	for i := start; i < end; i++ {
+		cat := m.sortedCategories[i]
+
+		// Build the display line
+		prefix := "  "
+		if i == m.categoryCursor {
+			prefix = lipgloss.NewStyle().Foreground(m.theme.Primary).Render("> ")
+		}
+
+		// Get confidence if available
+		confidence := 0.0
+		for _, ranking := range m.rankings {
+			if ranking.Category == cat.Name {
+				confidence = ranking.Score
+				break
+			}
+		}
+
+		// Format with category ID, name, and confidence if available
+		var line string
+		if confidence > 0 {
+			bar := m.renderConfidenceBar(int(confidence * 100))
+			line = fmt.Sprintf("%s[%d] %s %s %s %.0f%%",
+				prefix,
+				cat.ID,
+				themes.GetCategoryIcon(cat.Name),
+				cat.Name,
+				bar,
+				confidence*100,
+			)
+		} else {
+			line = fmt.Sprintf("%s[%d] %s %s",
+				prefix,
+				cat.ID,
+				themes.GetCategoryIcon(cat.Name),
+				cat.Name,
+			)
+		}
+
+		if i == m.categoryCursor {
+			line = m.theme.Selected.Render(line)
+		}
+
+		categories = append(categories, line)
+	}
+
+	// Add scroll indicators
+	if m.categoryOffset > 0 {
+		categories = append([]string{
+			lipgloss.NewStyle().Foreground(m.theme.Muted).Render("  ↑ More categories above"),
+		}, categories...)
+	}
+
+	if end < len(m.sortedCategories) {
+		categories = append(categories,
+			lipgloss.NewStyle().Foreground(m.theme.Muted).Render(
+				fmt.Sprintf("  ↓ %d more categories below", len(m.sortedCategories)-end),
+			),
+		)
+	}
+
+	// Add total count
+	count := lipgloss.NewStyle().Foreground(m.theme.Muted).Render(
+		fmt.Sprintf("Showing %d-%d of %d categories", start+1, end, len(m.sortedCategories)),
+	)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		title,
+		strings.Join(categories, "\n"),
+		"",
+		count,
+	)
+}
+
 // renderHelp renders keyboard shortcuts.
 func (m ClassifierModel) renderHelp() string {
 	var hints []string
@@ -388,8 +507,17 @@ func (m ClassifierModel) renderHelp() string {
 			"[↑↓] Navigate",
 			"[1-5] Quick select",
 			"[Enter/a] Accept",
-			"[c] Custom",
+			"[c] Select from all categories",
 			"[s] Skip",
+		}
+	case ModeSelectingCategory:
+		hints = []string{
+			"[↑↓] Navigate",
+			"[g/G] First/Last",
+			"[Enter] Select",
+			"[/] Search",
+			"[Type ID] Quick select",
+			"[Esc] Back",
 		}
 	case ModeEnteringCustom:
 		hints = []string{
@@ -478,4 +606,118 @@ func (m ClassifierModel) getAmountPrefix() string {
 		return "+"
 	}
 	return "-"
+}
+
+// prepareCategoryList sorts categories by AI confidence then alphabetically.
+func (m *ClassifierModel) prepareCategoryList() {
+	// Create a map of categories to their AI confidence scores
+	confidenceMap := make(map[string]float64)
+	for _, ranking := range m.rankings {
+		confidenceMap[ranking.Category] = ranking.Score
+	}
+
+	// Copy all categories
+	m.sortedCategories = make([]model.Category, len(m.categories))
+	copy(m.sortedCategories, m.categories)
+
+	// Sort: first by confidence (descending), then alphabetically
+	sort.Slice(m.sortedCategories, func(i, j int) bool {
+		confI := confidenceMap[m.sortedCategories[i].Name]
+		confJ := confidenceMap[m.sortedCategories[j].Name]
+
+		if confI != confJ {
+			return confI > confJ // Higher confidence first
+		}
+		return m.sortedCategories[i].Name < m.sortedCategories[j].Name // Alphabetical
+	})
+}
+
+// handleCategoryMode handles key presses when selecting from all categories.
+func (m *ClassifierModel) handleCategoryMode(msg tea.KeyMsg) tea.Cmd {
+	visibleItems := 10 // Number of categories visible at once
+
+	switch msg.String() {
+	case "j", "down":
+		m.categoryCursor++
+		if m.categoryCursor >= len(m.sortedCategories) {
+			m.categoryCursor = len(m.sortedCategories) - 1
+		}
+		// Adjust scroll offset
+		if m.categoryCursor >= m.categoryOffset+visibleItems {
+			m.categoryOffset = m.categoryCursor - visibleItems + 1
+		}
+
+	case "k", "up":
+		m.categoryCursor--
+		if m.categoryCursor < 0 {
+			m.categoryCursor = 0
+		}
+		// Adjust scroll offset
+		if m.categoryCursor < m.categoryOffset {
+			m.categoryOffset = m.categoryCursor
+		}
+
+	case "g", "home":
+		m.categoryCursor = 0
+		m.categoryOffset = 0
+
+	case "G", "end":
+		m.categoryCursor = len(m.sortedCategories) - 1
+		m.categoryOffset = max(0, len(m.sortedCategories)-visibleItems)
+
+	case "enter":
+		// Select the current category
+		if m.categoryCursor < len(m.sortedCategories) {
+			category := m.sortedCategories[m.categoryCursor]
+			// Get confidence score if available
+			confidence := 1.0
+			for _, ranking := range m.rankings {
+				if ranking.Category == category.Name {
+					confidence = ranking.Score
+					break
+				}
+			}
+
+			return m.confirmCategoryByName(category.Name, confidence)
+		}
+
+	case "esc":
+		// Return to suggestion mode
+		m.mode = ModeSelectingSuggestion
+		m.categoryCursor = 0
+		m.categoryOffset = 0
+
+	case "/":
+		// Switch to custom entry mode for searching
+		m.mode = ModeEnteringCustom
+		m.customInput.Focus()
+		return textinput.Blink
+
+	default:
+		// Handle number input for category ID selection
+		if len(msg.String()) == 1 && msg.String()[0] >= '0' && msg.String()[0] <= '9' {
+			// Start collecting digits for category ID
+			m.mode = ModeEnteringCustom
+			m.customInput.SetValue(msg.String())
+			m.customInput.Focus()
+			return textinput.Blink
+		}
+	}
+
+	return nil
+}
+
+// confirmCategoryByName creates a classification result for a category by name.
+func (m *ClassifierModel) confirmCategoryByName(categoryName string, confidence float64) tea.Cmd {
+	return func() tea.Msg {
+		m.result = &model.Classification{
+			Transaction:  m.transaction,
+			Category:     categoryName,
+			Status:       model.StatusUserModified,
+			Confidence:   confidence,
+			ClassifiedAt: time.Now(),
+		}
+		m.complete = true
+		return nil
+	}
 }

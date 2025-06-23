@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/Veraticus/the-spice-must-flow/internal/cli"
 	"github.com/Veraticus/the-spice-must-flow/internal/config"
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
+	"github.com/Veraticus/the-spice-must-flow/internal/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -56,9 +56,7 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	resume := viper.GetBool("classification.resume")
 	dryRun := viper.GetBool("classification.dry_run")
 
-	// Set up interrupt handling
-	interruptHandler := cli.NewInterruptHandler(nil)
-	ctx = interruptHandler.HandleInterrupts(ctx, true)
+	// The TUI handles its own interrupts
 
 	slog.Info("Starting transaction categorization")
 
@@ -95,11 +93,12 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		classifier = engine.NewMockClassifier()
 		prompter = engine.NewMockPrompter(true) // Auto-accept in dry-run
 	} else {
-		// Use real prompter for interactive classification
-		cliPrompter := cli.NewCLIPrompter(nil, nil)
-		cliPrompter.Start(ctx)
-		defer cliPrompter.Close()
-		prompter = cliPrompter
+		// Use TUI prompter
+		tuiPrompter, tuiErr := tui.New(ctx)
+		if tuiErr != nil {
+			return fmt.Errorf("failed to create TUI: %w", tuiErr)
+		}
+		prompter = tuiPrompter
 
 		// Initialize real LLM classifier
 		var llmErr error
@@ -132,17 +131,6 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		// If year == 0 (default), fromDate remains nil, which means classify ALL transactions
 	}
 
-	// Get transaction count for progress tracking
-	txns, err := db.GetTransactionsToClassify(ctx, fromDate)
-	if err != nil {
-		return fmt.Errorf("failed to count transactions: %w", err)
-	}
-
-	// Set total for progress tracking
-	if cliPrompter, ok := prompter.(*cli.Prompter); ok {
-		cliPrompter.SetTotalTransactions(len(txns))
-	}
-
 	// Run classification
 	if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
 		if err == context.Canceled {
@@ -154,12 +142,8 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Show completion stats
-	if cliPrompter, ok := prompter.(*cli.Prompter); ok {
-		cliPrompter.ShowCompletion()
-	} else {
-		stats := prompter.GetCompletionStats()
-		showCompletionStats(stats)
-	}
+	stats := prompter.GetCompletionStats()
+	showCompletionStats(stats)
 
 	return nil
 }
