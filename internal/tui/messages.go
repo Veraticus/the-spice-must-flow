@@ -23,7 +23,6 @@ type directionRequestMsg struct {
 type dataLoadedMsg struct {
 	err      error
 	dataType string
-	count    int
 }
 
 type transactionsLoadedMsg struct {
@@ -41,80 +40,17 @@ type checkPatternsLoadedMsg struct {
 	patterns []model.CheckPattern
 }
 
-// UI interaction messages.
-type transactionSelectedMsg struct {
-	id    string
-	index int
-}
-
-type categorySelectedMsg struct {
-	category   model.Category
-	confidence float64
-}
-
-type navigationMsg struct {
-	direction Direction
-	jump      bool // true for page up/down
-}
-
-// Async operation messages.
-type aiSuggestionMsg struct {
-	err           error
-	transactionID string
-	rankings      model.CategoryRankings
-}
-
-type searchResultsMsg struct {
-	query   string
-	results []SearchResult
-}
-
-// State transition messages.
-type switchViewMsg struct {
-	view View
-}
-
-type undoRequestMsg struct{}
-
-type exportRequestMsg struct {
-	format ExportFormat
-}
+// UI interaction messages - removed unused types
 
 // Error handling.
 type errorMsg struct {
-	err     error
-	context string
+	err error
 }
 
-// Direction type for navigation.
-type Direction int
-
-const (
-	DirectionUp Direction = iota
-	DirectionDown
-	DirectionLeft
-	DirectionRight
-	DirectionPageUp
-	DirectionPageDown
-	DirectionHome
-	DirectionEnd
-)
-
-// SearchResult represents a search match.
-type SearchResult struct {
-	TransactionID string
-	MerchantName  string
-	Date          string
-	MatchType     string
-	Amount        float64
-	Score         float64
+// notificationMsg displays a notification to the user.
+type notificationMsg struct {
+	content     string
+	messageType string // "info", "success", "error"
 }
 
-// ExportFormat represents available export formats.
-type ExportFormat string
-
-const (
-	ExportFormatCSV   ExportFormat = "csv"
-	ExportFormatJSON  ExportFormat = "json"
-	ExportFormatExcel ExportFormat = "xlsx"
-)
+// Removed unused types: Direction, SearchResult, ExportFormat

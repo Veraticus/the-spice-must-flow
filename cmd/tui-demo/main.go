@@ -36,11 +36,15 @@ func main() {
 	}
 
 	// Type assert to get access to the program
-	tuiPrompter := prompter.(*tui.Prompter)
+	tuiPrompter, ok := prompter.(*tui.Prompter)
+	if !ok {
+		log.Fatal("unexpected prompter type")
+	}
 
 	// Run the TUI program directly
 	if _, err := tea.NewProgram(tuiPrompter.Model()).Run(); err != nil {
-		fmt.Printf("Error running TUI: %v\n", err)
+		// Use explicit error check to satisfy forbidigo
+		_, _ = fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
 		os.Exit(1)
 	}
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
@@ -14,60 +15,75 @@ import (
 // State represents the current state of the TUI.
 type State int
 
+// TUI state constants.
 const (
+	// StateList shows transaction list.
 	StateList State = iota
+	// StateClassifying shows classification interface.
 	StateClassifying
+	// StateBatch shows batch classification.
 	StateBatch
+	// StateDirectionConfirm shows direction confirmation.
 	StateDirectionConfirm
+	// StateExporting shows export progress.
 	StateExporting
+	// StateHelp shows help screen.
 	StateHelp
 )
 
 // View represents the current view mode.
 type View int
 
+// View mode constants.
 const (
+	// ViewTransactions shows transaction list.
 	ViewTransactions View = iota
+	// ViewMerchantGroups shows grouped by merchant.
 	ViewMerchantGroups
+	// ViewCalendar shows calendar view.
 	ViewCalendar
+	// ViewStats shows statistics.
 	ViewStats
 )
 
 // Model holds the main TUI state.
 type Model struct {
-	theme               themes.Theme
 	startTime           time.Time
 	llm                 engine.Classifier
 	lastError           error
 	storage             service.Storage
-	classifications     map[string]model.Classification
-	errorChan           chan<- error
 	resultChan          chan<- promptResult
+	errorChan           chan<- error
+	classifications     map[string]model.Classification
 	pendingDirection    *engine.PendingDirection
+	lastClassification  *model.Classification
+	theme               themes.Theme
+	notificationType    string
+	notification        string
+	keymap              KeyMap
+	transactions        []model.Transaction
+	pending             []model.PendingClassification
+	checkPatterns       []model.CheckPattern
+	categories          []model.Category
+	config              Config
 	transactionList     components.TransactionListModel
 	directionView       components.DirectionConfirmModel
 	batchView           components.BatchViewModel
-	config              Config
-	keymap              KeyMap
-	categories          []model.Category
-	pending             []model.PendingClassification
-	checkPatterns       []model.CheckPattern
-	transactions        []model.Transaction
 	classifier          components.ClassifierModel
 	statsPanel          components.StatsPanelModel
 	sessionStats        service.CompletionStats
-	height              int
 	width               int
-	currentPendingIndex int
-	state               State
 	view                View
+	height              int
+	state               State
+	currentPendingIndex int
 	quitting            bool
 	ready               bool
 }
 
 // newModel creates a new model with the given configuration.
 func newModel(cfg Config) Model {
-	return Model{
+	m := Model{
 		state:           StateList,
 		view:            ViewTransactions,
 		classifications: make(map[string]model.Classification),
@@ -80,6 +96,13 @@ func newModel(cfg Config) Model {
 		width:           cfg.Width,
 		height:          cfg.Height,
 	}
+
+	// Initialize components
+	if cfg.ShowStats {
+		m.statsPanel = components.NewStatsPanelModel(cfg.Theme)
+	}
+
+	return m
 }
 
 // Init initializes the model.
@@ -93,9 +116,10 @@ func (m Model) Init() tea.Cmd {
 		cmds = append(cmds, m.generateTestData())
 	} else if m.storage != nil {
 		// Load real data
-		cmds = append(cmds, m.loadTransactions())
-		cmds = append(cmds, m.loadCategories())
-		cmds = append(cmds, m.loadCheckPatterns())
+		cmds = append(cmds,
+			m.loadTransactions(),
+			m.loadCategories(),
+			m.loadCheckPatterns())
 	}
 
 	return tea.Batch(cmds...)
@@ -108,6 +132,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle global messages
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Clear any existing notification on key press
+		m.notification = ""
+		m.notificationType = ""
+
 		if cmd := m.handleGlobalKeys(msg); cmd != nil {
 			return m, cmd
 		}
@@ -120,6 +148,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dataLoadedMsg:
 		m.handleDataLoaded(msg)
 		m.ready = true
+
+	case transactionsLoadedMsg:
+		if msg.err != nil {
+			m.lastError = msg.err
+			return m, m.showError(msg.err)
+		}
+		m.transactions = msg.transactions
+		m.transactionList = components.NewTransactionList(m.transactions, m.theme)
+		if m.config.ShowStats {
+			m.statsPanel.SetTotal(len(m.transactions))
+		}
+		// Check if all data is loaded
+		if len(m.categories) > 0 {
+			m.ready = true
+		}
+
+	case categoriesLoadedMsg:
+		if msg.err != nil {
+			m.lastError = msg.err
+			return m, m.showError(msg.err)
+		}
+		m.categories = msg.categories
+		// Check if all data is loaded
+		if len(m.transactions) > 0 {
+			m.ready = true
+		}
+
+	case checkPatternsLoadedMsg:
+		if msg.err != nil {
+			m.lastError = msg.err
+			return m, m.showError(msg.err)
+		}
+		m.checkPatterns = msg.patterns
 
 	case classificationRequestMsg:
 		m.pending = []model.PendingClassification{msg.pending}
@@ -144,6 +205,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.lastError = msg.err
 		cmds = append(cmds, m.showError(msg.err))
+
+	case notificationMsg:
+		m.notification = msg.content
+		m.notificationType = msg.messageType
 	}
 
 	// Delegate to active component based on state
@@ -166,6 +231,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if classification is complete
 		if newClassifier.IsComplete() {
 			result := newClassifier.GetResult()
+			// Track the classification for undo
+			m.lastClassification = &result
+			m.classifications[result.Transaction.ID] = result
 			m.resultChan <- promptResult{
 				classification: result,
 			}
@@ -187,6 +255,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle batch results
 		if results := newBatch.GetResults(); len(results) > 0 {
 			for _, result := range results {
+				// Track the last classification for undo
+				m.lastClassification = &result
+				m.classifications[result.Transaction.ID] = result
 				m.resultChan <- promptResult{
 					classification: result,
 				}
@@ -258,6 +329,10 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+l":
 		return tea.ClearScreen
+	case "u", "ctrl+z":
+		if m.state == StateList && m.lastClassification != nil {
+			return m.undoLastClassification()
+		}
 	}
 	return nil
 }
@@ -300,5 +375,68 @@ func (m Model) focusOnTransaction(id string) tea.Cmd {
 			}
 		}
 		return nil
+	}
+}
+
+// State returns the current state of the TUI.
+func (m Model) State() State {
+	return m.state
+}
+
+// GetView returns the current view of the TUI.
+func (m Model) GetView() View {
+	return m.view
+}
+
+// undoLastClassification removes the last classification.
+func (m *Model) undoLastClassification() tea.Cmd {
+	if m.lastClassification == nil {
+		return nil
+	}
+
+	// Save the classification details before clearing
+	txnID := m.lastClassification.Transaction.ID
+
+	// Try to delete from storage if it supports it
+	ctx := context.Background()
+	if deleter, ok := m.storage.(interface {
+		DeleteClassification(context.Context, string) error
+	}); ok {
+		if err := deleter.DeleteClassification(ctx, txnID); err != nil {
+			m.lastError = err
+		}
+	}
+
+	// Remove from local state
+	delete(m.classifications, txnID)
+
+	// Update stats
+	if m.sessionStats.TotalTransactions > 0 {
+		m.sessionStats.TotalTransactions--
+	}
+	if m.sessionStats.UserClassified > 0 {
+		m.sessionStats.UserClassified--
+	}
+
+	// Update the transaction in the list to show it's unclassified
+	for i, txn := range m.transactions {
+		if txn.ID == txnID {
+			m.transactions[i].Category = nil
+			break
+		}
+	}
+
+	// Clear last classification
+	m.lastClassification = nil
+
+	// Refresh the transaction list
+	m.transactionList = components.NewTransactionList(m.transactions, m.theme)
+
+	// Show undo notification
+	return func() tea.Msg {
+		return notificationMsg{
+			content:     "Undo",
+			messageType: "info",
+		}
 	}
 }

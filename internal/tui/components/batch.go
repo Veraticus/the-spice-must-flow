@@ -1,3 +1,4 @@
+// Package components provides reusable UI components for the TUI.
 package components
 
 import (
@@ -30,19 +31,28 @@ type BatchViewModel struct {
 // BatchMode represents the current batch mode.
 type BatchMode int
 
+// Batch mode constants.
 const (
+	// BatchModeReview shows transactions to review.
 	BatchModeReview BatchMode = iota
+	// BatchModeApply applies actions to transactions.
 	BatchModeApply
+	// BatchModeConfirm confirms batch operations.
 	BatchModeConfirm
 )
 
 // BatchAction represents an action to apply to a batch.
 type BatchAction int
 
+// Batch action constants.
 const (
+	// BatchActionAcceptAll accepts all suggestions.
 	BatchActionAcceptAll BatchAction = iota
+	// BatchActionSkipAll skips all transactions.
 	BatchActionSkipAll
+	// BatchActionReviewEach reviews each transaction.
 	BatchActionReviewEach
+	// BatchActionApplyCategory applies a category.
 	BatchActionApplyCategory
 )
 
@@ -230,7 +240,7 @@ func (m BatchViewModel) renderReviewMode() string {
 
 // renderGroups renders transaction groups.
 func (m BatchViewModel) renderGroups() string {
-	var lines []string
+	lines := make([]string, 0, len(m.groups))
 
 	for i, group := range m.groups {
 		prefix := "  "
@@ -263,7 +273,8 @@ func (m BatchViewModel) renderGroups() string {
 
 // renderTransactionList renders individual transactions.
 func (m BatchViewModel) renderTransactionList() string {
-	var lines []string
+	// Pre-allocate for up to 10 visible items
+	lines := make([]string, 0, 10)
 
 	start := max(0, m.cursor-5)
 	end := min(len(m.pending), start+10)
@@ -479,7 +490,7 @@ func groupPendingTransactions(pending []model.PendingClassification) []BatchGrou
 		groupMap[key] = append(groupMap[key], p)
 	}
 
-	var groups []BatchGroup
+	groups := make([]BatchGroup, 0, len(groupMap))
 	for key, transactions := range groupMap {
 		// Calculate group confidence as average
 		var totalConf float64

@@ -9,7 +9,6 @@ import (
 	"github.com/Veraticus/the-spice-must-flow/internal/tui/themes"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -17,29 +16,25 @@ import (
 // TransactionListModel manages the transaction list view.
 type TransactionListModel struct {
 	theme        themes.Theme
-	filter       FilterConfig
 	selected     map[string]bool
 	search       string
 	lastKey      string
 	filtered     []model.Transaction
-	groups       []TransactionGroup
 	sort         SortConfig
 	transactions []model.Transaction
 	searchInput  textinput.Model
-	viewport     viewport.Model
 	table        table.Model
 	visualStart  int
 	mode         ListMode
 	width        int
 	height       int
 	cursor       int
-	focused      bool
-	groupMode    bool
 }
 
 // ListMode represents the current mode of the list.
 type ListMode int
 
+// List modes.
 const (
 	ModeNormal ListMode = iota
 	ModeVisual
@@ -389,7 +384,7 @@ func (m TransactionListModel) renderFooter() string {
 
 // buildTableRows builds rows for the table.
 func (m TransactionListModel) buildTableRows() []table.Row {
-	var rows []table.Row
+	rows := make([]table.Row, 0, len(m.filtered))
 
 	for _, txn := range m.filtered {
 		date := txn.Date.Format("2006-01-02")
@@ -519,23 +514,11 @@ func (m *TransactionListModel) updateColumnWidths() {
 }
 
 // Helper to truncate strings.
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
 		return s
 	}
-	return s[:max-3] + "..."
+	return s[:maxLen-3] + "..."
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
+// Removed minInt and maxInt - using built-in min/max functions

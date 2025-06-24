@@ -1,9 +1,11 @@
+// Package tui provides a terminal user interface for transaction classification.
 package tui
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
@@ -111,7 +113,6 @@ func (m Model) generateTestData() tea.Cmd {
 
 // generateTestTransactions creates realistic test transactions.
 func generateTestTransactions(count int) []model.Transaction {
-	rand.Seed(time.Now().UnixNano())
 
 	merchants := []struct {
 		name     string
@@ -141,26 +142,44 @@ func generateTestTransactions(count int) []model.Transaction {
 	baseDate := time.Now()
 
 	for i := 0; i < count; i++ {
-		merchant := merchants[rand.Intn(len(merchants))]
-		amount := merchant.minAmt + rand.Float64()*(merchant.maxAmt-merchant.minAmt)
+		merchantIdx, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(int64(len(merchants))))
+		merchant := merchants[merchantIdx.Int64()]
+
+		// Generate random amount between min and max
+		var amount float64
+		if merchant.minAmt == merchant.maxAmt {
+			// Fixed price (like subscriptions)
+			amount = merchant.minAmt
+		} else {
+			// Random amount in range
+			rangeBig := big.NewInt(int64((merchant.maxAmt - merchant.minAmt) * 100))
+			randomOffset, _ := crypto_rand.Int(crypto_rand.Reader, rangeBig)
+			amount = merchant.minAmt + float64(randomOffset.Int64())/100.0
+		}
 
 		// Add some variation to merchant names
 		merchantName := merchant.name
-		if rand.Float64() < 0.3 {
-			merchantName = fmt.Sprintf("%s #%04d", merchant.name, rand.Intn(9999))
+		variationChance, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(10))
+		if variationChance.Int64() < 3 { // 30% chance
+			variation, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(9999))
+			merchantName = fmt.Sprintf("%s #%04d", merchant.name, variation.Int64())
 		}
 
 		// Determine transaction type
 		txnType := "debit"
-		if rand.Float64() < 0.1 {
+		typeChance, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(10))
+		if typeChance.Int64() < 1 { // 10% chance
 			txnType = "credit"
 		}
 
 		// Most transactions are expenses
 		direction := model.DirectionExpense
-		if rand.Float64() < 0.05 {
+		dirChance, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(20))
+		if dirChance.Int64() < 1 { // 5% chance
 			direction = model.DirectionIncome
-			amount = rand.Float64() * 5000 // Random income
+			// Random income between 0 and 5000
+			incomeAmount, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(500000))
+			amount = float64(incomeAmount.Int64()) / 100.0
 		}
 
 		transaction := model.Transaction{
@@ -176,7 +195,8 @@ func generateTestTransactions(count int) []model.Transaction {
 		}
 
 		// Some transactions already classified
-		if rand.Float64() < 0.3 {
+		classifiedChance, _ := crypto_rand.Int(crypto_rand.Reader, big.NewInt(10))
+		if classifiedChance.Int64() < 3 { // 30% chance
 			// Add category to the Category slice
 			transaction.Category = []string{merchant.category}
 		}
@@ -212,7 +232,7 @@ func generateTestCategories() []model.Category {
 		"Other",
 	}
 
-	var categories []model.Category
+	categories := make([]model.Category, 0, len(categoryNames))
 	for i, name := range categoryNames {
 		categories = append(categories, model.Category{
 			ID:          i + 1,

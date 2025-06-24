@@ -170,7 +170,8 @@ func (m DirectionConfirmModel) renderOptions() string {
 		{model.DirectionTransfer, "Moving between your accounts", "🔄"},
 	}
 
-	var lines []string
+	// Pre-allocate for 3 options
+	lines := make([]string, 0, len(options))
 	for i, opt := range options {
 		prefix := fmt.Sprintf("[%d] ", i+1)
 		if i == m.cursor {

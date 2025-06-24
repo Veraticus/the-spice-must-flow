@@ -345,9 +345,10 @@ func (w *Writer) writeSummarySheet(ctx context.Context, spreadsheetID string, su
 		values = append(values, []any{cat.name, cat.count, cat.amount})
 	}
 
-	values = append(values, []any{}) // Empty row
-	values = append(values, []any{"Expenses by Category"})
-	values = append(values, []any{"Category", "Count", "Amount"})
+	values = append(values,
+		[]any{}, // Empty row
+		[]any{"Expenses by Category"},
+		[]any{"Category", "Count", "Amount"})
 
 	// Add expense categories
 	expenseCategories := sortCategoriesByAmount(summary.ExpensesByCategory)
@@ -404,8 +405,9 @@ func (w *Writer) writeTransactionSheet(ctx context.Context, spreadsheetID, sheet
 		for _, c := range classifications {
 			total += c.Transaction.Amount
 		}
-		values = append(values, []any{})
-		values = append(values, []any{"Total", "", "", "", total})
+		values = append(values,
+			[]any{},
+			[]any{"Total", "", "", "", total})
 	}
 
 	// Clear and write to sheet

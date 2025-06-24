@@ -297,7 +297,8 @@ func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (
 	}
 
 	var response openAIResponse
-	if err := json.Unmarshal(body, &response); err != nil {
+	err = json.Unmarshal(body, &response)
+	if err != nil {
 		return DescriptionResponse{}, fmt.Errorf("failed to parse response: %w", err)
 	}
 

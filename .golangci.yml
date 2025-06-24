@@ -141,3 +141,17 @@ linters:
       # Try matching literal source code
       analyze-types: false
 
+issues:
+  # Allow nolint directives
+  exclude-use-default: false
+  exclude-dirs:
+    - vendor
+    - internal/mocks
+    - testdata
+  
+  # Maximum issues count per one linter. Set to 0 to disable. Default is 50.
+  max-issues-per-linter: 50
+
+  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
+  max-same-issues: 0
+

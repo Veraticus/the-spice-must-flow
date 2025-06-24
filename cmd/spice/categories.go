@@ -218,10 +218,10 @@ Examples:
 					categoryTypeStr = "income"
 				}
 
-				fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Created %d %s categor%s:",
+				fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Created %d %s categor%s:", //nolint:forbidigo
 					len(createdCategories),
 					categoryTypeStr,
-					map[bool]string{true: "y", false: "ies"}[len(createdCategories) == 1]))) //nolint:forbidigo // User-facing output
+					map[bool]string{true: "y", false: "ies"}[len(createdCategories) == 1])))
 
 				for _, cat := range createdCategories {
 					fmt.Printf("  • %s (ID: %d)", cat.Name, cat.ID) //nolint:forbidigo // User-facing output
@@ -233,7 +233,7 @@ Examples:
 			}
 
 			if len(skippedCategories) > 0 {
-				fmt.Printf("\n%s Skipped %d existing categor%s: %s\n",
+				fmt.Printf("\n%s Skipped %d existing categor%s: %s\n", //nolint:forbidigo
 					cli.InfoIcon,
 					len(skippedCategories),
 					map[bool]string{true: "y", false: "ies"}[len(skippedCategories) == 1],
@@ -419,7 +419,7 @@ Examples:
 
 			// Confirm deletion
 			if !force {
-				fmt.Printf("\n%s About to delete %d categor%s:\n", cli.WarningIcon,
+				fmt.Printf("\n%s About to delete %d categor%s:\n", cli.WarningIcon, //nolint:forbidigo
 					len(categoriesToDelete),
 					map[bool]string{true: "y", false: "ies"}[len(categoriesToDelete) == 1]) //nolint:forbidigo // User-facing output
 
@@ -427,7 +427,7 @@ Examples:
 					fmt.Printf("  • %s (ID: %d)\n", cat.Name, cat.ID) //nolint:forbidigo // User-facing output
 				}
 
-				fmt.Printf("\nAre you sure you want to delete %s? (y/N): ",
+				fmt.Printf("\nAre you sure you want to delete %s? (y/N): ", //nolint:forbidigo
 					map[bool]string{true: "this category", false: "these categories"}[len(categoriesToDelete) == 1]) //nolint:forbidigo // User prompt
 
 				var response string
@@ -457,9 +457,9 @@ Examples:
 
 			// Report results
 			if len(deletedCategories) > 0 {
-				fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Deleted %d categor%s:",
+				fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Deleted %d categor%s:", //nolint:forbidigo
 					len(deletedCategories),
-					map[bool]string{true: "y", false: "ies"}[len(deletedCategories) == 1]))) //nolint:forbidigo // User-facing output
+					map[bool]string{true: "y", false: "ies"}[len(deletedCategories) == 1])))
 
 				for _, cat := range deletedCategories {
 					fmt.Printf("  • %s (ID: %d)\n", cat.Name, cat.ID) //nolint:forbidigo // User-facing output
@@ -467,9 +467,9 @@ Examples:
 			}
 
 			if len(failedDeletions) > 0 {
-				fmt.Printf("\n%s Failed to delete %d categor%s:\n", cli.ErrorIcon,
+				fmt.Printf("\n%s Failed to delete %d categor%s:\n", cli.ErrorIcon, //nolint:forbidigo
 					len(failedDeletions),
-					map[bool]string{true: "y", false: "ies"}[len(failedDeletions) == 1]) //nolint:forbidigo // User-facing output
+					map[bool]string{true: "y", false: "ies"}[len(failedDeletions) == 1])
 
 				for _, failure := range failedDeletions {
 					fmt.Printf("  • %s\n", failure) //nolint:forbidigo // User-facing output

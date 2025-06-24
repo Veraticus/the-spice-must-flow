@@ -196,10 +196,7 @@ func TestDirectionDisplay(t *testing.T) {
 }
 
 // MockReader simulates user input for testing.
-type MockReader struct {
-	input string
-	read  bool
-}
+type MockReader struct{}
 
 func NewMockReader(input string) *NonBlockingReader {
 	// Create a reader that returns the input string

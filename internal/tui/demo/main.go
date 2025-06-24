@@ -26,8 +26,9 @@ func main() {
 		log.Fatal("Unexpected prompter type")
 	}
 
-	fmt.Println("Starting TUI demo with test data...")
-	fmt.Println("Use arrow keys to navigate, Enter to classify, ? for help, q to quit")
+	// Demo messages are printed to stdout intentionally for user guidance
+	fmt.Println("Starting TUI demo with test data...")                                  //nolint:forbidigo // Demo messages for user guidance
+	fmt.Println("Use arrow keys to navigate, Enter to classify, ? for help, q to quit") //nolint:forbidigo // Demo messages for user guidance
 
 	// Run the TUI
 	if err := tuiPrompter.Start(); err != nil {

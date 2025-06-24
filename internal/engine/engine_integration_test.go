@@ -734,7 +734,7 @@ type trackingDirectionPrompter struct {
 	directionPromptCalls map[string]model.TransactionDirection
 }
 
-func (t *trackingDirectionPrompter) ConfirmTransactionDirection(ctx context.Context, pending PendingDirection) (model.TransactionDirection, error) {
+func (t *trackingDirectionPrompter) ConfirmTransactionDirection(_ context.Context, pending PendingDirection) (model.TransactionDirection, error) {
 	// Track the call
 	t.directionPromptCalls[pending.MerchantName] = pending.SuggestedDirection
 

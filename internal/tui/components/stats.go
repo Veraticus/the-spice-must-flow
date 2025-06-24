@@ -164,7 +164,8 @@ func (m StatsPanelModel) renderBreakdown() string {
 		{style: m.theme.StatusInfo, label: "New categories", count: m.newCategories},
 	}
 
-	var lines []string
+	// Pre-allocate for up to 4 items
+	lines := make([]string, 0, 4)
 	for _, item := range items {
 		if item.count > 0 {
 			line := fmt.Sprintf("%-15s %s",
@@ -196,7 +197,7 @@ func (m StatsPanelModel) renderCategoryDistribution() string {
 		count int
 	}
 
-	var stats []catStat
+	stats := make([]catStat, 0, len(m.categoryStats))
 	for cat, count := range m.categoryStats {
 		stats = append(stats, catStat{cat, count})
 	}
@@ -211,7 +212,7 @@ func (m StatsPanelModel) renderCategoryDistribution() string {
 	}
 
 	// Render top 5
-	var lines []string
+	lines := make([]string, 0, 5)
 	maxCount := stats[0].count
 	for i, stat := range stats[:min(5, len(stats))] {
 		icon := themes.GetCategoryIcon(stat.name)

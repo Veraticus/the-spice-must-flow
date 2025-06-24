@@ -59,6 +59,8 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 			// Use filepath.Walk to find all matching files recursively
 			walkErr := filepath.Walk(pattern, func(path string, info os.FileInfo, err error) error {
 				if err != nil {
+					// Log the error but continue walking
+					slog.Warn("Error accessing file", "path", path, "error", err)
 					return nil // Skip files we can't read
 				}
 				if !info.IsDir() {

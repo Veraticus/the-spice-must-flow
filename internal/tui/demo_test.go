@@ -31,7 +31,8 @@ func TestTUIDemo(t *testing.T) {
 	require.NoError(t, err)
 
 	// Cast to get access to internal methods
-	_ = prompter.(*tui.Prompter)
+	_, ok := prompter.(*tui.Prompter)
+	require.True(t, ok, "expected *tui.Prompter type")
 
 	// Skip the interactive test - it requires a TTY
 	t.Skip("Skipping interactive TUI test - requires TTY")

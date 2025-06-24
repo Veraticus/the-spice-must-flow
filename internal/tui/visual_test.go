@@ -78,7 +78,7 @@ func TestVisualOutput(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			// Setup test
 			m.state = tt.state
 			m.width = tt.width
@@ -92,10 +92,11 @@ func TestVisualOutput(t *testing.T) {
 			output := m.View()
 
 			// Log output for manual inspection
-			fmt.Printf("\n=== %s ===\n", tt.name)
-			fmt.Printf("Size: %dx%d\n", tt.width, tt.height)
-			fmt.Printf("%s\n", output)
-			fmt.Println(strings.Repeat("=", 60))
+			// Visual test output is intentionally printed for manual inspection
+			_, _ = fmt.Printf("\n=== %s ===\n", tt.name)            //nolint:forbidigo
+			_, _ = fmt.Printf("Size: %dx%d\n", tt.width, tt.height) //nolint:forbidigo
+			_, _ = fmt.Printf("%s\n", output)                       //nolint:forbidigo
+			_, _ = fmt.Println(strings.Repeat("=", 60))             //nolint:forbidigo // Visual test output
 		})
 	}
 }
@@ -104,7 +105,7 @@ func TestVisualOutput(t *testing.T) {
 func TestComponentViews(t *testing.T) {
 	theme := themes.Default
 
-	t.Run("transaction_list", func(t *testing.T) {
+	t.Run("transaction_list", func(_ *testing.T) {
 		transactions := generateTestTransactions(20)
 		list := components.NewTransactionList(transactions, theme)
 		list.Resize(80, 30)
@@ -114,10 +115,10 @@ func TestComponentViews(t *testing.T) {
 		list.Update(tea.KeyMsg{Type: tea.KeyDown})
 
 		output := list.View()
-		fmt.Printf("\n=== Transaction List ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Transaction List ===\n%s\n", output) //nolint:forbidigo
 	})
 
-	t.Run("classifier", func(t *testing.T) {
+	t.Run("classifier", func(_ *testing.T) {
 		pending := model.PendingClassification{
 			Transaction: model.Transaction{
 				ID:           "test_1",
@@ -141,13 +142,13 @@ func TestComponentViews(t *testing.T) {
 		classifier.Resize(80, 30)
 
 		output := classifier.View()
-		fmt.Printf("\n=== Classifier (Suggestion Mode) ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Classifier (Suggestion Mode) ===\n%s\n", output) //nolint:forbidigo
 
 		// Simulate pressing 'c' to show category picker
 		classifier, _ = classifier.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 
 		output = classifier.View()
-		fmt.Printf("\n=== Classifier (Category Picker) ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Classifier (Category Picker) ===\n%s\n", output) //nolint:forbidigo
 
 		// Simulate scrolling down a few times
 		for i := 0; i < 5; i++ {
@@ -155,16 +156,16 @@ func TestComponentViews(t *testing.T) {
 		}
 
 		output = classifier.View()
-		fmt.Printf("\n=== Classifier (Category Picker - Scrolled) ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Classifier (Category Picker - Scrolled) ===\n%s\n", output) //nolint:forbidigo
 
 		// Simulate typing a category ID number
 		classifier, _ = classifier.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
 
 		output = classifier.View()
-		fmt.Printf("\n=== Classifier (Entering Category ID) ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Classifier (Entering Category ID) ===\n%s\n", output) //nolint:forbidigo
 	})
 
-	t.Run("stats_panel", func(t *testing.T) {
+	t.Run("stats_panel", func(_ *testing.T) {
 		stats := components.NewStatsPanelModel(theme)
 		stats.SetTotal(100)
 		stats.Resize(40, 30)
@@ -181,10 +182,10 @@ func TestComponentViews(t *testing.T) {
 		}
 
 		output := stats.View()
-		fmt.Printf("\n=== Stats Panel ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Stats Panel ===\n%s\n", output) //nolint:forbidigo
 	})
 
-	t.Run("search_mode", func(t *testing.T) {
+	t.Run("search_mode", func(_ *testing.T) {
 		list := components.NewTransactionList(generateTestTransactions(10), theme)
 		list.Resize(80, 30)
 
@@ -192,7 +193,7 @@ func TestComponentViews(t *testing.T) {
 		list.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
 
 		output := list.View()
-		fmt.Printf("\n=== Search Mode ===\n%s\n", output)
+		_, _ = fmt.Printf("\n=== Search Mode ===\n%s\n", output) //nolint:forbidigo
 	})
 }
 
@@ -207,12 +208,12 @@ func TestThemeVariations(t *testing.T) {
 	}
 
 	for _, th := range themes {
-		t.Run(th.name, func(t *testing.T) {
+		t.Run(th.name, func(_ *testing.T) {
 			list := components.NewTransactionList(generateTestTransactions(5), th.theme)
 			list.Resize(80, 20)
 
 			output := list.View()
-			fmt.Printf("\n=== Theme: %s ===\n%s\n", th.name, output)
+			_, _ = fmt.Printf("\n=== Theme: %s ===\n%s\n", th.name, output) //nolint:forbidigo
 		})
 	}
 }

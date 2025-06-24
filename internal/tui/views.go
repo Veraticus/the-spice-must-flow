@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -14,7 +15,7 @@ func (m Model) renderLoading() string {
 	loadingText := m.theme.Title.Render("Loading The Spice Must Flow...")
 
 	spinner := "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-	frame := int(m.sessionStats.TotalTransactions) % len(spinner)
+	frame := m.sessionStats.TotalTransactions % len(spinner)
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -325,7 +326,8 @@ func (m Model) renderHelp() string {
 		},
 	}
 
-	var content []string
+	// Pre-allocate for: 5 section titles + ~20 items + 5 empty lines
+	content := make([]string, 0, 30)
 	for _, section := range sections {
 		sectionTitle := m.theme.Subtitle.Render(section.title)
 		content = append(content, sectionTitle)
@@ -391,16 +393,30 @@ func (m Model) wrapWithBorder(content string) string {
 func (m Model) renderStatusBar() string {
 	var left, center, right string
 
-	// Left: current mode/state
-	switch m.state {
-	case StateList:
-		left = "Browse"
-	case StateClassifying:
-		left = "Classify"
-	case StateBatch:
-		left = "Batch"
-	case StateDirectionConfirm:
-		left = "Direction"
+	// Left: current mode/state or notification
+	if m.notification != "" {
+		// Show notification with appropriate icon
+		icon := ""
+		switch m.notificationType {
+		case "success":
+			icon = "✓ "
+		case "error":
+			icon = "✗ "
+		case "info":
+			icon = "ℹ "
+		}
+		left = icon + m.notification
+	} else {
+		switch m.state {
+		case StateList:
+			left = "Browse"
+		case StateClassifying:
+			left = "Classify"
+		case StateBatch:
+			left = "Batch"
+		case StateDirectionConfirm:
+			left = "Direction"
+		}
 	}
 
 	// Center: progress
@@ -425,6 +441,9 @@ func (m Model) renderStatusBar() string {
 	rightWidth := len(right)
 
 	spacing := totalWidth - leftWidth - centerWidth - rightWidth
+	if spacing < 0 {
+		spacing = 0
+	}
 	leftPad := spacing / 2
 	rightPad := spacing - leftPad
 
@@ -455,7 +474,7 @@ func (m Model) renderMiniProgressBar(width int, progress float64) string {
 }
 
 // showError displays an error message.
-func (m Model) showError(err error) tea.Cmd {
+func (m Model) showError(_ error) tea.Cmd {
 	// This would show a temporary error notification
 	return nil
 }
@@ -465,12 +484,24 @@ func (m *Model) handleDataLoaded(msg dataLoadedMsg) {
 	// Update UI components with loaded data
 	if msg.dataType == "transactions" && len(m.transactions) > 0 {
 		m.transactionList = components.NewTransactionList(m.transactions, m.theme)
-		m.statsPanel.SetTotal(len(m.transactions))
+		if m.config.ShowStats {
+			m.statsPanel.SetTotal(len(m.transactions))
+		}
 	}
 }
 
 // handleTransactionSelection processes transaction selection.
 func (m Model) handleTransactionSelection(msg components.TransactionSelectedMsg) tea.Cmd {
-	// This would trigger classification for the selected transaction
-	return nil
+	// Create a pending classification for the selected transaction
+	pending := model.PendingClassification{
+		Transaction: msg.Transaction,
+	}
+
+	// Return a command that will trigger classification
+	return func() tea.Msg {
+		return classificationRequestMsg{
+			pending: pending,
+			single:  true,
+		}
+	}
 }

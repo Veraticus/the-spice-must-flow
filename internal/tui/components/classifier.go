@@ -43,10 +43,15 @@ type ClassifierModel struct {
 // ClassifierMode represents the current mode.
 type ClassifierMode int
 
+// Classifier mode constants.
 const (
+	// ModeSelectingSuggestion shows AI suggestions.
 	ModeSelectingSuggestion ClassifierMode = iota
+	// ModeEnteringCustom allows custom category entry.
 	ModeEnteringCustom
+	// ModeSelectingCategory shows category list.
 	ModeSelectingCategory
+	// ModeConfirming confirms the selection.
 	ModeConfirming
 )
 
@@ -165,7 +170,7 @@ func (m *ClassifierModel) handleSuggestionMode(msg tea.KeyMsg) tea.Cmd {
 		m.categoryCursor = 0
 		m.categoryOffset = 0
 
-	case "s", "space":
+	case "s", " ":
 		// Skip
 		m.result = &model.Classification{
 			Transaction:  m.transaction,
@@ -339,8 +344,13 @@ func (m ClassifierModel) renderSuggestions() string {
 
 	title := m.theme.Subtitle.Render("Suggested Categories:")
 
-	var suggestions []string
-	for i, ranking := range m.rankings[:min(5, len(m.rankings))] {
+	// Pre-allocate for up to 5 suggestions
+	maxSuggestions := 5
+	if len(m.rankings) < 5 {
+		maxSuggestions = len(m.rankings)
+	}
+	suggestions := make([]string, 0, maxSuggestions)
+	for i, ranking := range m.rankings[:maxSuggestions] {
 		// Build confidence bar
 		confidence := int(ranking.Score * 100)
 		bar := m.renderConfidenceBar(confidence)
@@ -389,11 +399,12 @@ func (m ClassifierModel) renderConfidenceBar(confidence int) string {
 
 	// Color based on confidence
 	var style lipgloss.Style
-	if confidence >= 80 {
+	switch {
+	case confidence >= 80:
 		style = m.theme.StatusSuccess
-	} else if confidence >= 50 {
+	case confidence >= 50:
 		style = m.theme.StatusWarning
-	} else {
+	default:
 		style = m.theme.StatusError
 	}
 

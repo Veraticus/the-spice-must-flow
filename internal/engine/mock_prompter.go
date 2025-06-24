@@ -296,7 +296,7 @@ func (m *MockPrompter) BatchConfirmCallCount() int {
 }
 
 // ConfirmTransactionDirection simulates confirming a transaction direction.
-func (m *MockPrompter) ConfirmTransactionDirection(ctx context.Context, pending PendingDirection) (model.TransactionDirection, error) {
+func (m *MockPrompter) ConfirmTransactionDirection(_ context.Context, pending PendingDirection) (model.TransactionDirection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
