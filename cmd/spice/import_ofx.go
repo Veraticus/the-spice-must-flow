@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/classification"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/ofx"
 	"github.com/spf13/cobra"
@@ -167,6 +168,49 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 			}
 		}()
 
+		// Initialize pattern detector for direction detection
+		detector, err := classification.NewPatternDetector(classification.DefaultPatterns())
+		if err != nil {
+			return fmt.Errorf("failed to initialize pattern detector: %w", err)
+		}
+
+		// Detect direction for each transaction
+		for i := range allTransactions {
+			match, err := detector.Classify(ctx, allTransactions[i])
+			if err != nil {
+				slog.Warn("Failed to detect direction for transaction",
+					"transaction_id", allTransactions[i].ID,
+					"error", err)
+				continue
+			}
+
+			if match != nil && match.Confidence >= 0.75 {
+				// High confidence match - set direction automatically
+				switch match.Type {
+				case classification.PatternTypeIncome:
+					allTransactions[i].Direction = model.DirectionIncome
+				case classification.PatternTypeExpense:
+					allTransactions[i].Direction = model.DirectionExpense
+				case classification.PatternTypeTransfer:
+					allTransactions[i].Direction = model.DirectionTransfer
+				}
+
+				if verbose {
+					slog.Info("Detected transaction direction",
+						"transaction", allTransactions[i].MerchantName,
+						"direction", allTransactions[i].Direction,
+						"confidence", match.Confidence)
+				}
+			} else {
+				// Low confidence or no match - default to expense for negative amounts, income for positive
+				if allTransactions[i].Amount < 0 {
+					allTransactions[i].Direction = model.DirectionExpense
+				} else {
+					allTransactions[i].Direction = model.DirectionIncome
+				}
+			}
+		}
+
 		// Save transactions
 		if err := storageService.SaveTransactions(ctx, allTransactions); err != nil {
 			return fmt.Errorf("failed to save transactions: %w", err)
@@ -187,6 +231,7 @@ func analyzeTransactions(transactions []model.Transaction, verbose bool) {
 	var oldestDate, newestDate time.Time
 	merchantMap := make(map[string]int)
 	accountMap := make(map[string]int)
+	directionMap := make(map[model.TransactionDirection]int)
 	totalAmount := 0.0
 
 	for i, tx := range transactions {
@@ -199,6 +244,7 @@ func analyzeTransactions(transactions []model.Transaction, verbose bool) {
 
 		merchantMap[tx.MerchantName]++
 		accountMap[tx.AccountID]++
+		directionMap[tx.Direction]++
 		totalAmount += tx.Amount
 	}
 
@@ -216,6 +262,25 @@ func analyzeTransactions(transactions []model.Transaction, verbose bool) {
 
 	if _, err := fmt.Fprintf(os.Stdout, "💰 Total amount: $%.2f\n", totalAmount); err != nil {
 		slog.Error("failed to write output", "error", err)
+	}
+
+	// Show direction breakdown
+	if _, err := fmt.Fprintln(os.Stdout, "\n🔄 Transaction directions:"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
+	for direction, count := range directionMap {
+		icon := "❓"
+		switch direction {
+		case model.DirectionIncome:
+			icon = "💵"
+		case model.DirectionExpense:
+			icon = "💸"
+		case model.DirectionTransfer:
+			icon = "🔁"
+		}
+		if _, err := fmt.Fprintf(os.Stdout, "  %s %s: %d transactions\n", icon, direction, count); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 	}
 
 	// Show accounts
@@ -239,7 +304,17 @@ func analyzeTransactions(transactions []model.Transaction, verbose bool) {
 		if i >= 5 {
 			break
 		}
-		if _, err := fmt.Fprintf(os.Stdout, "Date: %s | Amount: $%.2f | Merchant: %s\n",
+		dirIcon := "❓"
+		switch tx.Direction {
+		case model.DirectionIncome:
+			dirIcon = "💵"
+		case model.DirectionExpense:
+			dirIcon = "💸"
+		case model.DirectionTransfer:
+			dirIcon = "🔁"
+		}
+		if _, err := fmt.Fprintf(os.Stdout, "%s Date: %s | Amount: $%.2f | Merchant: %s\n",
+			dirIcon,
 			tx.Date.Format("2006-01-02"),
 			tx.Amount,
 			tx.MerchantName); err != nil {

@@ -47,6 +47,7 @@ func init() {
 	rootCmd.AddCommand(flowCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(institutionsCmd())
+	rootCmd.AddCommand(recategorizeCmd())
 	rootCmd.AddCommand(versionCmd())
 }
 

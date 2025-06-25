@@ -198,6 +198,74 @@ func (t *sqliteTransaction) Migrate(_ context.Context) error {
 	return fmt.Errorf("migrations cannot be run within a transaction")
 }
 
+func (t *sqliteTransaction) GetTransactionsByCategory(ctx context.Context, categoryName string) ([]model.Transaction, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateString(categoryName, "categoryName"); err != nil {
+		return nil, err
+	}
+	return t.storage.getTransactionsByCategoryTx(ctx, t.tx, categoryName)
+}
+
+func (t *sqliteTransaction) GetTransactionsByCategoryID(ctx context.Context, categoryID int) ([]model.Transaction, error) {
+	return t.storage.GetTransactionsByCategoryID(ctx, categoryID)
+}
+
+func (t *sqliteTransaction) UpdateTransactionCategories(ctx context.Context, fromCategory, toCategory string) error {
+	return t.storage.UpdateTransactionCategories(ctx, fromCategory, toCategory)
+}
+
+func (t *sqliteTransaction) UpdateTransactionCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+	return t.storage.UpdateTransactionCategoriesByID(ctx, fromCategoryID, toCategoryID)
+}
+
+func (t *sqliteTransaction) GetTransactionCount(ctx context.Context) (int, error) {
+	return t.storage.GetTransactionCount(ctx)
+}
+
+func (t *sqliteTransaction) GetTransactionCountByCategory(ctx context.Context, categoryName string) (int, error) {
+	return t.storage.GetTransactionCountByCategory(ctx, categoryName)
+}
+
+func (t *sqliteTransaction) GetEarliestTransactionDate(ctx context.Context) (time.Time, error) {
+	return t.storage.GetEarliestTransactionDate(ctx)
+}
+
+func (t *sqliteTransaction) GetLatestTransactionDate(ctx context.Context) (time.Time, error) {
+	return t.storage.GetLatestTransactionDate(ctx)
+}
+
+func (t *sqliteTransaction) GetCategorySummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
+	return t.storage.GetCategorySummary(ctx, start, end)
+}
+
+func (t *sqliteTransaction) GetMerchantSummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
+	return t.storage.GetMerchantSummary(ctx, start, end)
+}
+
+func (t *sqliteTransaction) GetVendorsByCategory(ctx context.Context, categoryName string) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateString(categoryName, "categoryName"); err != nil {
+		return nil, err
+	}
+	return t.storage.getVendorsByCategoryTx(ctx, t.tx, categoryName)
+}
+
+func (t *sqliteTransaction) GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error) {
+	return t.storage.GetVendorsByCategoryID(ctx, categoryID)
+}
+
+func (t *sqliteTransaction) UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error {
+	return t.storage.UpdateVendorCategories(ctx, fromCategory, toCategory)
+}
+
+func (t *sqliteTransaction) UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+	return t.storage.UpdateVendorCategoriesByID(ctx, fromCategoryID, toCategoryID)
+}
+
 func (t *sqliteTransaction) BeginTx(_ context.Context) (service.Transaction, error) {
 	// Nested transactions not supported
 	return nil, fmt.Errorf("nested transactions not supported")

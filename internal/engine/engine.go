@@ -628,7 +628,7 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 		description = fmt.Sprintf("Category for %s related expenses", categoryName)
 		confidence = 0.5
 	}
-	
+
 	// Log low confidence descriptions
 	if confidence < 0.7 {
 		slog.Warn("Low confidence category description generated",

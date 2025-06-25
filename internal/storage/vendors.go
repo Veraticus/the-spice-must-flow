@@ -241,3 +241,144 @@ func (s *SQLiteStorage) WarmVendorCache(ctx context.Context) error {
 	s.cacheExpiry = time.Now().Add(5 * time.Minute)
 	return nil
 }
+
+// GetVendorsByCategory retrieves all vendors for a specific category.
+func (s *SQLiteStorage) GetVendorsByCategory(ctx context.Context, categoryName string) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateString(categoryName, "categoryName"); err != nil {
+		return nil, err
+	}
+	return s.getVendorsByCategoryTx(ctx, s.db, categoryName)
+}
+
+func (s *SQLiteStorage) getVendorsByCategoryTx(ctx context.Context, q queryable, categoryName string) ([]model.Vendor, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT name, category, last_updated, use_count
+		FROM vendors
+		WHERE category = ?
+		ORDER BY name
+	`, categoryName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query vendors by category: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var vendors []model.Vendor
+	for rows.Next() {
+		var vendor model.Vendor
+		err := rows.Scan(
+			&vendor.Name,
+			&vendor.Category,
+			&vendor.LastUpdated,
+			&vendor.UseCount,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan vendor: %w", err)
+		}
+		vendors = append(vendors, vendor)
+	}
+
+	return vendors, rows.Err()
+}
+
+// GetVendorsByCategoryID retrieves all vendors for a specific category ID.
+func (s *SQLiteStorage) GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+
+	// First get the category name from ID
+	var categoryName string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT name FROM categories WHERE id = ?
+	`, categoryID).Scan(&categoryName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("category with ID %d not found", categoryID)
+		}
+		return nil, fmt.Errorf("failed to get category name: %w", err)
+	}
+
+	return s.GetVendorsByCategory(ctx, categoryName)
+}
+
+// UpdateVendorCategories updates all vendors from one category to another.
+func (s *SQLiteStorage) UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if err := validateString(fromCategory, "fromCategory"); err != nil {
+		return err
+	}
+	if err := validateString(toCategory, "toCategory"); err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Verify toCategory exists
+	var exists bool
+	err = tx.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM categories WHERE name = ? AND is_active = 1)
+	`, toCategory).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check category existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("category '%s' does not exist", toCategory)
+	}
+
+	// Update vendors
+	_, err = tx.ExecContext(ctx, `
+		UPDATE vendors 
+		SET category = ?, last_updated = ?
+		WHERE category = ?
+	`, toCategory, time.Now(), fromCategory)
+	if err != nil {
+		return fmt.Errorf("failed to update vendors: %w", err)
+	}
+
+	// Clear cache since we've updated vendors
+	s.cacheMutex.Lock()
+	s.vendorCache = make(map[string]*model.Vendor)
+	s.cacheMutex.Unlock()
+
+	return tx.Commit()
+}
+
+// UpdateVendorCategoriesByID updates all vendors from one category ID to another.
+func (s *SQLiteStorage) UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	// Get category names from IDs
+	var fromCategory, toCategory string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT name FROM categories WHERE id = ?
+	`, fromCategoryID).Scan(&fromCategory)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("category with ID %d not found", fromCategoryID)
+		}
+		return fmt.Errorf("failed to get from category name: %w", err)
+	}
+
+	err = s.db.QueryRowContext(ctx, `
+		SELECT name FROM categories WHERE id = ?
+	`, toCategoryID).Scan(&toCategory)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("category with ID %d not found", toCategoryID)
+		}
+		return fmt.Errorf("failed to get to category name: %w", err)
+	}
+
+	return s.UpdateVendorCategories(ctx, fromCategory, toCategory)
+}

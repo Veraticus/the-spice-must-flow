@@ -14,11 +14,25 @@ type Storage interface {
 	SaveTransactions(ctx context.Context, transactions []model.Transaction) error
 	GetTransactionsToClassify(ctx context.Context, fromDate *time.Time) ([]model.Transaction, error)
 	GetTransactionByID(ctx context.Context, id string) (*model.Transaction, error)
+	GetTransactionsByCategory(ctx context.Context, categoryName string) ([]model.Transaction, error)
+	GetTransactionsByCategoryID(ctx context.Context, categoryID int) ([]model.Transaction, error)
+	UpdateTransactionCategories(ctx context.Context, fromCategory, toCategory string) error
+	UpdateTransactionCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error
+	GetTransactionCount(ctx context.Context) (int, error)
+	GetTransactionCountByCategory(ctx context.Context, categoryName string) (int, error)
+	GetEarliestTransactionDate(ctx context.Context) (time.Time, error)
+	GetLatestTransactionDate(ctx context.Context) (time.Time, error)
+	GetCategorySummary(ctx context.Context, start, end time.Time) (map[string]float64, error)
+	GetMerchantSummary(ctx context.Context, start, end time.Time) (map[string]float64, error)
 
 	// Vendor operations
 	GetVendor(ctx context.Context, merchantName string) (*model.Vendor, error)
 	SaveVendor(ctx context.Context, vendor *model.Vendor) error
 	GetAllVendors(ctx context.Context) ([]model.Vendor, error)
+	GetVendorsByCategory(ctx context.Context, categoryName string) ([]model.Vendor, error)
+	GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error)
+	UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error
+	UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error
 
 	// Classification operations
 	SaveClassification(ctx context.Context, classification *model.Classification) error
