@@ -619,13 +619,22 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 	}
 
 	// Use LLM to generate a proper description for the category
-	description, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
+	description, confidence, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
 	if err != nil {
 		// Fall back to a simple description if LLM fails
 		slog.Warn("Failed to generate category description, using fallback",
 			"category", categoryName,
 			"error", err)
 		description = fmt.Sprintf("Category for %s related expenses", categoryName)
+		confidence = 0.5
+	}
+	
+	// Log low confidence descriptions
+	if confidence < 0.7 {
+		slog.Warn("Low confidence category description generated",
+			"category", categoryName,
+			"confidence", confidence,
+			"description", description)
 	}
 
 	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description)

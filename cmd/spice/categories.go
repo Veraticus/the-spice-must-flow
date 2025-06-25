@@ -178,13 +178,22 @@ Examples:
 					description = categoryDescription
 				} else if !skipDescription && classifier != nil {
 					// Generate unique description for each category
-					description, err = classifier.GenerateCategoryDescription(ctx, categoryName)
+					desc, conf, err := classifier.GenerateCategoryDescription(ctx, categoryName)
 					if err != nil {
 						slog.Warn("Failed to generate category description",
 							"category", categoryName,
 							"error", err)
 						// Continue without description rather than failing
 						description = ""
+					} else {
+						description = desc
+						// Log low confidence descriptions
+						if conf < 0.7 {
+							slog.Warn("Low confidence category description",
+								"category", categoryName,
+								"confidence", conf,
+								"description", desc)
+						}
 					}
 				}
 
@@ -303,11 +312,18 @@ func updateCategoryCmd() *cobra.Command {
 					}()
 				}
 
-				generatedDesc, err := classifier.GenerateCategoryDescription(ctx, name)
+				generatedDesc, conf, err := classifier.GenerateCategoryDescription(ctx, name)
 				if err != nil {
 					return fmt.Errorf("failed to generate category description: %w", err)
 				}
 				description = generatedDesc
+				// Log low confidence descriptions
+				if conf < 0.7 {
+					slog.Warn("Low confidence category description",
+						"category", name,
+						"confidence", conf,
+						"description", generatedDesc)
+				}
 			} else if categoryDescription != "" {
 				description = categoryDescription
 			}

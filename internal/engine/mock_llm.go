@@ -171,9 +171,9 @@ func (m *MockClassifier) Reset() {
 }
 
 // GenerateCategoryDescription generates a mock description for testing.
-func (m *MockClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, error) {
+func (m *MockClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
 	// Generate a simple description based on the category name
-	return fmt.Sprintf("Expenses related to %s and associated services", strings.ToLower(categoryName)), nil
+	return fmt.Sprintf("Expenses related to %s and associated services", strings.ToLower(categoryName)), 0.95, nil
 }
 
 // SuggestCategoryRankings provides deterministic category rankings for testing.

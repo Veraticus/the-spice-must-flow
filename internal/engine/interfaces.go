@@ -12,7 +12,7 @@ type Classifier interface {
 	SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (category string, confidence float64, isNew bool, description string, err error)
 	SuggestCategoryRankings(ctx context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error)
 	BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error)
-	GenerateCategoryDescription(ctx context.Context, categoryName string) (description string, err error)
+	GenerateCategoryDescription(ctx context.Context, categoryName string) (description string, confidence float64, err error)
 }
 
 // Prompter defines the contract for user interaction during classification.
