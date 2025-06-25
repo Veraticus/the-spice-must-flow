@@ -6,18 +6,33 @@ import (
 	"time"
 )
 
+// TransactionDirection indicates whether a transaction is income, expense, or transfer.
+type TransactionDirection string
+
+const (
+	// DirectionIncome represents money coming into an account.
+	DirectionIncome TransactionDirection = "income"
+	// DirectionExpense represents money leaving an account.
+	DirectionExpense TransactionDirection = "expense"
+	// DirectionTransfer represents money moving between accounts.
+	DirectionTransfer TransactionDirection = "transfer"
+)
+
 // Transaction represents a single financial transaction from any source.
 type Transaction struct {
-	Date         time.Time
-	ID           string
-	Name         string
-	MerchantName string
-	AccountID    string
-	Hash         string
-	Type         string
-	CheckNumber  string
-	Category     []string
-	Amount       float64
+	Date           time.Time
+	Type           string
+	Name           string
+	MerchantName   string
+	AccountID      string
+	Hash           string
+	ID             string
+	CheckNumber    string
+	Direction      TransactionDirection
+	RefundCategory string
+	Category       []string
+	Amount         float64
+	IsRefund       bool
 }
 
 // GenerateHash creates a unique hash for duplicate detection.

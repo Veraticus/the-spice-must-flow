@@ -7,6 +7,10 @@ import (
 	"log/slog"
 )
 
+// ExpectedSchemaVersion is the latest schema version that the application expects.
+// If the database cannot be migrated to this version, it's a fatal error.
+const ExpectedSchemaVersion = 9
+
 // Migration represents a database schema migration.
 type Migration struct {
 	Up          func(*sql.Tx) error
@@ -236,6 +240,31 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     9,
+		Description: "Add income/expense tracking fields",
+		Up: func(tx *sql.Tx) error {
+			queries := []string{
+				// Add direction field to transactions
+				`ALTER TABLE transactions ADD COLUMN direction TEXT`,
+				// Add refund tracking fields
+				`ALTER TABLE transactions ADD COLUMN is_refund BOOLEAN DEFAULT 0`,
+				`ALTER TABLE transactions ADD COLUMN refund_category TEXT`,
+				// Add type field to categories
+				`ALTER TABLE categories ADD COLUMN type TEXT`,
+				// Create indexes for new fields
+				`CREATE INDEX idx_transactions_direction ON transactions(direction)`,
+				`CREATE INDEX idx_categories_type ON categories(type)`,
+			}
+
+			for _, query := range queries {
+				if _, err := tx.Exec(query); err != nil {
+					return fmt.Errorf("failed to execute query '%s': %w", query, err)
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // Migrate applies all pending database migrations.
@@ -280,6 +309,17 @@ func (s *SQLiteStorage) Migrate(ctx context.Context) error {
 		slog.Info("Applied migration",
 			"version", migration.Version,
 			"description", migration.Description)
+	}
+
+	// Verify we're at the expected schema version
+	var finalVersion int
+	err = s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&finalVersion)
+	if err != nil {
+		return fmt.Errorf("failed to verify final schema version: %w", err)
+	}
+
+	if finalVersion != ExpectedSchemaVersion {
+		return fmt.Errorf("database schema version mismatch: expected %d, got %d", ExpectedSchemaVersion, finalVersion)
 	}
 
 	return nil
