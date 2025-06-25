@@ -273,16 +273,32 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 			"confidence", confidence,
 			"transaction_count", len(txns))
 
-		classifications := make([]model.Classification, len(txns))
-		for i, txn := range txns {
-			classifications[i] = model.Classification{
-				Transaction:  txn,
-				Category:     category,
-				Status:       model.StatusClassifiedByAI,
-				Confidence:   confidence,
-				ClassifiedAt: time.Now(),
-			}
+		// IMPORTANT: Only auto-classify if the category already exists
+		// Never create new categories without user consent
+		existingCategory, err := e.storage.GetCategoryByName(ctx, category)
+		if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
+			return nil, fmt.Errorf("failed to check category existence: %w", err)
 		}
+		
+		if existingCategory == nil {
+			// Category doesn't exist - treat as new and require manual review
+			slog.Warn("Category suggested by LLM doesn't exist, treating as new",
+				"category", category,
+				"merchant", merchant)
+			isNew = true
+			// Fall through to manual review
+		} else {
+			// Category exists - safe to auto-classify
+			classifications := make([]model.Classification, len(txns))
+			for i, txn := range txns {
+				classifications[i] = model.Classification{
+					Transaction:  txn,
+					Category:     category,
+					Status:       model.StatusClassifiedByAI,
+					Confidence:   confidence,
+					ClassifiedAt: time.Now(),
+				}
+			}
 
 		// Update pattern use counts if check patterns contributed
 		if len(checkPatterns) > 0 {
@@ -297,25 +313,26 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 			}
 		}
 
-		// Save vendor rule for auto-classified transactions
-		vendor := &model.Vendor{
-			Name:        merchant,
-			Category:    category,
-			LastUpdated: time.Now(),
-			UseCount:    len(classifications),
-		}
+			// Save vendor rule for auto-classified transactions
+			vendor := &model.Vendor{
+				Name:        merchant,
+				Category:    category,
+				LastUpdated: time.Now(),
+				UseCount:    len(classifications),
+			}
 
-		if saveErr := e.storage.SaveVendor(ctx, vendor); saveErr != nil {
-			slog.Warn("Failed to save vendor rule for auto-classified transactions",
-				"merchant", merchant,
-				"error", saveErr)
-		} else {
-			slog.Info("Created vendor rule from auto-classification",
-				"merchant", merchant,
-				"category", vendor.Category)
-		}
+			if saveErr := e.storage.SaveVendor(ctx, vendor); saveErr != nil {
+				slog.Warn("Failed to save vendor rule for auto-classified transactions",
+					"merchant", merchant,
+					"error", saveErr)
+			} else {
+				slog.Info("Created vendor rule from auto-classification",
+					"merchant", merchant,
+					"category", vendor.Category)
+			}
 
-		return classifications, nil
+			return classifications, nil
+		}
 	}
 
 	// Check if this is a high-variance merchant
@@ -349,13 +366,9 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	// Save vendor rule if confirmed
 	if len(classifications) > 0 {
-		// Ensure the category exists (in case user created a new one)
+		// Note: We don't auto-create categories here anymore
+		// Categories must be explicitly created by the user
 		category := classifications[0].Category
-		if err := e.ensureCategoryExists(ctx, category, txns); err != nil {
-			slog.Warn("Failed to ensure category exists",
-				"category", category,
-				"error", err)
-		}
 
 		vendor := &model.Vendor{
 			Name:        merchant,
@@ -610,62 +623,12 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 	return e.storage.SaveProgress(ctx, progress)
 }
 
-// ensureCategoryExists checks if a category exists and creates it if necessary.
+// ensureCategoryExists is deprecated - categories should only be created through explicit user action
+// This function is kept for backwards compatibility but just logs a warning
 func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string, txns []model.Transaction) error {
-	// Check if category already exists
-	existingCategory, err := e.storage.GetCategoryByName(ctx, categoryName)
-	if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
-		return fmt.Errorf("failed to check category existence: %w", err)
-	}
-
-	// Category already exists
-	if existingCategory != nil {
-		return nil
-	}
-
-	// Determine category type based on transactions
-	categoryType := e.determineCategoryType(txns)
-
-	// Use LLM to generate a proper description for the category
-	description, confidence, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
-	if err != nil {
-		// Fall back to a simple description if LLM fails
-		slog.Warn("Failed to generate category description, using fallback",
-			"category", categoryName,
-			"error", err)
-
-		// Adjust fallback description based on type
-		switch categoryType {
-		case model.CategoryTypeIncome:
-			description = fmt.Sprintf("Category for %s related income", categoryName)
-		case model.CategoryTypeSystem:
-			description = fmt.Sprintf("Category for %s related transfers", categoryName)
-		default:
-			description = fmt.Sprintf("Category for %s related expenses", categoryName)
-		}
-		confidence = 0.5
-	}
-
-	// Log low confidence descriptions
-	if confidence < 0.7 {
-		slog.Warn("Low confidence category description generated",
-			"category", categoryName,
-			"confidence", confidence,
-			"description", description)
-	}
-
-	// For now, we'll create the category without type since CreateCategory doesn't support it yet
-	// TODO: Update CreateCategory to accept CategoryType
-	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description)
-	if err != nil {
-		return fmt.Errorf("failed to create category: %w", err)
-	}
-
-	slog.Info("Created new category",
-		"category", newCategory.Name,
-		"id", newCategory.ID,
-		"type", categoryType)
-
+	slog.Warn("Attempted to auto-create category - this is no longer supported",
+		"category", categoryName,
+		"transaction_count", len(txns))
 	return nil
 }
 

@@ -32,13 +32,22 @@ Examples:
   # Classify all unclassified transactions
   spice classify
   
+  # Use batch mode for faster processing (5-10x speedup)
+  spice classify --batch
+  
+  # Batch mode - only auto-accept high confidence items
+  spice classify --batch --auto-only
+  
+  # Batch mode with custom auto-accept threshold
+  spice classify --batch --auto-accept-threshold=0.90
+  
+  # Maximum performance batch mode
+  spice classify --batch --auto-only --parallel-workers=10
+  
   # Classify only 2024 transactions
   spice classify --year 2024
   
-  # Classify only January 2024
-  spice classify --month 2024-01
-  
-  # Resume from a previous session
+  # Resume from a previous session (sequential mode only)
   spice classify --resume`,
 		RunE: runClassify,
 	}
@@ -49,11 +58,23 @@ Examples:
 	cmd.Flags().BoolP("resume", "r", false, "Resume from previous session")
 	cmd.Flags().Bool("dry-run", false, "Preview without saving changes")
 
+	// Batch mode flags
+	cmd.Flags().BoolP("batch", "b", false, "Use batch mode for faster processing")
+	cmd.Flags().Float64("auto-accept-threshold", 0.95, "Auto-accept classifications above this confidence (0.0-1.0)")
+	cmd.Flags().Int("batch-size", 20, "Number of merchants to process in each LLM batch")
+	cmd.Flags().Int("parallel-workers", 5, "Number of parallel workers for batch processing")
+	cmd.Flags().Bool("auto-only", false, "Only auto-accept high confidence items, skip manual review")
+
 	// Bind to viper (errors are rare and can be ignored in practice)
 	_ = viper.BindPFlag("classification.year", cmd.Flags().Lookup("year"))
 	_ = viper.BindPFlag("classification.month", cmd.Flags().Lookup("month"))
 	_ = viper.BindPFlag("classification.resume", cmd.Flags().Lookup("resume"))
 	_ = viper.BindPFlag("classification.dry_run", cmd.Flags().Lookup("dry-run"))
+	_ = viper.BindPFlag("classification.batch", cmd.Flags().Lookup("batch"))
+	_ = viper.BindPFlag("classification.auto_accept_threshold", cmd.Flags().Lookup("auto-accept-threshold"))
+	_ = viper.BindPFlag("classification.batch_size", cmd.Flags().Lookup("batch-size"))
+	_ = viper.BindPFlag("classification.parallel_workers", cmd.Flags().Lookup("parallel-workers"))
+	_ = viper.BindPFlag("classification.auto_only", cmd.Flags().Lookup("auto-only"))
 
 	return cmd
 }
@@ -64,6 +85,11 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	month := viper.GetString("classification.month")
 	resume := viper.GetBool("classification.resume")
 	dryRun := viper.GetBool("classification.dry_run")
+	batchMode := viper.GetBool("classification.batch")
+	autoAcceptThreshold := viper.GetFloat64("classification.auto_accept_threshold")
+	batchSize := viper.GetInt("classification.batch_size")
+	parallelWorkers := viper.GetInt("classification.parallel_workers")
+	autoOnly := viper.GetBool("classification.auto_only")
 
 	// Set up interrupt handling
 	interruptHandler := cli.NewInterruptHandler(nil)
@@ -138,33 +164,67 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		// If year is 0 and no month specified, fromDate remains nil (classify everything)
 	}
 
-	// Get transaction count for progress tracking
-	txns, err := db.GetTransactionsToClassify(ctx, fromDate)
-	if err != nil {
-		return fmt.Errorf("failed to count transactions: %w", err)
-	}
-
-	// Set total for progress tracking
-	if cliPrompter, ok := prompter.(*cli.Prompter); ok {
-		cliPrompter.SetTotalTransactions(len(txns))
-	}
-
-	// Run classification
-	if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
-		if err == context.Canceled {
-			// The interrupt handler already printed the message
-			// Just return nil to exit cleanly
-			return nil
+	// Run classification based on mode
+	if batchMode {
+		// Use batch mode for faster processing
+		opts := engine.BatchClassificationOptions{
+			AutoAcceptThreshold: autoAcceptThreshold,
+			BatchSize:           batchSize,
+			ParallelWorkers:     parallelWorkers,
+			SkipManualReview:    autoOnly,
 		}
-		return fmt.Errorf("classification failed: %w", err)
-	}
 
-	// Show completion stats
-	if cliPrompter, ok := prompter.(*cli.Prompter); ok {
-		cliPrompter.ShowCompletion()
+		// Batch mode doesn't support resume
+		if resume {
+			slog.Warn("Resume is not supported in batch mode, processing all transactions")
+		}
+
+		slog.Info("Starting batch classification",
+			"auto_accept_threshold", fmt.Sprintf("%.0f%%", autoAcceptThreshold*100),
+			"batch_size", batchSize,
+			"parallel_workers", parallelWorkers)
+
+		summary, err := classificationEngine.ClassifyTransactionsBatch(ctx, fromDate, opts)
+		if err != nil {
+			if err == context.Canceled {
+				return nil
+			}
+			return fmt.Errorf("batch classification failed: %w", err)
+		}
+
+		// Show batch summary
+		slog.Info(summary.GetDisplay())
+
 	} else {
-		stats := prompter.GetCompletionStats()
-		showCompletionStats(stats)
+		// Traditional sequential mode
+		// Get transaction count for progress tracking
+		txns, err := db.GetTransactionsToClassify(ctx, fromDate)
+		if err != nil {
+			return fmt.Errorf("failed to count transactions: %w", err)
+		}
+
+		// Set total for progress tracking
+		if cliPrompter, ok := prompter.(*cli.Prompter); ok {
+			cliPrompter.SetTotalTransactions(len(txns))
+		}
+
+		// Run classification
+		if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
+			if err == context.Canceled {
+				// The interrupt handler already printed the message
+				// Just return nil to exit cleanly
+				return nil
+			}
+			return fmt.Errorf("classification failed: %w", err)
+		}
+
+		// Show completion stats
+		if cliPrompter, ok := prompter.(*cli.Prompter); ok {
+			cliPrompter.ShowCompletion()
+		} else {
+			stats := prompter.GetCompletionStats()
+			showCompletionStats(stats)
+		}
 	}
 
 	return nil
