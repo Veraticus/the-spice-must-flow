@@ -173,7 +173,7 @@ func (e *ClassificationEngine) processMerchantsParallel(
 	}()
 
 	// Collect results
-	var results []BatchResult
+	results := make([]BatchResult, 0, len(sortedMerchants))
 	for result := range resultsChan {
 		results = append(results, result)
 	}
@@ -191,6 +191,7 @@ func (e *ClassificationEngine) batchWorker(
 	categories []model.Category,
 	opts BatchClassificationOptions,
 ) {
+	_ = workerID // workerID is kept for future debugging/logging purposes
 	batch := make([]string, 0, opts.BatchSize)
 
 	for merchant := range workChan {
@@ -386,6 +387,7 @@ func (e *ClassificationEngine) saveAutoAcceptedBatch(ctx context.Context, result
 
 // handleBatchReview handles the interactive review of uncertain classifications.
 func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsReview []BatchResult, categories []model.Category) error {
+	_ = categories // categories kept for future use when implementing category selection UI
 	// Sort by confidence (lowest first, so most uncertain are reviewed first)
 	sort.Slice(needsReview, func(i, j int) bool {
 		scoreI := float64(0)

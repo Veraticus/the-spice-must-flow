@@ -46,7 +46,7 @@ Examples:
   
   # Force recategorization without confirmation
   spice recategorize --from 2024-01-01 --force`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
 
 			// Validate date inputs
@@ -109,7 +109,7 @@ Examples:
 			if !force {
 				fmt.Printf("\nAre you sure you want to recategorize %d transactions? (y/N): ", len(transactions)) //nolint:forbidigo // User prompt
 				var response string
-				if _, err := fmt.Scanln(&response); err != nil {
+				if _, scanErr := fmt.Scanln(&response); scanErr != nil {
 					response = "n"
 				}
 				if strings.ToLower(response) != "y" {
@@ -209,14 +209,15 @@ Examples:
 func findTransactionsToRecategorize(ctx context.Context, store service.Storage, fromDate, toDate *time.Time, category, merchant string) ([]model.Transaction, error) {
 	var transactions []model.Transaction
 
-	if category != "" {
+	switch {
+	case category != "":
 		// Get transactions by category
 		txns, err := store.GetTransactionsByCategory(ctx, category)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get transactions by category: %w", err)
 		}
 		transactions = txns
-	} else if fromDate != nil || toDate != nil {
+	case fromDate != nil || toDate != nil:
 		// Get transactions by date range
 		// Default to all time if dates not specified
 		start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -239,7 +240,7 @@ func findTransactionsToRecategorize(ctx context.Context, store service.Storage, 
 		for _, c := range classifications {
 			transactions = append(transactions, c.Transaction)
 		}
-	} else {
+	default:
 		// Get all classified transactions
 		start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 		end := time.Now().Add(24 * time.Hour)

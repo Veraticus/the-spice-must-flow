@@ -345,24 +345,24 @@ func (s *SQLiteStorage) Migrate(ctx context.Context) error {
 			continue
 		}
 
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("failed to begin transaction: %w", err)
+		tx, txErr := s.db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return fmt.Errorf("failed to begin transaction: %w", txErr)
 		}
 
-		if err := migration.Up(tx); err != nil {
+		if upErr := migration.Up(tx); upErr != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("migration %d failed: %w", migration.Version, err)
+			return fmt.Errorf("migration %d failed: %w", migration.Version, upErr)
 		}
 
 		// Update version
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", migration.Version)); err != nil {
+		if _, execErr := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", migration.Version)); execErr != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("failed to update schema version: %w", err)
+			return fmt.Errorf("failed to update schema version: %w", execErr)
 		}
 
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("failed to commit migration %d: %w", migration.Version, err)
+		if commitErr := tx.Commit(); commitErr != nil {
+			return fmt.Errorf("failed to commit migration %d: %w", migration.Version, commitErr)
 		}
 
 		slog.Info("Applied migration",

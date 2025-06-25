@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -38,8 +37,8 @@ func TestCategoryReloadAfterCreation(t *testing.T) {
 	}
 
 	for _, cat := range initialCategories {
-		_, err := db.CreateCategory(ctx, cat.name, cat.description)
-		require.NoError(t, err)
+		_, createErr := db.CreateCategory(ctx, cat.name, cat.description)
+		require.NoError(t, createErr)
 	}
 
 	// Create a special classifier that returns new category suggestions
@@ -107,28 +106,31 @@ func TestCategoryReloadAfterCreation(t *testing.T) {
 			"Transaction %s should use the new category", classification.Transaction.ID)
 	}
 
-	// Verify that the classifier saw the new category for the second merchant
-	// The key insight: for the second merchant (VENMO PAYMENT), the classifier should
-	// have received the new category in its category list
-	categoriesForSecondMerchant := classifier.categoriesPassed["VENMO PAYMENT"]
-	assert.NotEmpty(t, categoriesForSecondMerchant, "Classifier should have been called for second merchant")
-
-	foundNewCategory := false
-	for _, cat := range categoriesForSecondMerchant {
-		if cat == "Personal Transfers and Reimbursements" {
-			foundNewCategory = true
-			break
-		}
-	}
-
 	// Debug: print what categories were passed to each merchant
 	t.Logf("Categories for VENMO CASHOUT: %v", classifier.categoriesPassed["VENMO CASHOUT"])
 	t.Logf("Categories for VENMO PAYMENT: %v", classifier.categoriesPassed["VENMO PAYMENT"])
 
-	// This is the bug we're testing for - the new category should be available
-	// for the second merchant, but currently it's not
-	assert.True(t, foundNewCategory,
-		"Second merchant should have seen the new category as an existing option")
+	// Check which merchant was processed first (created the category) and which was second
+	venmoCashoutHasNew := false
+	for _, cat := range classifier.categoriesPassed["VENMO CASHOUT"] {
+		if cat == "Personal Transfers and Reimbursements" {
+			venmoCashoutHasNew = true
+			break
+		}
+	}
+
+	venmoPaymentHasNew := false
+	for _, cat := range classifier.categoriesPassed["VENMO PAYMENT"] {
+		if cat == "Personal Transfers and Reimbursements" {
+			venmoPaymentHasNew = true
+			break
+		}
+	}
+
+	// One of them should have seen the new category as an existing option
+	// The order is non-deterministic due to map iteration, so we check that at least one saw it
+	assert.True(t, venmoCashoutHasNew || venmoPaymentHasNew,
+		"At least one merchant should have seen the new category as an existing option after it was created")
 }
 
 // categoryReloadTestClassifier is a test classifier that tracks what categories
@@ -139,13 +141,13 @@ type categoryReloadTestClassifier struct {
 }
 
 // SuggestCategory implements the Classifier interface.
-func (c *categoryReloadTestClassifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, string, error) {
+func (c *categoryReloadTestClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, string, error) {
 	// Not used in this test
 	return "", 0, false, "", nil
 }
 
 // SuggestCategoryRankings implements the Classifier interface.
-func (c *categoryReloadTestClassifier) SuggestCategoryRankings(ctx context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error) {
+func (c *categoryReloadTestClassifier) SuggestCategoryRankings(_ context.Context, transaction model.Transaction, categories []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
 	// Track what categories were passed for this merchant
 	categoryNames := make([]string, len(categories))
 	for i, cat := range categories {
@@ -162,9 +164,7 @@ func (c *categoryReloadTestClassifier) SuggestCategoryRankings(ctx context.Conte
 		}
 	}
 
-	// Log for debugging
-	fmt.Printf("[TEST] Merchant: %s, Has new category: %v, Categories: %v\n",
-		transaction.MerchantName, hasNewCategory, categoryNames)
+	// Log for debugging (removed fmt.Printf to satisfy linter)
 
 	// Return rankings suggesting the new category
 	rankings := model.CategoryRankings{
@@ -191,13 +191,13 @@ func (c *categoryReloadTestClassifier) SuggestCategoryRankings(ctx context.Conte
 }
 
 // BatchSuggestCategories implements the Classifier interface.
-func (c *categoryReloadTestClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
+func (c *categoryReloadTestClassifier) BatchSuggestCategories(_ context.Context, _ []model.Transaction, _ []string) ([]service.LLMSuggestion, error) {
 	// Not used in this test
 	return nil, nil
 }
 
 // GenerateCategoryDescription implements the Classifier interface.
-func (c *categoryReloadTestClassifier) GenerateCategoryDescription(ctx context.Context, categoryName string) (string, float64, error) {
+func (c *categoryReloadTestClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
 	return "Test description for " + categoryName, 0.95, nil
 }
 
@@ -209,12 +209,12 @@ type categoryReloadTestPrompter struct {
 	sawNewCategoryAsExisting bool
 }
 
-func (p *categoryReloadTestPrompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
+func (p *categoryReloadTestPrompter) ConfirmClassification(_ context.Context, _ model.PendingClassification) (model.Classification, error) {
 	// Should not be called in this test - we're testing batch mode
 	panic("ConfirmClassification should not be called in batch mode")
 }
 
-func (p *categoryReloadTestPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+func (p *categoryReloadTestPrompter) BatchConfirmClassifications(_ context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	if len(pending) == 0 {
 		return []model.Classification{}, nil
 	}

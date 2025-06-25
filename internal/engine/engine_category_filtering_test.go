@@ -39,8 +39,8 @@ func TestCategoryFilteringIssue(t *testing.T) {
 	}
 
 	for _, cat := range initialCategories {
-		created, err := db.CreateCategory(ctx, cat.name, cat.description)
-		require.NoError(t, err)
+		created, createErr := db.CreateCategory(ctx, cat.name, cat.description)
+		require.NoError(t, createErr)
 		t.Logf("Created category: %s (type: %s)", created.Name, created.Type)
 	}
 
@@ -60,7 +60,7 @@ func TestCategoryFilteringIssue(t *testing.T) {
 		Hash:         "hash1",
 		MerchantName: "VENMO PAYMENT",
 		Name:         "VENMO PAYMENT John Doe",
-		Amount:       -50.00, // Negative = income
+		Amount:       -50.00, // Negative amount represents income
 		Date:         time.Now(),
 		Type:         "TRANSFER",
 		AccountID:    "acc1",
@@ -92,11 +92,11 @@ type debuggingClassifier struct {
 	allCategoriesFiltered bool
 }
 
-func (c *debuggingClassifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, string, error) {
+func (c *debuggingClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, string, error) {
 	return "", 0, false, "", nil
 }
 
-func (c *debuggingClassifier) SuggestCategoryRankings(ctx context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error) {
+func (c *debuggingClassifier) SuggestCategoryRankings(_ context.Context, _ model.Transaction, categories []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
 	c.categoriesReceived = categories
 
 	// Check if we got very few categories (likely due to filtering)
@@ -123,18 +123,18 @@ func (c *debuggingClassifier) SuggestCategoryRankings(ctx context.Context, trans
 	}, nil
 }
 
-func (c *debuggingClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
+func (c *debuggingClassifier) BatchSuggestCategories(_ context.Context, _ []model.Transaction, _ []string) ([]service.LLMSuggestion, error) {
 	return nil, nil
 }
 
-func (c *debuggingClassifier) GenerateCategoryDescription(ctx context.Context, categoryName string) (string, float64, error) {
+func (c *debuggingClassifier) GenerateCategoryDescription(_ context.Context, _ string) (string, float64, error) {
 	return "Test description", 0.95, nil
 }
 
 // simpleAcceptPrompter accepts all suggestions.
 type simpleAcceptPrompter struct{}
 
-func (p *simpleAcceptPrompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
+func (p *simpleAcceptPrompter) ConfirmClassification(_ context.Context, pending model.PendingClassification) (model.Classification, error) {
 	return model.Classification{
 		Transaction:  pending.Transaction,
 		Category:     pending.SuggestedCategory,
@@ -144,7 +144,7 @@ func (p *simpleAcceptPrompter) ConfirmClassification(ctx context.Context, pendin
 	}, nil
 }
 
-func (p *simpleAcceptPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+func (p *simpleAcceptPrompter) BatchConfirmClassifications(_ context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	classifications := make([]model.Classification, len(pending))
 	for i, pc := range pending {
 		classifications[i] = model.Classification{

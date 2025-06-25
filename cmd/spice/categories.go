@@ -229,11 +229,11 @@ Examples:
 					description = categoryDescription
 				} else if !skipDescription && classifier != nil {
 					// Generate unique description for each category
-					desc, conf, err := classifier.GenerateCategoryDescription(ctx, categoryName)
-					if err != nil {
+					desc, conf, genErr := classifier.GenerateCategoryDescription(ctx, categoryName)
+					if genErr != nil {
 						slog.Warn("Failed to generate category description",
 							"category", categoryName,
-							"error", err)
+							"error", genErr)
 						// Continue without description rather than failing
 						description = ""
 					} else {

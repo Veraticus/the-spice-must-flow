@@ -189,8 +189,8 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to initialize storage: %w", err)
 		}
 		defer func() {
-			if err := storageService.Close(); err != nil {
-				slog.Error("failed to close storage", "error", err)
+			if closeErr := storageService.Close(); closeErr != nil {
+				slog.Error("failed to close storage", "error", closeErr)
 			}
 		}()
 

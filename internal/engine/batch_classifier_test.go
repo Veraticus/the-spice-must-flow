@@ -56,7 +56,7 @@ func TestBatchResultStructure(t *testing.T) {
 			Score:    0.96,
 			IsNew:    false,
 		},
-		Error:        nil,
+		// Error field is nil for successful classification
 		AutoAccepted: true,
 	}
 

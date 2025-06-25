@@ -37,8 +37,8 @@ func TestCategoryStillMarkedAsNew(t *testing.T) {
 	}
 
 	for _, cat := range initialCategories {
-		_, err := db.CreateCategory(ctx, cat.name, cat.description)
-		require.NoError(t, err)
+		_, createErr := db.CreateCategory(ctx, cat.name, cat.description)
+		require.NoError(t, createErr)
 	}
 
 	// Create a classifier that ALWAYS suggests the same new category
@@ -135,11 +135,11 @@ type alwaysNewCategoryClassifier struct {
 	callCount             int
 }
 
-func (c *alwaysNewCategoryClassifier) SuggestCategory(ctx context.Context, transaction model.Transaction, categories []string) (string, float64, bool, string, error) {
+func (c *alwaysNewCategoryClassifier) SuggestCategory(_ context.Context, _ model.Transaction, _ []string) (string, float64, bool, string, error) {
 	return "", 0, false, "", nil
 }
 
-func (c *alwaysNewCategoryClassifier) SuggestCategoryRankings(ctx context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error) {
+func (c *alwaysNewCategoryClassifier) SuggestCategoryRankings(_ context.Context, _ model.Transaction, categories []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
 	c.callCount++
 
 	// Track what categories we saw
@@ -183,11 +183,11 @@ func (c *alwaysNewCategoryClassifier) SuggestCategoryRankings(ctx context.Contex
 	return rankings, nil
 }
 
-func (c *alwaysNewCategoryClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
+func (c *alwaysNewCategoryClassifier) BatchSuggestCategories(_ context.Context, _ []model.Transaction, _ []string) ([]service.LLMSuggestion, error) {
 	return nil, nil
 }
 
-func (c *alwaysNewCategoryClassifier) GenerateCategoryDescription(ctx context.Context, categoryName string) (string, float64, error) {
+func (c *alwaysNewCategoryClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
 	return "Test description for " + categoryName, 0.95, nil
 }
 
@@ -196,12 +196,12 @@ type trackingSuggestionsPrompter struct {
 	suggestionsReceived []model.PendingClassification
 }
 
-func (p *trackingSuggestionsPrompter) ConfirmClassification(ctx context.Context, pending model.PendingClassification) (model.Classification, error) {
+func (p *trackingSuggestionsPrompter) ConfirmClassification(_ context.Context, _ model.PendingClassification) (model.Classification, error) {
 	// Should not be called in this test - we're testing batch mode
 	panic("ConfirmClassification should not be called in batch mode")
 }
 
-func (p *trackingSuggestionsPrompter) BatchConfirmClassifications(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
+func (p *trackingSuggestionsPrompter) BatchConfirmClassifications(_ context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	// Track what we received
 	p.suggestionsReceived = append(p.suggestionsReceived, pending...)
 

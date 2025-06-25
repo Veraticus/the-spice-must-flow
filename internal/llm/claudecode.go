@@ -117,7 +117,7 @@ func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (Classif
 		return ClassificationResponse{}, fmt.Errorf("empty response from claude code")
 	}
 
-	return c.parseClassification(response.Result)
+	return c.parseClassification(cleanMarkdownWrapper(response.Result))
 }
 
 // parseClassification extracts category and confidence from the response.
@@ -197,6 +197,34 @@ type claudeCodeResponse struct {
 	TotalCost float64 `json:"total_cost_usd"`
 }
 
+// cleanMarkdownWrapper removes markdown code block wrappers from content.
+// Claude Code often wraps JSON responses in ```json ... ``` blocks.
+func cleanMarkdownWrapper(content string) string {
+	content = strings.TrimSpace(content)
+
+	// Check for JSON-specific code blocks first
+	if strings.HasPrefix(content, "```json") && strings.HasSuffix(content, "```") {
+		content = strings.TrimPrefix(content, "```json")
+		content = strings.TrimSuffix(content, "```")
+		return strings.TrimSpace(content)
+	}
+
+	// Check for generic code blocks
+	if strings.HasPrefix(content, "```") && strings.HasSuffix(content, "```") {
+		// Find the end of the first line to skip any language identifier
+		firstNewline := strings.Index(content, "\n")
+		if firstNewline > 0 {
+			content = content[firstNewline+1:]
+		} else {
+			content = strings.TrimPrefix(content, "```")
+		}
+		content = strings.TrimSuffix(content, "```")
+		return strings.TrimSpace(content)
+	}
+
+	return content
+}
+
 // ClassifyWithRankings sends a ranking classification request to Claude Code.
 func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
 	// Build the full prompt with system context
@@ -269,7 +297,9 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 		} `json:"newCategory,omitempty"`
 	}
 
-	if err := json.Unmarshal([]byte(response.Result), &jsonResp); err == nil {
+	cleanedResult := cleanMarkdownWrapper(response.Result)
+
+	if err := json.Unmarshal([]byte(cleanedResult), &jsonResp); err == nil {
 		// Successfully parsed JSON
 		var rankings []CategoryRanking
 		for _, r := range jsonResp.Rankings {
@@ -294,7 +324,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 	}
 
 	// Fallback to text parsing for backward compatibility
-	rankings, err := parseLLMRankings(response.Result)
+	rankings, err := parseLLMRankings(cleanedResult)
 	if err != nil {
 		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
 	}
@@ -357,13 +387,15 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 	}
 
 	// Parse the actual description response from the result
+	cleanedResult := cleanMarkdownWrapper(response.Result)
+
 	var descResp struct {
 		Description string  `json:"description"`
 		Confidence  float64 `json:"confidence"`
 	}
-	if err := json.Unmarshal([]byte(response.Result), &descResp); err != nil {
+	if err := json.Unmarshal([]byte(cleanedResult), &descResp); err != nil {
 		// Fallback: try to parse the old format
-		description, confidence, parseErr := parseDescriptionResponse(response.Result)
+		description, confidence, parseErr := parseDescriptionResponse(cleanedResult)
 		if parseErr != nil {
 			return DescriptionResponse{}, fmt.Errorf("failed to parse description response: %w", err)
 		}

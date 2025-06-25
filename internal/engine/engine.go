@@ -224,10 +224,10 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 	// Load check patterns for CHECK transactions
 	var checkPatterns []model.CheckPattern
 	if representative.Type == "CHECK" {
-		var err error
-		checkPatterns, err = e.storage.GetMatchingCheckPatterns(ctx, representative)
-		if err != nil {
-			slog.Warn("Failed to get check patterns", "error", err)
+		var checkPatternsErr error
+		checkPatterns, checkPatternsErr = e.storage.GetMatchingCheckPatterns(ctx, representative)
+		if checkPatternsErr != nil {
+			slog.Warn("Failed to get check patterns", "error", checkPatternsErr)
 			// Continue without patterns rather than failing
 		}
 	}
@@ -237,10 +237,10 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	var rankings model.CategoryRankings
 	retryErr := common.WithRetry(ctx, func() error {
-		var err error
-		rankings, err = e.classifier.SuggestCategoryRankings(ctx, representative, categoryModels, checkPatterns)
-		if err != nil {
-			return &common.RetryableError{Err: err, Retryable: true}
+		var classifyErr error
+		rankings, classifyErr = e.classifier.SuggestCategoryRankings(ctx, representative, categoryModels, checkPatterns)
+		if classifyErr != nil {
+			return &common.RetryableError{Err: classifyErr, Retryable: true}
 		}
 		return nil
 	}, service.RetryOptions{
@@ -275,9 +275,9 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 		// IMPORTANT: Only auto-classify if the category already exists
 		// Never create new categories without user consent
-		existingCategory, err := e.storage.GetCategoryByName(ctx, category)
-		if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
-			return nil, fmt.Errorf("failed to check category existence: %w", err)
+		existingCategory, categoryCheckErr := e.storage.GetCategoryByName(ctx, category)
+		if categoryCheckErr != nil && !errors.Is(categoryCheckErr, storage.ErrCategoryNotFound) {
+			return nil, fmt.Errorf("failed to check category existence: %w", categoryCheckErr)
 		}
 
 		if existingCategory == nil {
@@ -656,15 +656,6 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 	return e.storage.SaveProgress(ctx, progress)
 }
 
-// ensureCategoryExists is deprecated - categories should only be created through explicit user action
-// This function is kept for backwards compatibility but just logs a warning.
-func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string, txns []model.Transaction) error {
-	slog.Warn("Attempted to auto-create category - this is no longer supported",
-		"category", categoryName,
-		"transaction_count", len(txns))
-	return nil
-}
-
 // filterCategoriesByDirection filters categories based on transaction direction.
 func (e *ClassificationEngine) filterCategoriesByDirection(categories []model.Category, txns []model.Transaction) []model.Category {
 	if len(txns) == 0 {
@@ -745,56 +736,4 @@ func (e *ClassificationEngine) filterCategoriesByDirection(categories []model.Ca
 	}
 
 	return filtered
-}
-
-// determineCategoryType determines the category type based on transaction characteristics.
-func (e *ClassificationEngine) determineCategoryType(txns []model.Transaction) model.CategoryType {
-	if len(txns) == 0 {
-		return model.CategoryTypeExpense // Default to expense
-	}
-
-	// Check explicit direction first
-	var incomeCount, expenseCount, transferCount int
-	for _, txn := range txns {
-		switch txn.Direction {
-		case model.DirectionIncome:
-			incomeCount++
-		case model.DirectionExpense:
-			expenseCount++
-		case model.DirectionTransfer:
-			transferCount++
-		}
-	}
-
-	// If we have a clear majority, use that
-	total := incomeCount + expenseCount + transferCount
-	if total > 0 {
-		if float64(incomeCount)/float64(total) > 0.7 {
-			return model.CategoryTypeIncome
-		}
-		if float64(transferCount)/float64(total) > 0.7 {
-			return model.CategoryTypeSystem
-		}
-		if float64(expenseCount)/float64(total) > 0.7 {
-			return model.CategoryTypeExpense
-		}
-	}
-
-	// Fall back to amount-based heuristic
-	var positiveCount, negativeCount int
-	for _, txn := range txns {
-		if txn.Amount >= 0 {
-			positiveCount++
-		} else {
-			negativeCount++
-		}
-	}
-
-	// Negative amounts typically indicate income (money coming in)
-	if negativeCount > positiveCount {
-		return model.CategoryTypeIncome
-	}
-
-	// Default to expense for positive amounts
-	return model.CategoryTypeExpense
 }

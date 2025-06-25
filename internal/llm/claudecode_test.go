@@ -2,9 +2,12 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewClaudeCodeClient(t *testing.T) {
@@ -192,4 +195,96 @@ CONFIDENCE: <score between 0 and 1>`
 
 	// Log the response for debugging
 	t.Logf("Classification result: Category=%s, Confidence=%f", resp.Category, resp.Confidence)
+}
+
+func TestCleanMarkdownWrapper(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "json code block with newlines",
+			input:    "```json\n{\"key\": \"value\"}\n```",
+			expected: "{\"key\": \"value\"}",
+		},
+		{
+			name:     "json code block without newlines",
+			input:    "```json{\"key\": \"value\"}```",
+			expected: "{\"key\": \"value\"}",
+		},
+		{
+			name:     "generic code block with newlines",
+			input:    "```\n{\"key\": \"value\"}\n```",
+			expected: "{\"key\": \"value\"}",
+		},
+		{
+			name:     "code block with language identifier",
+			input:    "```javascript\nconst x = 1;\n```",
+			expected: "const x = 1;",
+		},
+		{
+			name:     "no code block",
+			input:    "{\"key\": \"value\"}",
+			expected: "{\"key\": \"value\"}",
+		},
+		{
+			name:     "whitespace handling",
+			input:    "  ```json\n  {\"key\": \"value\"}  \n```  ",
+			expected: "{\"key\": \"value\"}",
+		},
+		{
+			name:     "incomplete code block (no closing)",
+			input:    "```json\n{\"key\": \"value\"}",
+			expected: "```json\n{\"key\": \"value\"}",
+		},
+		{
+			name:     "incomplete code block (no opening)",
+			input:    "{\"key\": \"value\"}\n```",
+			expected: "{\"key\": \"value\"}\n```",
+		},
+		{
+			name:     "multiple lines in code block",
+			input:    "```json\n{\n  \"key\": \"value\",\n  \"another\": \"test\"\n}\n```",
+			expected: "{\n  \"key\": \"value\",\n  \"another\": \"test\"\n}",
+		},
+		{
+			name:     "real Claude Code response",
+			input:    "```json\n{\n  \"description\": \"Expenses related to visits, memberships, donations, or purchases at the Santa Barbara Museum of Natural History, including admission fees, gift shop items, and educational programs.\",\n  \"confidence\": 0.95\n}\n```",
+			expected: "{\n  \"description\": \"Expenses related to visits, memberships, donations, or purchases at the Santa Barbara Museum of Natural History, including admission fees, gift shop items, and educational programs.\",\n  \"confidence\": 0.95\n}",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "just backticks",
+			input:    "``````",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cleanMarkdownWrapper(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+
+	// Test JSON parsing after cleaning
+	t.Run("json parsing after cleaning", func(t *testing.T) {
+		input := "```json\n{\"description\": \"Test category\", \"confidence\": 0.85}\n```"
+		cleaned := cleanMarkdownWrapper(input)
+
+		var result struct {
+			Description string  `json:"description"`
+			Confidence  float64 `json:"confidence"`
+		}
+
+		err := json.Unmarshal([]byte(cleaned), &result)
+		assert.NoError(t, err)
+		assert.Equal(t, "Test category", result.Description)
+		assert.Equal(t, 0.85, result.Confidence)
+	})
 }

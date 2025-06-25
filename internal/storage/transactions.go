@@ -46,7 +46,8 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 
 	// Use appropriate columns based on schema version
 	var stmt *sql.Stmt
-	if schemaVersion >= 7 {
+	switch {
+	case schemaVersion >= 7:
 		// Schema with direction field
 		stmt, err = tx.PrepareContext(ctx, `
 			INSERT OR IGNORE INTO transactions (
@@ -54,7 +55,7 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 				categories, account_id, transaction_type, check_number, direction
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
-	} else if schemaVersion >= 5 {
+	case schemaVersion >= 5:
 		// New schema with generic fields
 		stmt, err = tx.PrepareContext(ctx, `
 			INSERT OR IGNORE INTO transactions (
@@ -62,7 +63,7 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 				categories, account_id, transaction_type, check_number
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
-	} else {
+	default:
 		// Old schema
 		stmt, err = tx.PrepareContext(ctx, `
 			INSERT OR IGNORE INTO transactions (
@@ -92,7 +93,8 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 			}
 		}
 
-		if schemaVersion >= 7 {
+		switch {
+		case schemaVersion >= 7:
 			_, err = stmt.ExecContext(ctx,
 				txn.ID,
 				txn.Hash,
@@ -106,7 +108,7 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 				txn.CheckNumber,
 				string(txn.Direction),
 			)
-		} else if schemaVersion >= 5 {
+		case schemaVersion >= 5:
 			_, err = stmt.ExecContext(ctx,
 				txn.ID,
 				txn.Hash,
@@ -119,7 +121,7 @@ func (s *SQLiteStorage) saveTransactionsTx(ctx context.Context, tx *sql.Tx, tran
 				txn.Type,
 				txn.CheckNumber,
 			)
-		} else {
+		default:
 			// For old schema, just use categories as plaid_categories
 			_, err = stmt.ExecContext(ctx,
 				txn.ID,
@@ -335,7 +337,8 @@ func (s *SQLiteStorage) getTransactionsByCategoryTx(ctx context.Context, q query
 
 	// Build query based on schema version
 	var query string
-	if schemaVersion >= 7 {
+	switch {
+	case schemaVersion >= 7:
 		// Schema with direction field
 		query = `
 			SELECT t.id, t.hash, t.date, t.name, t.merchant_name, 
@@ -346,7 +349,7 @@ func (s *SQLiteStorage) getTransactionsByCategoryTx(ctx context.Context, q query
 			WHERE c.category_name = ?
 			ORDER BY t.date DESC
 		`
-	} else if schemaVersion >= 5 {
+	case schemaVersion >= 5:
 		query = `
 			SELECT t.id, t.hash, t.date, t.name, t.merchant_name, 
 			       t.amount, t.categories, t.account_id, 
@@ -356,7 +359,7 @@ func (s *SQLiteStorage) getTransactionsByCategoryTx(ctx context.Context, q query
 			WHERE c.category_name = ?
 			ORDER BY t.date DESC
 		`
-	} else {
+	default:
 		query = `
 			SELECT t.id, t.hash, t.date, t.name, t.merchant_name, 
 			       t.amount, t.plaid_categories, t.account_id
@@ -615,7 +618,7 @@ func (s *SQLiteStorage) GetMerchantSummary(ctx context.Context, start, end time.
 }
 
 // scanTransactions is a helper method to scan transaction rows based on schema version.
-func (s *SQLiteStorage) scanTransactions(ctx context.Context, rows *sql.Rows, schemaVersion int) ([]model.Transaction, error) {
+func (s *SQLiteStorage) scanTransactions(_ context.Context, rows *sql.Rows, schemaVersion int) ([]model.Transaction, error) {
 	var transactions []model.Transaction
 	for rows.Next() {
 		var txn model.Transaction
@@ -624,7 +627,8 @@ func (s *SQLiteStorage) scanTransactions(ctx context.Context, rows *sql.Rows, sc
 		var checkNum sql.NullString
 		var direction sql.NullString
 
-		if schemaVersion >= 7 {
+		switch {
+		case schemaVersion >= 7:
 			// Schema with direction field
 			err := rows.Scan(
 				&txn.ID,
@@ -646,7 +650,7 @@ func (s *SQLiteStorage) scanTransactions(ctx context.Context, rows *sql.Rows, sc
 			if direction.Valid {
 				txn.Direction = model.TransactionDirection(direction.String)
 			}
-		} else if schemaVersion >= 5 {
+		case schemaVersion >= 5:
 			err := rows.Scan(
 				&txn.ID,
 				&txn.Hash,
@@ -662,7 +666,7 @@ func (s *SQLiteStorage) scanTransactions(ctx context.Context, rows *sql.Rows, sc
 			if err != nil {
 				return nil, fmt.Errorf("failed to scan transaction: %w", err)
 			}
-		} else {
+		default:
 			// Old schema
 			err := rows.Scan(
 				&txn.ID,

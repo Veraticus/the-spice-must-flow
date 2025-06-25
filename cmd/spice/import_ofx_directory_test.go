@@ -26,10 +26,10 @@ func TestExpandGlobsWithDirectory(t *testing.T) {
 	for _, file := range testFiles {
 		path := filepath.Join(tmpDir, file)
 		dir := filepath.Dir(path)
-		err := os.MkdirAll(dir, 0755)
+		err := os.MkdirAll(dir, 0750)
 		require.NoError(t, err)
 
-		err = os.WriteFile(path, []byte("test"), 0644)
+		err = os.WriteFile(path, []byte("test"), 0600)
 		require.NoError(t, err)
 	}
 
@@ -49,13 +49,13 @@ func TestExpandGlobsWithDirectory(t *testing.T) {
 					ext := filepath.Ext(path)
 					// Convert to lowercase for comparison
 					extLower := ext
-					if len(ext) > 0 {
-						extLower = "." + string([]byte{byte(ext[1] | 0x20)})
+					if ext != "" {
+						extLower = "." + string([]byte{ext[1] | 0x20})
 						if len(ext) > 2 {
-							extLower += string([]byte{byte(ext[2] | 0x20)})
+							extLower += string([]byte{ext[2] | 0x20})
 						}
 						if len(ext) > 3 {
-							extLower += string([]byte{byte(ext[3] | 0x20)})
+							extLower += string([]byte{ext[3] | 0x20})
 						}
 					}
 					if extLower == ".ofx" || extLower == ".qfx" {
