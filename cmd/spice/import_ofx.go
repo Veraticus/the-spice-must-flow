@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/classification"
@@ -27,7 +28,10 @@ Examples:
   # Import multiple files
   spice import-ofx ~/Downloads/chase_*.qfx
   
-  # Import all QFX files in a directory
+  # Import all OFX/QFX files from a directory (recursive)
+  spice import-ofx ./data/
+  
+  # Import all QFX files using glob pattern
   spice import-ofx ~/Downloads/*.qfx
   
   # Import from multiple directories
@@ -49,19 +53,41 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 	// Expand globs and collect all files
 	var allFiles []string
 	for _, pattern := range args {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return fmt.Errorf("invalid pattern %s: %w", pattern, err)
-		}
-		if len(matches) == 0 {
-			// If no glob matches, check if it's a direct file
-			if _, err := os.Stat(pattern); err == nil {
-				allFiles = append(allFiles, pattern)
-			} else {
-				slog.Warn("No files found matching pattern", "pattern", pattern)
+		// Check if pattern is a directory
+		info, err := os.Stat(pattern)
+		if err == nil && info.IsDir() {
+			// Walk directory to find all OFX files
+			err = filepath.Walk(pattern, func(path string, fileInfo os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !fileInfo.IsDir() {
+					ext := strings.ToLower(filepath.Ext(path))
+					if ext == ".ofx" || ext == ".qfx" {
+						allFiles = append(allFiles, path)
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				slog.Warn("Failed to walk directory", "directory", pattern, "error", err)
 			}
 		} else {
-			allFiles = append(allFiles, matches...)
+			// Try glob expansion
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				return fmt.Errorf("invalid pattern %s: %w", pattern, err)
+			}
+			if len(matches) == 0 {
+				// If no glob matches, check if it's a direct file
+				if _, err := os.Stat(pattern); err == nil {
+					allFiles = append(allFiles, pattern)
+				} else {
+					slog.Warn("No files found matching pattern", "pattern", pattern)
+				}
+			} else {
+				allFiles = append(allFiles, matches...)
+			}
 		}
 	}
 

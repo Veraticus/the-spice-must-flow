@@ -152,19 +152,23 @@ func addCategoryCmd() *cobra.Command {
 	var (
 		categoryDescription string
 		skipDescription     bool
+		isIncome            bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "add <name> [name2] [name3] ...",
 		Short: "Add one or more new categories",
-		Long: `Create one or more expense categories. AI-generated descriptions will be created automatically for each category.
+		Long: `Create one or more expense or income categories. AI-generated descriptions will be created automatically for each category.
 
 Examples:
-  # Add a single category
+  # Add a single expense category
   spice categories add "Travel"
   
-  # Add multiple categories at once
+  # Add multiple expense categories at once
   spice categories add "Travel" "Entertainment" "Dining" "Healthcare"
+  
+  # Add income categories
+  spice categories add "Salary" "Freelance" "Investments" --income
   
   # Add categories without AI descriptions
   spice categories add "Travel" "Entertainment" --no-description`,
@@ -243,8 +247,12 @@ Examples:
 					}
 				}
 
-				// Create category
-				category, err := store.CreateCategory(ctx, categoryName, description)
+				// Create category with appropriate type
+				categoryType := model.CategoryTypeExpense
+				if isIncome {
+					categoryType = model.CategoryTypeIncome
+				}
+				category, err := store.CreateCategoryWithType(ctx, categoryName, description, categoryType)
 				if err != nil {
 					return fmt.Errorf("failed to create category %q: %w", categoryName, err)
 				}
@@ -256,7 +264,11 @@ Examples:
 			if len(createdCategories) > 0 {
 				fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Created %d categories:", len(createdCategories)))) //nolint:forbidigo // User-facing output
 				for _, cat := range createdCategories {
-					fmt.Printf("  • %s (ID: %d)", cat.Name, cat.ID) //nolint:forbidigo // User-facing output
+					typeDisplay := "expense"
+					if cat.Type == model.CategoryTypeIncome {
+						typeDisplay = "income"
+					}
+					fmt.Printf("  • %s (ID: %d, type: %s)", cat.Name, cat.ID, typeDisplay) //nolint:forbidigo // User-facing output
 					if cat.Description != "" && !skipDescription {
 						fmt.Printf(" - %s", cat.Description) //nolint:forbidigo // User-facing output
 					}
@@ -277,6 +289,7 @@ Examples:
 
 	cmd.Flags().StringVar(&categoryDescription, "description", "", "Category description (auto-generated if not provided)")
 	cmd.Flags().BoolVar(&skipDescription, "no-description", false, "Skip AI description generation")
+	cmd.Flags().BoolVar(&isIncome, "income", false, "Create income categories instead of expense categories")
 
 	return cmd
 }

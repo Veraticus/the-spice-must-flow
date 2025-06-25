@@ -336,7 +336,7 @@ func (e *ClassificationEngine) saveAutoAcceptedBatch(ctx context.Context, result
 				"error", err)
 			continue
 		}
-		
+
 		if existingCategory == nil {
 			slog.Error("Category doesn't exist, skipping auto-accept",
 				"category", result.Suggestion.Category,
@@ -427,6 +427,25 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 			}
 			slog.Error("Failed to get user confirmation", "error", err)
 			continue
+		}
+
+		// If this is a new category that was accepted, create it
+		if pending.IsNewCategory && classification.Category != "" {
+			// Check if category exists first
+			_, err := e.storage.GetCategoryByName(ctx, classification.Category)
+			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
+				// Create the new category with the provided description
+				_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, pending.CategoryDescription, model.CategoryTypeExpense)
+				if createErr != nil {
+					slog.Error("Failed to create new category",
+						"category", classification.Category,
+						"error", createErr)
+					continue
+				}
+				slog.Info("Created new category from user confirmation",
+					"category", classification.Category,
+					"description", pending.CategoryDescription)
+			}
 		}
 
 		// Apply classification to all transactions in the group

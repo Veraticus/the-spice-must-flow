@@ -136,8 +136,13 @@ func (s *SQLiteStorage) GetCategoryByID(ctx context.Context, id int) (*model.Cat
 	return &cat, nil
 }
 
-// CreateCategory creates a new category.
+// CreateCategory creates a new category with default expense type.
 func (s *SQLiteStorage) CreateCategory(ctx context.Context, name, description string) (*model.Category, error) {
+	return s.CreateCategoryWithType(ctx, name, description, model.CategoryTypeExpense)
+}
+
+// CreateCategoryWithType creates a new category with the specified type.
+func (s *SQLiteStorage) CreateCategoryWithType(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
 	}
@@ -148,25 +153,33 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name, description st
 
 	// Check if category already exists (including inactive ones)
 	existingQuery := `
-		SELECT id, name, description, created_at, is_active
+		SELECT id, name, description, created_at, is_active, type
 		FROM categories
 		WHERE name = ?`
 
 	var existing model.Category
+	var typeStr sql.NullString
 	err := s.db.QueryRowContext(ctx, existingQuery, name).Scan(
-		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive,
+		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive, &typeStr,
 	)
 
 	if err == nil {
 		// Category exists
+		if typeStr.Valid {
+			existing.Type = model.CategoryType(typeStr.String)
+		} else {
+			existing.Type = model.CategoryTypeExpense
+		}
+
 		if !existing.IsActive {
-			// Reactivate it
-			updateQuery := `UPDATE categories SET is_active = 1 WHERE id = ?`
-			if _, updateErr := s.db.ExecContext(ctx, updateQuery, existing.ID); updateErr != nil {
+			// Reactivate it and update type if needed
+			updateQuery := `UPDATE categories SET is_active = 1, type = ? WHERE id = ?`
+			if _, updateErr := s.db.ExecContext(ctx, updateQuery, string(categoryType), existing.ID); updateErr != nil {
 				return nil, fmt.Errorf("failed to reactivate category: %w", updateErr)
 			}
 			existing.IsActive = true
-			slog.Info("reactivated existing category", "name", name)
+			existing.Type = categoryType
+			slog.Info("reactivated existing category", "name", name, "type", categoryType)
 		}
 		return &existing, nil
 	} else if err != sql.ErrNoRows {
@@ -175,11 +188,11 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name, description st
 
 	// Create new category
 	insertQuery := `
-		INSERT INTO categories (name, description, created_at, is_active)
-		VALUES (?, ?, ?, 1)`
+		INSERT INTO categories (name, description, created_at, is_active, type)
+		VALUES (?, ?, ?, 1, ?)`
 
 	now := time.Now()
-	result, err := s.db.ExecContext(ctx, insertQuery, name, description, now)
+	result, err := s.db.ExecContext(ctx, insertQuery, name, description, now, string(categoryType))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
@@ -195,9 +208,10 @@ func (s *SQLiteStorage) CreateCategory(ctx context.Context, name, description st
 		Description: description,
 		CreatedAt:   now,
 		IsActive:    true,
+		Type:        categoryType,
 	}
 
-	slog.Info("created new category", "name", name, "id", id)
+	slog.Info("created new category", "name", name, "id", id, "type", categoryType)
 	return category, nil
 }
 
@@ -271,8 +285,13 @@ func (t *sqliteTransaction) GetCategoryByName(ctx context.Context, name string) 
 	return &cat, nil
 }
 
-// CreateCategory creates a new category within a transaction.
+// CreateCategory creates a new category with default expense type within a transaction.
 func (t *sqliteTransaction) CreateCategory(ctx context.Context, name, description string) (*model.Category, error) {
+	return t.CreateCategoryWithType(ctx, name, description, model.CategoryTypeExpense)
+}
+
+// CreateCategoryWithType creates a new category with the specified type within a transaction.
+func (t *sqliteTransaction) CreateCategoryWithType(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
 	}
@@ -283,24 +302,32 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name, descriptio
 
 	// Check if category already exists (including inactive ones)
 	existingQuery := `
-		SELECT id, name, description, created_at, is_active
+		SELECT id, name, description, created_at, is_active, type
 		FROM categories
 		WHERE name = ?`
 
 	var existing model.Category
+	var typeStr sql.NullString
 	err := t.tx.QueryRowContext(ctx, existingQuery, name).Scan(
-		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive,
+		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive, &typeStr,
 	)
 
 	if err == nil {
 		// Category exists
+		if typeStr.Valid {
+			existing.Type = model.CategoryType(typeStr.String)
+		} else {
+			existing.Type = model.CategoryTypeExpense
+		}
+
 		if !existing.IsActive {
-			// Reactivate it
-			updateQuery := `UPDATE categories SET is_active = 1 WHERE id = ?`
-			if _, updateErr := t.tx.ExecContext(ctx, updateQuery, existing.ID); updateErr != nil {
+			// Reactivate it and update type if needed
+			updateQuery := `UPDATE categories SET is_active = 1, type = ? WHERE id = ?`
+			if _, updateErr := t.tx.ExecContext(ctx, updateQuery, string(categoryType), existing.ID); updateErr != nil {
 				return nil, fmt.Errorf("failed to reactivate category: %w", updateErr)
 			}
 			existing.IsActive = true
+			existing.Type = categoryType
 		}
 		return &existing, nil
 	} else if err != sql.ErrNoRows {
@@ -309,11 +336,11 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name, descriptio
 
 	// Create new category
 	insertQuery := `
-		INSERT INTO categories (name, description, created_at, is_active)
-		VALUES (?, ?, ?, 1)`
+		INSERT INTO categories (name, description, created_at, is_active, type)
+		VALUES (?, ?, ?, 1, ?)`
 
 	now := time.Now()
-	result, err := t.tx.ExecContext(ctx, insertQuery, name, description, now)
+	result, err := t.tx.ExecContext(ctx, insertQuery, name, description, now, string(categoryType))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create category: %w", err)
 	}
@@ -329,6 +356,7 @@ func (t *sqliteTransaction) CreateCategory(ctx context.Context, name, descriptio
 		Description: description,
 		CreatedAt:   now,
 		IsActive:    true,
+		Type:        categoryType,
 	}
 
 	return category, nil

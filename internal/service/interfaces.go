@@ -46,6 +46,7 @@ type Storage interface {
 	GetCategories(ctx context.Context) ([]model.Category, error)
 	GetCategoryByName(ctx context.Context, name string) (*model.Category, error)
 	CreateCategory(ctx context.Context, name, description string) (*model.Category, error)
+	CreateCategoryWithType(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error)
 	UpdateCategory(ctx context.Context, id int, name, description string) error
 	DeleteCategory(ctx context.Context, id int) error
 

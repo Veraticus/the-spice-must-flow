@@ -279,7 +279,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 		if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
 			return nil, fmt.Errorf("failed to check category existence: %w", err)
 		}
-		
+
 		if existingCategory == nil {
 			// Category doesn't exist - treat as new and require manual review
 			slog.Warn("Category suggested by LLM doesn't exist, treating as new",
@@ -300,18 +300,18 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 				}
 			}
 
-		// Update pattern use counts if check patterns contributed
-		if len(checkPatterns) > 0 {
-			for _, pattern := range checkPatterns {
-				if pattern.Category == category {
-					if incrementErr := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); incrementErr != nil {
-						slog.Warn("Failed to increment pattern use count",
-							"pattern_id", pattern.ID,
-							"error", incrementErr)
+			// Update pattern use counts if check patterns contributed
+			if len(checkPatterns) > 0 {
+				for _, pattern := range checkPatterns {
+					if pattern.Category == category {
+						if incrementErr := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); incrementErr != nil {
+							slog.Warn("Failed to increment pattern use count",
+								"pattern_id", pattern.ID,
+								"error", incrementErr)
+						}
 					}
 				}
 			}
-		}
 
 			// Save vendor rule for auto-classified transactions
 			vendor := &model.Vendor{
@@ -366,8 +366,22 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	// Save vendor rule if confirmed
 	if len(classifications) > 0 {
-		// Note: We don't auto-create categories here anymore
-		// Categories must be explicitly created by the user
+		// If this is a new category that was accepted, create it
+		if isNew && classifications[0].Category != "" {
+			// Check if category exists first
+			_, err := e.storage.GetCategoryByName(ctx, classifications[0].Category)
+			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
+				// Create the new category with the provided description
+				_, createErr := e.storage.CreateCategoryWithType(ctx, classifications[0].Category, description, model.CategoryTypeExpense)
+				if createErr != nil {
+					return nil, fmt.Errorf("failed to create new category %q: %w", classifications[0].Category, createErr)
+				}
+				slog.Info("Created new category from batch confirmation",
+					"category", classifications[0].Category,
+					"description", description)
+			}
+		}
+
 		category := classifications[0].Category
 
 		vendor := &model.Vendor{
@@ -474,6 +488,25 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 				"transaction_id", txn.ID,
 				"error", err)
 			continue
+		}
+
+		// If this is a new category that was accepted, create it
+		if pending.IsNewCategory && classification.Category != "" {
+			// Check if category exists first
+			_, err := e.storage.GetCategoryByName(ctx, classification.Category)
+			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
+				// Create the new category with the provided description
+				_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, pending.CategoryDescription, model.CategoryTypeExpense)
+				if createErr != nil {
+					slog.Error("Failed to create new category",
+						"category", classification.Category,
+						"error", createErr)
+					continue
+				}
+				slog.Info("Created new category from user confirmation",
+					"category", classification.Category,
+					"description", pending.CategoryDescription)
+			}
 		}
 
 		// Update pattern use counts if check patterns contributed
@@ -624,7 +657,7 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 }
 
 // ensureCategoryExists is deprecated - categories should only be created through explicit user action
-// This function is kept for backwards compatibility but just logs a warning
+// This function is kept for backwards compatibility but just logs a warning.
 func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string, txns []model.Transaction) error {
 	slog.Warn("Attempted to auto-create category - this is no longer supported",
 		"category", categoryName,
