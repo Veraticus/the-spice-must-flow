@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 )
@@ -40,7 +42,7 @@ type checkPatternsLoadedMsg struct {
 	patterns []model.CheckPattern
 }
 
-// UI interaction messages - removed unused types
+// UI interaction messages - moved to components/messages.go
 
 // Error handling.
 type errorMsg struct {
@@ -51,6 +53,9 @@ type errorMsg struct {
 type showMessageMsg struct {
 	message string
 }
+
+// tickMsg is sent periodically to update time-based displays.
+type tickMsg time.Time
 
 // notificationMsg displays a notification to the user.
 type notificationMsg struct {

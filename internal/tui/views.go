@@ -87,6 +87,13 @@ func (m Model) renderCompactView() string {
 
 	case StateHelp:
 		content = m.renderHelp()
+
+	case StateDetails:
+		// Full screen detail view
+		usableWidth := m.width - 2
+		usableHeight := m.height - 3
+		m.transactionDetail.Resize(usableWidth, usableHeight)
+		content = m.transactionDetail.View()
 	}
 
 	return m.wrapWithBorder(content)
@@ -291,7 +298,8 @@ func (m Model) renderHelp() string {
 		{
 			"Classification",
 			[]string{
-				"Enter       Classify transaction",
+				"S           Start engine classification",
+				"Enter       View transaction details",
 				"a/y         Accept suggestion",
 				"s/Space     Skip transaction",
 				"c           Custom category",
@@ -308,6 +316,14 @@ func (m Model) renderHelp() string {
 			},
 		},
 		{
+			"Transaction Details",
+			[]string{
+				"c           Classify manually",
+				"a           Send to AI classifier",
+				"Esc         Back to list",
+			},
+		},
+		{
 			"Views",
 			[]string{
 				"Tab         Cycle views",
@@ -319,9 +335,10 @@ func (m Model) renderHelp() string {
 		{
 			"Application",
 			[]string{
-				"q/Esc       Quit",
+				"q           Quit application",
 				"Ctrl+C      Force quit",
 				"Ctrl+L      Clear screen",
+				"u/Ctrl+Z    Undo last classification",
 			},
 		},
 	}
@@ -492,16 +509,17 @@ func (m *Model) handleDataLoaded(msg dataLoadedMsg) {
 
 // handleTransactionSelection processes transaction selection.
 func (m Model) handleTransactionSelection(msg components.TransactionSelectedMsg) tea.Cmd {
-	// Create a pending classification for the selected transaction
-	pending := model.PendingClassification{
-		Transaction: msg.Transaction,
+	// Get classification if it exists
+	var classification *model.Classification
+	if c, ok := m.classifications[msg.Transaction.ID]; ok {
+		classification = &c
 	}
 
-	// Return a command that will trigger classification
+	// Show transaction details
 	return func() tea.Msg {
-		return classificationRequestMsg{
-			pending: pending,
-			single:  true,
+		return components.TransactionDetailsRequestMsg{
+			Transaction:    msg.Transaction,
+			Classification: classification,
 		}
 	}
 }

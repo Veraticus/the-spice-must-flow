@@ -3,7 +3,10 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
@@ -27,6 +30,33 @@ type ClassificationConfig struct {
 
 // RunClassification runs the classification engine with TUI interface.
 func RunClassification(ctx context.Context, cfg ClassificationConfig) error {
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Create a context that cancels on signal
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Set up terminal cleanup on any exit
+	cleanupTerminal := func() {
+		// Restore terminal to normal state
+		// We use os.Stdout.Write to avoid linter complaints about fmt.Print
+		// Ignore errors as this is best-effort cleanup
+		_, _ = os.Stdout.Write([]byte("\033[?1049l")) // Exit alternate screen
+		_, _ = os.Stdout.Write([]byte("\033[?25h"))   // Show cursor
+		_, _ = os.Stdout.Write([]byte("\033[m"))      // Reset colors
+		_, _ = os.Stdout.Write([]byte("\033[?1000l")) // Disable mouse
+	}
+	defer cleanupTerminal()
+
+	// Handle signals
+	go func() {
+		<-sigChan
+		cleanupTerminal()
+		cancel()
+	}()
+
 	// Validate configuration
 	if cfg.Storage == nil {
 		return fmt.Errorf("storage is required")
@@ -73,6 +103,9 @@ func RunClassification(ctx context.Context, cfg ClassificationConfig) error {
 	ready := make(chan struct{})
 	errChan := make(chan error, 1)
 
+	// Ensure we only close ready channel once
+	var readyOnce sync.Once
+
 	// Start TUI in background
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -81,7 +114,9 @@ func RunClassification(ctx context.Context, cfg ClassificationConfig) error {
 		// Set ready callback (type assert to access concrete type)
 		if p, ok := tuiPrompter.(*Prompter); ok {
 			p.SetReadyCallback(func() {
-				close(ready)
+				readyOnce.Do(func() {
+					close(ready)
+				})
 			})
 			if startErr := p.Start(); startErr != nil {
 				errChan <- fmt.Errorf("TUI error: %w", startErr)

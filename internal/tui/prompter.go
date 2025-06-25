@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
@@ -47,11 +48,6 @@ func New(ctx context.Context, opts ...Option) (engine.Prompter, error) {
 	model := newModel(cfg)
 	model.resultChan = p.resultChan
 	model.errorChan = p.errorChan
-	model.readyCallback = func() {
-		if p.readyCallback != nil {
-			p.readyCallback()
-		}
-	}
 	p.model = model
 
 	// Create program
@@ -62,12 +58,27 @@ func New(ctx context.Context, opts ...Option) (engine.Prompter, error) {
 		tea.WithMouseCellMotion(),
 	)
 
+	// Set ready callback after program is created
+	model.readyCallback = func() {
+		if p.readyCallback != nil {
+			p.readyCallback()
+		}
+	}
+
 	return p, nil
 }
 
 // Start initializes and runs the TUI program.
 func (p *Prompter) Start() error {
-	if _, err := p.program.Run(); err != nil {
+	// Ensure terminal is restored on exit
+	// The tea.Program handles this internally, but we'll make sure
+	// by using WithoutSignalHandler and handling cleanup ourselves
+	_, err := p.program.Run()
+	if err != nil {
+		// Ensure we exit alt screen mode even on error
+		// Ignore write errors as this is best-effort cleanup
+		_, _ = os.Stdout.Write([]byte("\033[?1049l")) // Exit alternate screen
+		_, _ = os.Stdout.Write([]byte("\033[?25h"))   // Show cursor
 		return fmt.Errorf("failed to run TUI: %w", err)
 	}
 	return nil
@@ -170,8 +181,8 @@ func (p *Prompter) Shutdown() {
 	if p.program != nil {
 		p.program.Quit()
 	}
-	close(p.resultChan)
-	close(p.errorChan)
+	// Don't close channels here as they might already be closed
+	// The goroutines using them will handle their lifecycle
 }
 
 // Model returns the underlying model for testing.

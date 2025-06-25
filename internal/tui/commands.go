@@ -12,6 +12,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// tickCmd returns a command that sends a tick message every second for elapsed time updates.
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
 // loadTransactions loads transactions from storage.
 func (m Model) loadTransactions() tea.Cmd {
 	return func() tea.Msg {

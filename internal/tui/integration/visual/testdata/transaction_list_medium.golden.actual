@@ -1,35 +1,23 @@
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                                                        │
+│  Transactions                                                                               │                          │
+│  │ Progress                                                                                                            │
+│                                                                                                 Transaction Details    │
+│  3 transactions                                                                                                        │
+│  ░░░░░░░░░░░░░░░░░░░░░░░░░                                                                                             │
 │                                                                                                                        │
+│  0/3 transactions (0%)                                                                                                 │
+│   Date        Merchant             Amount      Category         Status                          Select a transaction   │
+│  to view            Time                                                                                               │
+│  ────────────────────────────────────────────────────────────────────────                       details                │
+│   2024-01-15  Whole Foods Market   $-123.45    Unclassified     ?                                                      │
+│  Elapsed:    0s                                                                                                        │
+│   2024-01-13  Shell Oil Station …  $-45.67     Unclassified     ?                                                      │
+│  Saved:      0s                                                                                                        │
+│   2024-01-11  Direct Deposit - A…  $2500.00    Unclassified     ?                                                      │
+│  Avg/txn:    N/A                                                                                                       │
 │                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                   Transaction Details                                                  │
-│                                                                                                                        │
-│                                                                                                                        │
-│                    Date: Jan 15, 2024                                                                                  │
-│                  Amount: $-123.45                                                                                      │
-│                 Account: acc1                                                                                          │
-│                    Type: PURCHASE                                                                                      │
-│                Merchant: Whole Foods Market                                                                            │
-│                                                                                                                        │
-│                                                                                                                        │
-│      Not Classified                                                                                                    │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│      Actions                                                                                                           │
-│                                                                                                                        │
-│        Press 'c' to classify manually                                                                                  │
-│        Press 'a' to send to AI classifier                                                                              │
-│        Press 'esc' to return to list                                                                                   │
-│        Press 'q' to quit                                                                                               │
-│        Press '?' for help                                                                                              │
-│                                                                                                                        │
-│                                                                                                                ? Help  │
+│  Classification Breakdown                                                                                              │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
@@ -38,5 +26,26 @@
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│  [↑↓] Navigate  [Enter] Details  [S] Start Classification  [/] Search  [v] Visual  [?] Help                            │
+│  Browse                                                                                                        ? Help  │
 │                                                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

@@ -98,6 +98,7 @@ func NewTransactionList(transactions []model.Transaction, theme themes.Theme) Tr
 		table.WithFocused(true),
 		table.WithHeight(20),
 	)
+	t.Focus() // Ensure the table starts with focus
 
 	// Apply theme
 	s := table.DefaultStyles()
@@ -133,6 +134,10 @@ func NewTransactionList(transactions []model.Transaction, theme themes.Theme) Tr
 	// Set initial column widths
 	model.updateColumnWidths()
 
+	// Initialize table with data
+	rows := model.buildTableRows()
+	model.table.SetRows(rows)
+
 	return model
 }
 
@@ -166,6 +171,10 @@ func (m TransactionListModel) Update(msg tea.Msg) (TransactionListModel, tea.Cmd
 		m.table.SetHeight(m.height - 4)
 	}
 
+	// Update table rows before delegating to table component
+	rows := m.buildTableRows()
+	m.table.SetRows(rows)
+
 	// Update table
 	newTable, cmd := m.table.Update(msg)
 	m.table = newTable
@@ -177,22 +186,13 @@ func (m TransactionListModel) Update(msg tea.Msg) (TransactionListModel, tea.Cmd
 // handleNormalMode handles key presses in normal mode.
 func (m *TransactionListModel) handleNormalMode(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
-	case "j", "down":
-		m.cursor = min(m.cursor+1, len(m.filtered)-1)
-		return m.ensureVisible()
-
-	case "k", "up":
-		m.cursor = max(m.cursor-1, 0)
-		return m.ensureVisible()
-
+	// The table component handles arrow keys and j/k navigation
 	case "G":
-		m.cursor = len(m.filtered) - 1
-		return m.ensureVisible()
+		m.table.GotoBottom()
 
 	case "g":
 		if m.lastKey == "g" {
-			m.cursor = 0
-			return m.ensureVisible()
+			m.table.GotoTop()
 		}
 
 	case "v":
@@ -205,11 +205,13 @@ func (m *TransactionListModel) handleNormalMode(msg tea.KeyMsg) tea.Cmd {
 		return textinput.Blink
 
 	case "enter":
-		if m.cursor < len(m.filtered) {
+		// Get the selected row from the table
+		selectedRow := m.table.SelectedRow()
+		if selectedRow != nil && m.table.Cursor() < len(m.filtered) {
 			return func() tea.Msg {
 				return TransactionSelectedMsg{
-					Transaction: m.filtered[m.cursor],
-					Index:       m.cursor,
+					Transaction: m.filtered[m.table.Cursor()],
+					Index:       m.table.Cursor(),
 				}
 			}
 		}
@@ -299,10 +301,6 @@ func (m TransactionListModel) View() string {
 
 // renderListView renders the main list view.
 func (m TransactionListModel) renderListView() string {
-	// Build table rows
-	rows := m.buildTableRows()
-	m.table.SetRows(rows)
-
 	// Layout sections
 	header := m.renderHeader()
 	tableView := m.table.View()
@@ -366,7 +364,8 @@ func (m TransactionListModel) renderFooter() string {
 	case ModeNormal:
 		hints = []string{
 			"[↑↓] Navigate",
-			"[Enter] Classify",
+			"[Enter] Details",
+			"[S] Start Classification",
 			"[/] Search",
 			"[v] Visual",
 			"[?] Help",

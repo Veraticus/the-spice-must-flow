@@ -1,43 +1,42 @@
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                                                        │
-│                                                                        │                                               │
-│                                                                            Similar Transactions                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                            No similar transactions found               │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
+│                                                   Transaction Details                                                  │
+│                                                                                                                        │
+│                                                                                                                        │
+│                    Date: Jan 11, 2024                                                                                  │
+│                  Amount: $2500.00                                                                                      │
+│                 Account: acc1                                                                                          │
+│                    Type: CREDIT                                                                                        │
+│                Merchant: Direct Deposit - ACME Corp                                                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│      Not Classified                                                                                                    │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│                                                                                                                        │
+│      Actions                                                                                                           │
+│                                                                                                                        │
+│        Press 'c' to classify manually                                                                                  │
+│        Press 'a' to send to AI classifier                                                                              │
+│        Press 'esc' to return to list                                                                                   │
+│        Press 'q' to quit                                                                                               │
+│        Press '?' for help                                                                                              │
+│                                                                                                                        │
+│                                                                                                                ? Help  │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
 │                                                                                                                        │
-│                                   ⣾                                                                                    │
-│                        Analyzing transaction...                                                                        │
-│  ──────────────────────────────────────────────                                                                        │
-│                                                                          Progress                                      │
-│                                                                                                                        │
-│                                                                          ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      │
-│                                                                          0/3 transactions (0%)                         │
-│                                                                          Time                                          │
-│                                                                                                                        │
-│                                                                          Elapsed:    0s                                │
-│                                                                          Saved:      0s                                │
-│                                                                          Avg/txn:    N/A                               │
-│                                                                          Classification Breakdown                      │
 │                                                                                                                        │
 │                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│                                                                                                                        │
-│  Classify                   ░░░░░░░░░░░░░░░░░░░░ 0/1                   ? Help                                          │
 │                                                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

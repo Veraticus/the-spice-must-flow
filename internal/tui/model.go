@@ -19,6 +19,8 @@ type State int
 const (
 	// StateList shows transaction list.
 	StateList State = iota
+	// StateDetails shows transaction details.
+	StateDetails
 	// StateClassifying shows classification interface.
 	StateClassifying
 	// StateBatch shows batch classification.
@@ -68,6 +70,7 @@ type Model struct {
 	categories          []model.Category
 	config              Config
 	transactionList     components.TransactionListModel
+	transactionDetail   components.TransactionDetailModel
 	directionView       components.DirectionConfirmModel
 	batchView           components.BatchViewModel
 	classifier          components.ClassifierModel
@@ -104,6 +107,7 @@ func newModel(cfg Config) Model {
 	if cfg.ShowStats {
 		m.statsPanel = components.NewStatsPanelModel(cfg.Theme)
 	}
+	m.transactionDetail = components.NewTransactionDetailModel(cfg.Theme)
 
 	return m
 }
@@ -112,6 +116,7 @@ func newModel(cfg Config) Model {
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tea.EnterAltScreen,
+		tickCmd(), // Start the tick timer for regular updates
 	}
 
 	// In test mode, generate fake data
@@ -157,6 +162,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.handleGlobalKeys(msg); cmd != nil {
 			return m, cmd
 		}
+
+	case tickMsg:
+		// Continue the tick for elapsed time updates
+		cmds = append(cmds, tickCmd())
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -225,6 +234,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case notificationMsg:
 		m.notification = msg.content
 		m.notificationType = msg.messageType
+
+	case components.TransactionDetailsRequestMsg:
+		m.state = StateDetails
+		newDetail, cmd := m.transactionDetail.Update(msg)
+		m.transactionDetail = newDetail
+		cmds = append(cmds, cmd)
+
+	case components.BackToListMsg:
+		m.state = StateList
+
+	case components.ManualClassificationRequestMsg:
+		// TODO: Implement manual classification picker
+		m.notification = "Manual classification not yet implemented"
+		m.notificationType = "info"
+
+	case components.AIClassificationRequestMsg:
+		// Create a pending classification for AI
+		pending := model.PendingClassification{
+			Transaction: msg.Transaction,
+		}
+		m.pending = []model.PendingClassification{pending}
+		m.currentPendingIndex = 0
+		m.state = StateClassifying
+		m.startClassification(pending)
+		return m, m.focusOnTransaction(pending.Transaction.ID)
+
+	case components.StartEngineClassificationMsg:
+		// Start engine-driven classification
+		if m.llm != nil && m.storage != nil {
+			return m, m.startEngineClassification()
+		}
+		m.notification = "Classification engine not available"
+		m.notificationType = "error"
+
+	case components.ShowHelpMsg:
+		m.state = StateHelp
 	}
 
 	// Delegate to active component based on state
@@ -236,6 +281,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle transaction selection
 		if msg, ok := msg.(components.TransactionSelectedMsg); ok {
+			// For now, just handle the selection - the engine will drive classification
 			cmds = append(cmds, m.handleTransactionSelection(msg))
 		}
 
@@ -253,6 +299,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resultChan <- promptResult{
 				classification: result,
 			}
+
+			// Send classification complete message for stats update
+			cmds = append(cmds, func() tea.Msg {
+				return components.ClassificationCompleteMsg{
+					Classification: result,
+				}
+			})
 
 			// Move to next pending or back to list
 			if m.currentPendingIndex < len(m.pending)-1 {
@@ -277,6 +330,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resultChan <- promptResult{
 					classification: result,
 				}
+
+				// Send classification complete message for stats update
+				cmds = append(cmds, func() tea.Msg {
+					return components.ClassificationCompleteMsg{
+						Classification: result,
+					}
+				})
 			}
 			m.state = StateList
 		}
@@ -294,6 +354,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = StateList
 			m.pendingDirection = nil
 		}
+
+	case StateDetails:
+		newDetail, cmd := m.transactionDetail.Update(msg)
+		m.transactionDetail = newDetail
+		cmds = append(cmds, cmd)
 	}
 
 	// Update stats panel
@@ -334,7 +399,11 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "ctrl+c", "q":
 		if m.state != StateClassifying && m.state != StateBatch {
 			m.quitting = true
-			return tea.Quit
+			// Send cleanup commands before quitting
+			return tea.Sequence(
+				tea.ExitAltScreen,
+				tea.Quit,
+			)
 		}
 	case "?":
 		if m.state == StateHelp {
@@ -348,6 +417,12 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) tea.Cmd {
 	case "u", "ctrl+z":
 		if m.state == StateList && m.lastClassification != nil {
 			return m.undoLastClassification()
+		}
+	case "s", "S":
+		if m.state == StateList {
+			return func() tea.Msg {
+				return components.StartEngineClassificationMsg{}
+			}
 		}
 	}
 	return nil
@@ -464,6 +539,35 @@ func (m *Model) undoLastClassification() tea.Cmd {
 		return notificationMsg{
 			content:     "Undo",
 			messageType: "info",
+		}
+	}
+}
+
+// startEngineClassification starts the engine-driven classification process.
+func (m Model) startEngineClassification() tea.Cmd {
+	// Get all unclassified transactions
+	var unclassified []model.PendingClassification
+	for _, txn := range m.transactions {
+		if len(txn.Category) == 0 {
+			unclassified = append(unclassified, model.PendingClassification{
+				Transaction: txn,
+			})
+		}
+	}
+
+	if len(unclassified) == 0 {
+		return func() tea.Msg {
+			return notificationMsg{
+				content:     "All transactions are already classified",
+				messageType: "info",
+			}
+		}
+	}
+
+	// Start batch classification
+	return func() tea.Msg {
+		return batchClassificationRequestMsg{
+			pending: unclassified,
 		}
 	}
 }
