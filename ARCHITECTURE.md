@@ -1375,242 +1375,21 @@ func (e *ClassificationEngine) cacheVendor(vendor *model.Vendor) {
 }
 ```
 
-### **CLI User Interface Implementation**
+### **TUI User Interface Implementation**
 
-```go
-// internal/cli/prompter.go
-package cli
+The application now uses a rich Terminal User Interface (TUI) powered by Bubble Tea instead of a basic CLI prompter. The TUI provides:
 
-import (
-    "bufio"
-    "fmt"
-    "os"
-    "strings"
-    "time"
-    
-    "github.com/charmbracelet/lipgloss"
-    "github.com/schollz/progressbar/v3"
-    "thespicemustflow/internal/model"
-    "thespicemustflow/internal/service"
-)
+- Real-time transaction list with filtering and search
+- Visual classification interface with AI suggestions
+- Batch classification mode for similar transactions
+- Progress tracking and statistics
+- Keyboard navigation and shortcuts
 
-type CLIPrompter struct {
-    scanner     *bufio.Scanner
-    progressBar *progressbar.ProgressBar
-    styles      *Styles
-}
+See `internal/tui/` for the complete implementation.
 
-type Styles struct {
-    Title       lipgloss.Style
-    Box         lipgloss.Style
-    Success     lipgloss.Style
-    Warning     lipgloss.Style
-    Error       lipgloss.Style
-    Info        lipgloss.Style
-    Prompt      lipgloss.Style
-}
+### **Classification Engine Core**
 
-func NewStyles() *Styles {
-    return &Styles{
-        Title:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF6B6B")),
-        Box:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2),
-        Success: lipgloss.NewStyle().Foreground(lipgloss.Color("#4ECDC4")),
-        Warning: lipgloss.NewStyle().Foreground(lipgloss.Color("#FFE66D")),
-        Error:   lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")),
-        Info:    lipgloss.NewStyle().Foreground(lipgloss.Color("#95E1D3")),
-        Prompt:  lipgloss.NewStyle().Bold(true),
-    }
-}
-
-func NewCLIPrompter() *CLIPrompter {
-    return &CLIPrompter{
-        scanner: bufio.NewScanner(os.Stdin),
-        styles:  NewStyles(),
-    }
-}
-
-func (p *CLIPrompter) ShowProgress(current, total int, currentMerchant string) {
-    if p.progressBar == nil {
-        p.progressBar = progressbar.NewOptions(total,
-            progressbar.OptionSetDescription("Processing..."),
-            progressbar.OptionSetWidth(40),
-            progressbar.OptionShowCount(),
-            progressbar.OptionShowIts(),
-            progressbar.OptionSetTheme(progressbar.Theme{
-                Saucer:        "━",
-                SaucerPadding: "━",
-                BarStart:      "",
-                BarEnd:        "",
-            }),
-        )
-    }
-    
-    p.progressBar.Set(current)
-    p.progressBar.Describe(fmt.Sprintf("%d%% | %d/%d | %s", 
-        current*100/total, current, total, currentMerchant))
-}
-
-func (p *CLIPrompter) BatchReview(pending []model.PendingClassification) ([]model.Classification, error) {
-    // Clear progress bar line
-    fmt.Print("\r\033[K")
-    
-    txn := pending[0].Transaction
-    
-    // Build review box
-    content := fmt.Sprintf(
-        "Found %d transactions\nTotal: $%.2f\nDate range: %s - %s\n\n🤖 AI suggests: %s (%.0f%% confidence)",
-        pending[0].SimilarCount,
-        p.calculateTotal(pending),
-        p.getDateRange(pending),
-        pending[0].SuggestedCategory,
-        pending[0].Confidence*100,
-    )
-    
-    box := p.styles.Box.Render(content)
-    title := p.styles.Title.Render(fmt.Sprintf("Review: %s", txn.MerchantName))
-    
-    fmt.Printf("\n%s\n%s\n\n", title, box)
-    
-    // Show options
-    fmt.Print(p.styles.Prompt.Render("[A]ccept all  [C]ustom category  [R]eview each  [S]kip → "))
-    
-    p.scanner.Scan()
-    choice := strings.ToLower(strings.TrimSpace(p.scanner.Text()))
-    
-    switch choice {
-    case "a":
-        // Accept AI suggestion for all
-        classifications := make([]model.Classification, len(pending))
-        for i, pc := range pending {
-            classifications[i] = model.Classification{
-                Transaction:  pc.Transaction,
-                Category:     pc.SuggestedCategory,
-                Status:       model.StatusClassifiedByAI,
-                Confidence:   pc.Confidence,
-                ClassifiedAt: time.Now(),
-            }
-        }
-        
-        fmt.Printf("\n%s Created rule: %s → %s\n", 
-            p.styles.Success.Render("✓"),
-            txn.MerchantName,
-            pending[0].SuggestedCategory)
-        fmt.Printf("%s Categorized %d transactions\n\n",
-            p.styles.Success.Render("✓"),
-            len(pending))
-        
-        return classifications, nil
-        
-    case "c":
-        // Custom category for all
-        fmt.Print(p.styles.Prompt.Render("Enter category: "))
-        p.scanner.Scan()
-        category := strings.TrimSpace(p.scanner.Text())
-        
-        if category == "" {
-            return nil, fmt.Errorf("category cannot be empty")
-        }
-        
-        classifications := make([]model.Classification, len(pending))
-        for i, pc := range pending {
-            classifications[i] = model.Classification{
-                Transaction:  pc.Transaction,
-                Category:     category,
-                Status:       model.StatusUserModified,
-                Confidence:   1.0,
-                ClassifiedAt: time.Now(),
-            }
-        }
-        
-        fmt.Printf("\n%s Created rule: %s → %s\n",
-            p.styles.Success.Render("✓"),
-            txn.MerchantName,
-            category)
-        
-        return classifications, nil
-        
-    case "r":
-        // Review individually
-        return p.reviewIndividually(pending)
-        
-    case "s":
-        // Skip
-        fmt.Printf("\n%s Skipped %d transactions\n\n",
-            p.styles.Info.Render("ℹ️"),
-            len(pending))
-        return nil, nil
-        
-    default:
-        return nil, fmt.Errorf("invalid choice")
-    }
-}
-
-func (p *CLIPrompter) ShowCompletion(stats service.CompletionStats) {
-    fmt.Print("\r\033[K") // Clear progress bar
-    
-    fmt.Printf("\n%s Classification complete!\n\n", p.styles.Success.Render("✅"))
-    
-    timeSaved := float64(stats.TotalTransactions) * 30 / 60 // Assume 30 seconds per manual transaction
-    efficiency := float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100
-    
-    summary := fmt.Sprintf(
-        `Total transactions:      %d
-Auto-classified:         %d (%.1f%%)
-User-classified:         %d (%.1f%%)
-
-New vendor rules:        %d
-Time taken:              %s
-Time saved:              ~%.0f hours (estimated)
-
-Ready for export: spice flow --export`,
-        stats.TotalTransactions,
-        stats.AutoClassified, efficiency,
-        stats.UserClassified, 100-efficiency,
-        stats.NewVendorRules,
-        stats.Duration.Round(time.Second),
-        timeSaved/60,
-    )
-    
-    box := p.styles.Box.Render(summary)
-    title := p.styles.Title.Render("Summary")
-    
-    fmt.Printf("%s\n%s\n\n", title, box)
-}
-
-func (p *CLIPrompter) calculateTotal(pending []model.PendingClassification) float64 {
-    var total float64
-    for _, pc := range pending {
-        total += pc.Transaction.Amount
-    }
-    return total
-}
-
-func (p *CLIPrompter) getDateRange(pending []model.PendingClassification) string {
-    if len(pending) == 0 {
-        return ""
-    }
-    
-    minDate := pending[0].Transaction.Date
-    maxDate := pending[0].Transaction.Date
-    
-    for _, pc := range pending[1:] {
-        if pc.Transaction.Date.Before(minDate) {
-            minDate = pc.Transaction.Date
-        }
-        if pc.Transaction.Date.After(maxDate) {
-            maxDate = pc.Transaction.Date
-        }
-    }
-    
-    if minDate.Equal(maxDate) {
-        return minDate.Format("Jan 2, 2006")
-    }
-    
-    return fmt.Sprintf("%s - %s", 
-        minDate.Format("Jan 2"),
-        maxDate.Format("Jan 2, 2006"))
-}
-```
+The classification engine orchestrates the entire categorization process, managing vendor rules, AI suggestions, and user interactions through the TUI interface.
 
 ---
 
@@ -1623,8 +1402,8 @@ func (p *CLIPrompter) getDateRange(pending []model.PendingClassification) string
 * **Database:** `github.com/mattn/go-sqlite3` - SQLite driver
 * **Plaid:** `github.com/plaid/plaid-go/v24/plaid` - Official Plaid SDK
 * **Rate Limiting:** `golang.org/x/time/rate` - Token bucket rate limiter
-* **Progress Bar:** `github.com/schollz/progressbar/v3` - For visual progress
-* **UI Styling:** `github.com/charmbracelet/lipgloss` - For beautiful terminal UI
+* **TUI Framework:** `github.com/charmbracelet/bubbletea` - For interactive terminal UI
+* **UI Styling:** `github.com/charmbracelet/lipgloss` - For beautiful terminal styling
 * **Table Output:** `github.com/olekukonko/tablewriter` - For formatted tables
 
 ---
@@ -1682,17 +1461,17 @@ func (p *CLIPrompter) getDateRange(pending []model.PendingClassification) string
 * **Outcome:** A resumable classification engine that intelligently groups transactions.
 
 ### **Phase 4: User Interface & Experience**
-* **Goal:** Implement the delightful CLI experience with batch processing.
+* **Goal:** Implement the delightful TUI experience with batch processing.
 * **Tasks:**
-    1. Create CLIPrompter with styled output using lipgloss
-    2. Implement single transaction review flow
-    3. Implement batch review with high-variance detection
-    4. Add smart pattern detection (e.g., "last 5 were Office Supplies")
-    5. Create progress visualization with time estimates
-    6. Add interrupt handling with friendly messages
-    7. Implement completion summary with statistics
-* **Testing:** Manual testing of all interaction flows, automated tests with expect
-* **Outcome:** A user interface that makes categorization efficient and enjoyable.
+    1. Create TUI with Bubble Tea for rich interactive experience
+    2. Implement transaction list with search and filtering
+    3. Implement visual classification interface with AI suggestions
+    4. Add batch mode for similar transactions
+    5. Create real-time progress tracking and statistics
+    6. Add keyboard navigation and shortcuts
+    7. Implement responsive layouts for different terminal sizes
+* **Testing:** Integration tests with TUI harness, visual regression tests
+* **Outcome:** A modern TUI that makes categorization efficient and enjoyable.
 
 ### **Phase 5: LLM Integration**
 * **Goal:** Integrate real AI classification with smart prompting.

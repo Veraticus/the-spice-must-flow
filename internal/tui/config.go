@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/tui/themes"
 )
@@ -11,6 +12,8 @@ type Config struct {
 	Theme                  themes.Theme
 	Storage                service.Storage
 	Classifier             engine.Classifier
+	Categories             []model.Category
+	Patterns               []model.CheckPattern
 	TestData               TestDataConfig
 	Width                  int
 	Height                 int
@@ -96,6 +99,13 @@ func WithSize(width, height int) Option {
 	}
 }
 
+// WithShowStats enables or disables the stats panel.
+func WithShowStats(show bool) Option {
+	return func(c *Config) {
+		c.ShowStats = show
+	}
+}
+
 // WithTestMode enables test mode with fake data.
 func WithTestMode(enabled bool) Option {
 	return func(c *Config) {
@@ -118,5 +128,19 @@ func WithTestData(count int, merchants []string) Option {
 	return func(c *Config) {
 		c.TestData.TransactionCount = count
 		c.TestData.MerchantNames = merchants
+	}
+}
+
+// WithCategories sets the categories.
+func WithCategories(categories []model.Category) Option {
+	return func(c *Config) {
+		c.Categories = categories
+	}
+}
+
+// WithPatterns sets the check patterns.
+func WithPatterns(patterns []model.CheckPattern) Option {
+	return func(c *Config) {
+		c.Patterns = patterns
 	}
 }

@@ -12,11 +12,12 @@ import (
 
 // Prompter implements engine.Prompter with a rich TUI.
 type Prompter struct {
-	program    *tea.Program
-	resultChan chan promptResult
-	errorChan  chan error
-	model      Model
-	stats      service.CompletionStats
+	program       *tea.Program
+	resultChan    chan promptResult
+	errorChan     chan error
+	readyCallback func()
+	model         Model
+	stats         service.CompletionStats
 }
 
 type promptResult struct {
@@ -35,24 +36,31 @@ func New(ctx context.Context, opts ...Option) (engine.Prompter, error) {
 		opt(&cfg)
 	}
 
-	model := newModel(cfg)
+	// Create prompter first
 	p := &Prompter{
-		model:      model,
 		resultChan: make(chan promptResult, 100), // Buffer for batch operations
 		errorChan:  make(chan error, 1),
 		stats:      service.CompletionStats{},
 	}
 
+	// Create model with channels
+	model := newModel(cfg)
+	model.resultChan = p.resultChan
+	model.errorChan = p.errorChan
+	model.readyCallback = func() {
+		if p.readyCallback != nil {
+			p.readyCallback()
+		}
+	}
+	p.model = model
+
+	// Create program
 	p.program = tea.NewProgram(
-		model,
+		&p.model,
 		tea.WithContext(ctx),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
-
-	// Store channels in model for communication
-	p.model.resultChan = p.resultChan
-	p.model.errorChan = p.errorChan
 
 	return p, nil
 }
@@ -169,4 +177,19 @@ func (p *Prompter) Shutdown() {
 // Model returns the underlying model for testing.
 func (p *Prompter) Model() Model {
 	return p.model
+}
+
+// SetReadyCallback sets a function to be called when the TUI is ready.
+func (p *Prompter) SetReadyCallback(callback func()) {
+	p.readyCallback = callback
+}
+
+// ShowMessage displays a message to the user.
+func (p *Prompter) ShowMessage(msg string) {
+	p.program.Send(showMessageMsg{message: msg})
+}
+
+// Quit gracefully shuts down the TUI.
+func (p *Prompter) Quit() {
+	p.program.Quit()
 }

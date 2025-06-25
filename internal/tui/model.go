@@ -54,6 +54,7 @@ type Model struct {
 	storage             service.Storage
 	resultChan          chan<- promptResult
 	errorChan           chan<- error
+	readyCallback       func()
 	classifications     map[string]model.Classification
 	pendingDirection    *engine.PendingDirection
 	lastClassification  *model.Classification
@@ -92,6 +93,8 @@ func newModel(cfg Config) Model {
 		theme:           cfg.Theme,
 		storage:         cfg.Storage,
 		llm:             cfg.Classifier,
+		categories:      cfg.Categories,
+		checkPatterns:   cfg.Patterns,
 		startTime:       time.Now(),
 		width:           cfg.Width,
 		height:          cfg.Height,
@@ -115,11 +118,26 @@ func (m Model) Init() tea.Cmd {
 	if m.config.TestMode {
 		cmds = append(cmds, m.generateTestData())
 	} else if m.storage != nil {
-		// Load real data
-		cmds = append(cmds,
-			m.loadTransactions(),
-			m.loadCategories(),
-			m.loadCheckPatterns())
+		// Check what data needs to be loaded
+		needTransactions := true
+		needCategories := len(m.categories) == 0
+		needPatterns := len(m.checkPatterns) == 0
+
+		// Load only missing data
+		if needTransactions {
+			cmds = append(cmds, m.loadTransactions())
+		}
+		if needCategories {
+			cmds = append(cmds, m.loadCategories())
+		}
+		if needPatterns {
+			cmds = append(cmds, m.loadCheckPatterns())
+		}
+
+		// If we already have categories, we're ready
+		if len(m.categories) > 0 {
+			m.checkReady()
+		}
 	}
 
 	return tea.Batch(cmds...)
@@ -147,7 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dataLoadedMsg:
 		m.handleDataLoaded(msg)
-		m.ready = true
+		m.checkReady()
 
 	case transactionsLoadedMsg:
 		if msg.err != nil {
@@ -159,10 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.config.ShowStats {
 			m.statsPanel.SetTotal(len(m.transactions))
 		}
-		// Check if all data is loaded
-		if len(m.categories) > 0 {
-			m.ready = true
-		}
+		m.checkReady()
 
 	case categoriesLoadedMsg:
 		if msg.err != nil {
@@ -170,10 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.showError(msg.err)
 		}
 		m.categories = msg.categories
-		// Check if all data is loaded
-		if len(m.transactions) > 0 {
-			m.ready = true
-		}
+		m.checkReady()
 
 	case checkPatternsLoadedMsg:
 		if msg.err != nil {
@@ -205,6 +217,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.lastError = msg.err
 		cmds = append(cmds, m.showError(msg.err))
+
+	case showMessageMsg:
+		m.notification = msg.message
+		m.notificationType = "info"
 
 	case notificationMsg:
 		m.notification = msg.content
@@ -350,6 +366,17 @@ func (m *Model) handleResize() {
 		m.transactionList.Resize(m.width-2, m.height-6)
 		m.classifier.Resize(m.width-2, m.height-6)
 		m.statsPanel.Resize(m.width-2, 4)
+	}
+}
+
+// checkReady checks if all required data is loaded and calls the ready callback.
+func (m *Model) checkReady() {
+	// We're ready when categories are loaded (transactions might be empty)
+	if !m.ready && len(m.categories) > 0 {
+		m.ready = true
+		if m.readyCallback != nil {
+			go m.readyCallback()
+		}
 	}
 }
 

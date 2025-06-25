@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/config"
-	"github.com/Veraticus/the-spice-must-flow/internal/engine"
-	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/Veraticus/the-spice-must-flow/internal/tui"
 	"github.com/spf13/cobra"
@@ -84,36 +82,8 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 
 	slog.Info("Connected to database successfully")
 
-	// Initialize components
-	var classifier engine.Classifier
-	var prompter engine.Prompter
-
-	if dryRun {
-		slog.Info("Running in dry-run mode - using mock components")
-		classifier = engine.NewMockClassifier()
-		prompter = engine.NewMockPrompter(true) // Auto-accept in dry-run
-	} else {
-		// Use TUI prompter
-		tuiPrompter, tuiErr := tui.New(ctx)
-		if tuiErr != nil {
-			return fmt.Errorf("failed to create TUI: %w", tuiErr)
-		}
-		prompter = tuiPrompter
-
-		// Initialize real LLM classifier
-		var llmErr error
-		llmClient, llmErr := createLLMClient()
-		if llmErr != nil {
-			return fmt.Errorf("failed to create LLM client: %w", llmErr)
-		}
-		classifier = llmClient
-	}
-
-	// Create classification engine
-	classificationEngine := engine.New(db, classifier, prompter)
-
-	// Determine date range
-	var fromDate *time.Time
+	// Determine date range filters
+	var startDate, endDate string
 	if !resume {
 		if month != "" {
 			// Parse month
@@ -121,18 +91,41 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 			if parseErr != nil {
 				return fmt.Errorf("invalid month format (use YYYY-MM): %w", parseErr)
 			}
-			startDate := parsedMonth
-			fromDate = &startDate
+			startDate = parsedMonth.Format("2006-01-02")
+			// End date is the last day of the month
+			endMonth := parsedMonth.AddDate(0, 1, -1)
+			endDate = endMonth.Format("2006-01-02")
 		} else if year > 0 {
-			// Use beginning of specified year
-			startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
-			fromDate = &startDate
+			// Use beginning and end of specified year
+			startDate = fmt.Sprintf("%d-01-01", year)
+			endDate = fmt.Sprintf("%d-12-31", year)
 		}
-		// If year == 0 (default), fromDate remains nil, which means classify ALL transactions
+		// If year == 0 (default), dates remain empty, which means classify ALL transactions
 	}
 
-	// Run classification
-	if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
+	if dryRun {
+		slog.Info("Running in dry-run mode - using mock components")
+		// TODO: Implement dry-run mode with TUI
+		return fmt.Errorf("dry-run mode not yet implemented with TUI")
+	}
+
+	// Initialize LLM classifier
+	classifier, err := createLLMClient()
+	if err != nil {
+		return fmt.Errorf("failed to create LLM client: %w", err)
+	}
+
+	// Create TUI configuration
+	cfg := tui.ClassificationConfig{
+		Storage:        db,
+		Classifier:     classifier,
+		StartDate:      startDate,
+		EndDate:        endDate,
+		OnlyUnreviewed: !resume,
+	}
+
+	// Run classification with TUI
+	if err := tui.RunClassification(ctx, cfg); err != nil {
 		if err == context.Canceled {
 			slog.Warn("Classification interrupted")
 			slog.Info("Progress saved! Resume where you left off with: spice classify --resume")
@@ -141,36 +134,8 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("classification failed: %w", err)
 	}
 
-	// Show completion stats
-	stats := prompter.GetCompletionStats()
-	showCompletionStats(stats)
+	// Note: Stats are now shown within the TUI, so we don't need to show them here
+	slog.Info("Classification complete! Ready for export: spice flow --export")
 
 	return nil
-}
-
-func showCompletionStats(stats service.CompletionStats) {
-	slog.Info("Excellent! All transactions have been categorized", "total_transactions", stats.TotalTransactions)
-
-	if stats.TotalTransactions > 0 {
-		autoPercent := float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100
-		userPercent := float64(stats.UserClassified) / float64(stats.TotalTransactions) * 100
-
-		slog.Info("Classification statistics",
-			"auto_classified", stats.AutoClassified,
-			"auto_percent", autoPercent,
-			"user_classified", stats.UserClassified,
-			"user_percent", userPercent)
-	}
-
-	slog.Info("Classification details",
-		"new_vendor_rules", stats.NewVendorRules,
-		"duration", stats.Duration.Round(time.Second))
-
-	if stats.TotalTransactions > 0 {
-		// Estimate time saved (30 seconds per manual transaction)
-		timeSaved := time.Duration(stats.AutoClassified) * 30 * time.Second
-		slog.Info("Time saved", "estimated_time", timeSaved.Round(time.Minute))
-	}
-
-	slog.Info("Ready for export: spice flow --export")
 }

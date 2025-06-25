@@ -47,6 +47,11 @@ type errorMsg struct {
 	err error
 }
 
+// showMessageMsg displays a message to the user.
+type showMessageMsg struct {
+	message string
+}
+
 // notificationMsg displays a notification to the user.
 type notificationMsg struct {
 	content     string

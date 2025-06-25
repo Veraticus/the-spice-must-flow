@@ -112,7 +112,7 @@ func (s *SQLiteStorage) getTransactionsToClassifyTx(ctx context.Context, q query
 	args := []any{}
 
 	if fromDate != nil {
-		query += " AND t.date > ?"
+		query += " AND t.date >= ?"
 		args = append(args, *fromDate)
 	}
 
