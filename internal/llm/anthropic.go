@@ -301,9 +301,24 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 	// Parse the response to extract description and confidence
 	description, confidence, err := parseDescriptionResponse(response.Content[0].Text)
 	if err != nil {
-		// Fallback to simple parsing if structured parsing fails
+		// Try to extract just the description part as fallback
+		rawText := strings.TrimSpace(response.Content[0].Text)
+		lines := strings.Split(rawText, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "DESCRIPTION:") {
+				description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
+				if description != "" {
+					return DescriptionResponse{
+						Description: description,
+						Confidence:  0.8, // Default medium confidence
+					}, nil
+				}
+			}
+		}
+		// Final fallback: use the whole text if no DESCRIPTION: prefix found
 		return DescriptionResponse{
-			Description: strings.TrimSpace(response.Content[0].Text),
+			Description: rawText,
 			Confidence:  0.8, // Default medium confidence
 		}, nil
 	}

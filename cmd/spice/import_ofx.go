@@ -168,14 +168,18 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 			}
 		}()
 
-		// Initialize pattern detector for direction detection
+		// Initialize pattern detector for refining direction detection
+		// The OFX parser sets initial direction based on transaction type and amount sign,
+		// but pattern detection can provide more accurate classification
 		detector, err := classification.NewPatternDetector(classification.DefaultPatterns())
 		if err != nil {
 			return fmt.Errorf("failed to initialize pattern detector: %w", err)
 		}
 
-		// Detect direction for each transaction
+		// Refine direction for each transaction using pattern detection
 		for i := range allTransactions {
+			// Only use pattern detection if direction wasn't already set by OFX parser
+			// or to override with high confidence patterns
 			match, err := detector.Classify(ctx, allTransactions[i])
 			if err != nil {
 				slog.Warn("Failed to detect direction for transaction",
@@ -185,7 +189,8 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 			}
 
 			if match != nil && match.Confidence >= 0.75 {
-				// High confidence match - set direction automatically
+				// High confidence match - override direction
+				oldDirection := allTransactions[i].Direction
 				switch match.Type {
 				case classification.PatternTypeIncome:
 					allTransactions[i].Direction = model.DirectionIncome
@@ -195,17 +200,19 @@ func runImportOFX(cmd *cobra.Command, args []string) error {
 					allTransactions[i].Direction = model.DirectionTransfer
 				}
 
-				if verbose {
-					slog.Info("Detected transaction direction",
+				if verbose && oldDirection != allTransactions[i].Direction {
+					slog.Info("Pattern detection refined transaction direction",
 						"transaction", allTransactions[i].MerchantName,
-						"direction", allTransactions[i].Direction,
+						"old_direction", oldDirection,
+						"new_direction", allTransactions[i].Direction,
+						"pattern", match.PatternName,
 						"confidence", match.Confidence)
 				}
-			} else {
-				// Low confidence or no match - default to expense for negative amounts, income for positive
+			} else if allTransactions[i].Direction == "" {
+				// No direction set and no pattern match - use amount sign as last resort
 				if allTransactions[i].Amount < 0 {
 					allTransactions[i].Direction = model.DirectionExpense
-				} else {
+				} else if allTransactions[i].Amount > 0 {
 					allTransactions[i].Direction = model.DirectionIncome
 				}
 			}

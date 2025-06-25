@@ -23,12 +23,28 @@ func classifyCmd() *cobra.Command {
 		Long: `Categorize financial transactions with AI assistance and smart batching.
 		
 This command fetches transactions from Plaid, groups them by merchant,
-and guides you through categorization with minimal effort.`,
+and guides you through categorization with minimal effort.
+
+By default, this will classify ALL unclassified transactions. Use --year or --month
+to limit the scope to a specific time period.
+
+Examples:
+  # Classify all unclassified transactions
+  spice classify
+  
+  # Classify only 2024 transactions
+  spice classify --year 2024
+  
+  # Classify only January 2024
+  spice classify --month 2024-01
+  
+  # Resume from a previous session
+  spice classify --resume`,
 		RunE: runClassify,
 	}
 
 	// Flags
-	cmd.Flags().IntP("year", "y", time.Now().Year(), "Year to classify transactions for")
+	cmd.Flags().IntP("year", "y", 0, "Year to classify transactions for (default: all transactions)")
 	cmd.Flags().StringP("month", "m", "", "Specific month to classify (format: 2024-01)")
 	cmd.Flags().BoolP("resume", "r", false, "Resume from previous session")
 	cmd.Flags().Bool("dry-run", false, "Preview without saving changes")
@@ -114,11 +130,12 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 			}
 			startDate := parsedMonth
 			fromDate = &startDate
-		} else {
-			// Use beginning of year
+		} else if year != 0 {
+			// Use beginning of specified year
 			startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 			fromDate = &startDate
 		}
+		// If year is 0 and no month specified, fromDate remains nil (classify everything)
 	}
 
 	// Get transaction count for progress tracking
@@ -135,8 +152,8 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	// Run classification
 	if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
 		if err == context.Canceled {
-			slog.Warn("Classification interrupted")
-			slog.Info("Progress saved! Resume where you left off with: spice classify --resume")
+			// The interrupt handler already printed the message
+			// Just return nil to exit cleanly
 			return nil
 		}
 		return fmt.Errorf("classification failed: %w", err)

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -52,19 +50,10 @@ func init() {
 }
 
 func main() {
-	// Set up signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		slog.Info("Received interrupt signal, shutting down gracefully...")
-		cancel()
-	}()
+	// Create a base context that commands can use
+	ctx := context.Background()
 
 	err := rootCmd.ExecuteContext(ctx)
-	cancel() // Always cleanup
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

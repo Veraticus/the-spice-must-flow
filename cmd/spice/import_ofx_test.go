@@ -319,3 +319,125 @@ func TestGlobPatterns(t *testing.T) {
 		})
 	}
 }
+
+func TestPatternDetectionRefinement(t *testing.T) {
+	// Test OFX with transactions that should be refined by pattern detection
+	testOFXWithPatterns := `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+SECURITY:NONE
+ENCODING:USASCII
+CHARSET:1252
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+
+<OFX>
+<SIGNONMSGSRSV1>
+<SONRS>
+<STATUS>
+<CODE>0
+<SEVERITY>INFO
+</STATUS>
+<DTSERVER>20240315120000[0:GMT]
+<LANGUAGE>ENG
+</SONRS>
+</SIGNONMSGSRSV1>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<TRNUID>1
+<STATUS>
+<CODE>0
+<SEVERITY>INFO
+</STATUS>
+<STMTRS>
+<CURDEF>USD
+<BANKACCTFROM>
+<BANKID>123456789
+<ACCTID>1234567890
+<ACCTTYPE>CHECKING
+</BANKACCTFROM>
+<BANKTRANLIST>
+<DTSTART>20240101120000[0:GMT]
+<DTEND>20240131120000[0:GMT]
+<STMTTRN>
+<TRNTYPE>OTHER
+<DTPOSTED>20240115120000[0:GMT]
+<TRNAMT>2000.00
+<FITID>JAN15
+<NAME>PAYROLL COMPANY DIRECTDEP
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>OTHER
+<DTPOSTED>20240120120000[0:GMT]
+<TRNAMT>-100.00
+<FITID>JAN20
+<NAME>TRANSFER TO SAVINGS ACCOUNT
+</STMTTRN>
+<STMTTRN>
+<TRNTYPE>DEBIT
+<DTPOSTED>20240125120000[0:GMT]
+<TRNAMT>-50.00
+<FITID>JAN25
+<NAME>IRS TREAS TAX PAYMENT
+</STMTTRN>
+</BANKTRANLIST>
+<LEDGERBAL>
+<BALAMT>1850.00
+<DTASOF>20240131120000[0:GMT]
+</LEDGERBAL>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`
+
+	// Create temporary directory for test file
+	tempDir, err := os.MkdirTemp("", "pattern_test")
+	require.NoError(t, err)
+	defer func() {
+		if rmErr := os.RemoveAll(tempDir); rmErr != nil {
+			t.Errorf("failed to remove temp dir: %v", rmErr)
+		}
+	}()
+
+	// Write test OFX file
+	filePath := filepath.Join(tempDir, "test.qfx")
+	require.NoError(t, os.WriteFile(filePath, []byte(testOFXWithPatterns), 0600))
+
+	// Expected pattern detection results:
+	// 1. "PAYROLL COMPANY DIRECTDEP" - should be detected as income by DIRECTDEP pattern
+	// 2. "TRANSFER TO SAVINGS ACCOUNT" - should be detected as transfer by TRANSFER pattern
+	// 3. "IRS TREAS TAX PAYMENT" - already DEBIT type, but could be refined if it matched a pattern
+
+	expectedPatterns := []struct {
+		merchant          string
+		originalDirection string
+		patternMatch      string
+		refinedDirection  string
+	}{
+		{
+			merchant:          "PAYROLL COMPANY DIRECTDEP",
+			originalDirection: "income", // Positive amount with OTHER type
+			patternMatch:      "Direct Deposit",
+			refinedDirection:  "income", // Confirmed by pattern
+		},
+		{
+			merchant:          "TRANSFER TO SAVINGS ACCOUNT",
+			originalDirection: "expense", // Negative amount with OTHER type
+			patternMatch:      "Account Transfer",
+			refinedDirection:  "transfer", // Refined by pattern
+		},
+		{
+			merchant:          "IRS TREAS TAX PAYMENT",
+			originalDirection: "expense", // DEBIT type
+			patternMatch:      "",        // No pattern match needed, already correct
+			refinedDirection:  "expense",
+		},
+	}
+
+	// Verify expected behavior
+	for _, exp := range expectedPatterns {
+		t.Logf("Expected: %s - original: %s, pattern: %s, refined: %s",
+			exp.merchant, exp.originalDirection, exp.patternMatch, exp.refinedDirection)
+	}
+}

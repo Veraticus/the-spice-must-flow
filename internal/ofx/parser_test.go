@@ -206,8 +206,9 @@ func TestParseBankTransactions(t *testing.T) {
 	assert.Equal(t, "2024011501", tx1.ID)
 	assert.Equal(t, "STARBUCKS STORE #1234", tx1.Name)
 	assert.Equal(t, "STARBUCKS STORE #1234", tx1.MerchantName) // No PAYEE, so uses NAME
-	assert.Equal(t, 25.50, tx1.Amount)
+	assert.Equal(t, -25.50, tx1.Amount)                        // Negative for debit
 	assert.Equal(t, "1234567890", tx1.AccountID)
+	assert.Equal(t, model.DirectionExpense, tx1.Direction) // DEBIT type
 	// Compare just the date components, ignoring timezone
 	assert.Equal(t, 2024, tx1.Date.Year())
 	assert.Equal(t, time.January, tx1.Date.Month())
@@ -218,13 +219,15 @@ func TestParseBankTransactions(t *testing.T) {
 	assert.Equal(t, "2024012001", tx2.ID)
 	assert.Equal(t, "Whole Foods Market", tx2.Name)
 	assert.Equal(t, "Whole Foods Market", tx2.MerchantName)
-	assert.Equal(t, 125.00, tx2.Amount)
+	assert.Equal(t, -125.00, tx2.Amount)                   // Negative for debit
+	assert.Equal(t, model.DirectionExpense, tx2.Direction) // DEBIT type
 
 	// Test third transaction (Check)
 	tx3 := transactions[2]
 	assert.Equal(t, "2024012501", tx3.ID)
 	assert.Equal(t, "CHECK #1234", tx3.Name)
-	assert.Equal(t, 500.00, tx3.Amount)
+	assert.Equal(t, -500.00, tx3.Amount)                   // Negative for check
+	assert.Equal(t, model.DirectionExpense, tx3.Direction) // CHECK type
 }
 
 func TestParseCreditCardTransactions(t *testing.T) {
@@ -239,14 +242,16 @@ func TestParseCreditCardTransactions(t *testing.T) {
 	tx1 := transactions[0]
 	assert.Equal(t, "CC2024011001", tx1.ID)
 	assert.Equal(t, "AMAZON.COM*RT4Y7HG2", tx1.Name)
-	assert.Equal(t, 45.99, tx1.Amount)
+	assert.Equal(t, -45.99, tx1.Amount) // Negative for credit card debit
 	assert.Equal(t, "4111111111111111", tx1.AccountID)
+	assert.Equal(t, model.DirectionExpense, tx1.Direction) // DEBIT type for CC
 
 	// Test Netflix transaction
 	tx2 := transactions[1]
 	assert.Equal(t, "CC2024011501", tx2.ID)
 	assert.Equal(t, "NETFLIX.COM", tx2.Name)
-	assert.Equal(t, 15.00, tx2.Amount)
+	assert.Equal(t, -15.00, tx2.Amount)                    // Negative for credit card debit
+	assert.Equal(t, model.DirectionExpense, tx2.Direction) // DEBIT type for CC
 }
 
 func TestExtractMerchantName(t *testing.T) {
@@ -289,6 +294,84 @@ func TestExtractMerchantName(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestTransactionDirectionDetection(t *testing.T) {
+	parser := NewParser()
+	ctx := context.Background()
+
+	tests := []struct {
+		name              string
+		ofxContent        string
+		expectedDirection model.TransactionDirection
+		expectedAmount    float64
+	}{
+		{
+			name:              "direct deposit income",
+			ofxContent:        generateTestOFX("DIRECTDEP", "2500.00", "2024011501", "B6204 SB MUSEUM DIR DEP"),
+			expectedDirection: model.DirectionIncome,
+			expectedAmount:    2500.00,
+		},
+		{
+			name:              "debit expense",
+			ofxContent:        generateTestOFX("DEBIT", "-25.50", "2024011502", "STARBUCKS STORE #1234"),
+			expectedDirection: model.DirectionExpense,
+			expectedAmount:    -25.50,
+		},
+		{
+			name:              "interest income",
+			ofxContent:        generateTestOFX("INT", "1.25", "2024013101", "INTEREST EARNED"),
+			expectedDirection: model.DirectionIncome,
+			expectedAmount:    1.25,
+		},
+		{
+			name:              "check expense",
+			ofxContent:        generateTestOFXWithCheck("-500.00", "2024012501", "1234", "CHECK #1234"),
+			expectedDirection: model.DirectionExpense,
+			expectedAmount:    -500.00,
+		},
+		{
+			name:              "transfer",
+			ofxContent:        generateTestOFX("XFER", "-1000.00", "2024012001", "Transfer to Savings"),
+			expectedDirection: model.DirectionExpense,
+			expectedAmount:    -1000.00,
+		},
+		{
+			name:              "credit refund",
+			ofxContent:        generateTestOFX("CREDIT", "50.00", "2024012201", "AMAZON REFUND"),
+			expectedDirection: model.DirectionIncome,
+			expectedAmount:    50.00,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transactions, err := parser.ParseFile(ctx, strings.NewReader(tt.ofxContent))
+			require.NoError(t, err)
+			require.Len(t, transactions, 1)
+
+			tx := transactions[0]
+			assert.Equal(t, tt.expectedDirection, tx.Direction, "Direction mismatch")
+			assert.Equal(t, tt.expectedAmount, tx.Amount, "Amount mismatch")
+		})
+	}
+}
+
+func TestTransactionDirectionFallback(t *testing.T) {
+	parser := NewParser()
+	ctx := context.Background()
+
+	// Test with unknown transaction type - should fall back to amount sign
+	ofxWithUnknownType := generateTestOFX("OTHER", "100.00", "2024011503", "UNKNOWN TRANSACTION")
+
+	transactions, err := parser.ParseFile(ctx, strings.NewReader(ofxWithUnknownType))
+	require.NoError(t, err)
+	require.Len(t, transactions, 1)
+
+	tx := transactions[0]
+	// Positive amount with unknown type should be income
+	assert.Equal(t, model.DirectionIncome, tx.Direction)
+	assert.Equal(t, 100.00, tx.Amount)
 }
 
 func TestTransactionDeduplication(t *testing.T) {

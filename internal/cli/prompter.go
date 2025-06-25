@@ -161,7 +161,7 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 	default:
 	}
 
-	p.updateProgress()
+	// Don't update progress here - wait until we know what the user chose
 
 	merchantName := pending[0].Transaction.MerchantName
 	pattern := p.detectPattern(merchantName)
@@ -310,9 +310,13 @@ func (p *Prompter) initProgressBar() {
 }
 
 func (p *Prompter) updateProgress() {
-	p.processedCount++
+	p.updateProgressBy(1)
+}
+
+func (p *Prompter) updateProgressBy(count int) {
+	p.processedCount += count
 	if p.progressBar != nil {
-		if err := p.progressBar.Add(1); err != nil {
+		if err := p.progressBar.Add(count); err != nil {
 			slog.Warn("Failed to update progress bar", "error", err)
 		}
 	}
@@ -700,6 +704,7 @@ func (p *Prompter) acceptAllClassifications(pending []model.PendingClassificatio
 	}
 
 	p.incrementBatchStats(len(pending), false, true)
+	p.updateProgressBy(len(pending)) // Update progress by batch size
 	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
 		len(pending), pending[0].SuggestedCategory))); err != nil {
 		slog.Warn("Failed to write success message", "error", err)
@@ -736,6 +741,7 @@ func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.Pen
 	}
 
 	p.incrementBatchStats(len(pending), true, true)
+	p.updateProgressBy(len(pending)) // Update progress by batch size
 	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
 		len(pending), category))); err != nil {
 		slog.Warn("Failed to write custom category success", "error", err)
@@ -778,6 +784,7 @@ func (p *Prompter) skipAllClassifications(pending []model.PendingClassification)
 		}
 	}
 
+	p.updateProgressBy(len(pending)) // Update progress for skipped transactions
 	if _, err := fmt.Fprintln(p.writer, FormatWarning(fmt.Sprintf("⚠ Skipped %d transactions", len(pending)))); err != nil {
 		slog.Warn("Failed to write skip warning", "error", err)
 	}

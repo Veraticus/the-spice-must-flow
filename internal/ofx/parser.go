@@ -135,12 +135,36 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 	// Extract clean merchant name
 	merchantName := p.extractMerchantName(ofxTx)
 
-	// Convert amount (OFX uses negative for debits)
+	// Convert amount (OFX uses negative for debits, positive for credits)
 	// ofxTx.TrnAmt is a big.Rat, convert to float64
 	amountFloat, _ := ofxTx.TrnAmt.Float64()
+
+	// Preserve the original amount with its sign
 	amount := amountFloat
-	if amount < 0 {
-		amount = -amount
+
+	// Determine transaction direction based on amount sign and transaction type
+	var direction model.TransactionDirection
+
+	// Use transaction type as primary indicator
+	trnTypeStr := fmt.Sprintf("%v", ofxTx.TrnType)
+	switch strings.ToUpper(trnTypeStr) {
+	case "CREDIT", "DEP", "DIRECTDEP", "INT", "DIV":
+		direction = model.DirectionIncome
+	case "DEBIT", "CHECK", "FEE", "SRVCHG", "PAYMENT", "ATM", "POS", "XFER":
+		direction = model.DirectionExpense
+	case "DIRECTDEBIT":
+		// Direct debit could be expense (bill payment) or transfer (to savings)
+		// Will rely on pattern detection to refine this
+		direction = model.DirectionExpense
+	default:
+		// Fall back to amount sign if transaction type is unknown
+		// In OFX: negative = debit/expense, positive = credit/income
+		if amount < 0 {
+			direction = model.DirectionExpense
+		} else if amount > 0 {
+			direction = model.DirectionIncome
+		}
+		// If amount is exactly 0, leave direction empty for pattern detection
 	}
 
 	// Create transaction
@@ -151,7 +175,8 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 		MerchantName: merchantName,
 		Amount:       amount,
 		AccountID:    accountID,
-		Type:         fmt.Sprintf("%v", ofxTx.TrnType), // e.g., DEBIT, CHECK, PAYMENT, ATM
+		Type:         trnTypeStr, // e.g., DEBIT, CHECK, PAYMENT, ATM
+		Direction:    direction,
 	}
 
 	// Add check number if present

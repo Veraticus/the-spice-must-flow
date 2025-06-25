@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // InterruptHandler manages graceful shutdown with friendly messages.
@@ -48,6 +49,12 @@ func (h *InterruptHandler) HandleInterrupts(ctx context.Context, showProgress bo
 		}
 		h.mu.Unlock()
 		cancel()
+
+		// Give the program a moment to clean up gracefully
+		time.Sleep(100 * time.Millisecond)
+
+		// Force exit if still running
+		os.Exit(0)
 	}()
 
 	return ctx

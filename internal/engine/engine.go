@@ -155,7 +155,7 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 			}
 		} else {
 			// Need classification
-			classifications, err = e.classifyMerchantGroup(ctx, merchant, txns, categoryNames)
+			classifications, err = e.classifyMerchantGroup(ctx, merchant, txns, categories)
 			if err != nil {
 				slog.Error("Failed to classify merchant group",
 					"merchant", merchant,
@@ -204,9 +204,18 @@ func (e *ClassificationEngine) ClassifyTransactions(ctx context.Context, fromDat
 }
 
 // classifyMerchantGroup handles classification for a group of transactions from the same merchant.
-func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, merchant string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
+func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, merchant string, txns []model.Transaction, categories []model.Category) ([]model.Classification, error) {
 	if len(txns) == 0 {
 		return []model.Classification{}, nil
+	}
+
+	// Always reload categories to ensure we have the latest list (including any newly created ones)
+	freshCategories, err := e.storage.GetCategories(ctx)
+	if err != nil {
+		slog.Warn("Failed to reload categories, using existing list", "error", err)
+		// Use existing categories if reload fails
+	} else {
+		categories = freshCategories
 	}
 
 	// Get AI suggestion for the representative transaction
@@ -223,17 +232,11 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 		}
 	}
 
-	// Convert category strings to model.Category objects
-	categoryModels := make([]model.Category, len(categories))
-	for i, cat := range categories {
-		categoryModels[i] = model.Category{
-			Name:        cat,
-			Description: "", // Will be populated by storage if needed
-		}
-	}
+	// Filter categories by transaction direction
+	categoryModels := e.filterCategoriesByDirection(categories, txns)
 
 	var rankings model.CategoryRankings
-	err := common.WithRetry(ctx, func() error {
+	retryErr := common.WithRetry(ctx, func() error {
 		var err error
 		rankings, err = e.classifier.SuggestCategoryRankings(ctx, representative, categoryModels, checkPatterns)
 		if err != nil {
@@ -247,8 +250,8 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 		Multiplier:   2.0,
 	})
 
-	if err != nil {
-		return nil, fmt.Errorf("AI classification failed: %w", err)
+	if retryErr != nil {
+		return nil, fmt.Errorf("AI classification failed: %w", retryErr)
 	}
 
 	// Extract top-ranked category
@@ -348,7 +351,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 	if len(classifications) > 0 {
 		// Ensure the category exists (in case user created a new one)
 		category := classifications[0].Category
-		if err := e.ensureCategoryExists(ctx, category); err != nil {
+		if err := e.ensureCategoryExists(ctx, category, txns); err != nil {
 			slog.Warn("Failed to ensure category exists",
 				"category", category,
 				"error", err)
@@ -390,23 +393,25 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 }
 
 // reviewIndividually handles high-variance merchants by reviewing each transaction.
-func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction, categories []string) ([]model.Classification, error) {
+func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string, txns []model.Transaction, categories []model.Category) ([]model.Classification, error) {
 	classifications := make([]model.Classification, 0, len(txns))
 
-	// Convert category strings to model.Category objects
-	categoryModels := make([]model.Category, len(categories))
-	for i, cat := range categories {
-		categoryModels[i] = model.Category{
-			Name:        cat,
-			Description: "", // Will be populated by storage if needed
-		}
-	}
-
 	for _, txn := range txns {
+		// Reload categories to get any newly created ones
+		freshCategories, err := e.storage.GetCategories(ctx)
+		if err != nil {
+			slog.Warn("Failed to reload categories", "error", err)
+			// Use existing categories if reload fails
+		} else {
+			categories = freshCategories
+		}
+
+		// Filter categories by transaction direction for this specific transaction
+		categoryModels := e.filterCategoriesByDirection(categories, []model.Transaction{txn})
+
 		// Load check patterns for CHECK transactions
 		var checkPatterns []model.CheckPattern
 		if txn.Type == "CHECK" {
-			var err error
 			checkPatterns, err = e.storage.GetMatchingCheckPatterns(ctx, txn)
 			if err != nil {
 				slog.Warn("Failed to get check patterns for individual review", "error", err)
@@ -606,7 +611,7 @@ func (e *ClassificationEngine) clearProgress(ctx context.Context) error {
 }
 
 // ensureCategoryExists checks if a category exists and creates it if necessary.
-func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string) error {
+func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categoryName string, txns []model.Transaction) error {
 	// Check if category already exists
 	existingCategory, err := e.storage.GetCategoryByName(ctx, categoryName)
 	if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
@@ -618,6 +623,9 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 		return nil
 	}
 
+	// Determine category type based on transactions
+	categoryType := e.determineCategoryType(txns)
+
 	// Use LLM to generate a proper description for the category
 	description, confidence, err := e.classifier.GenerateCategoryDescription(ctx, categoryName)
 	if err != nil {
@@ -625,7 +633,16 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 		slog.Warn("Failed to generate category description, using fallback",
 			"category", categoryName,
 			"error", err)
-		description = fmt.Sprintf("Category for %s related expenses", categoryName)
+
+		// Adjust fallback description based on type
+		switch categoryType {
+		case model.CategoryTypeIncome:
+			description = fmt.Sprintf("Category for %s related income", categoryName)
+		case model.CategoryTypeSystem:
+			description = fmt.Sprintf("Category for %s related transfers", categoryName)
+		default:
+			description = fmt.Sprintf("Category for %s related expenses", categoryName)
+		}
 		confidence = 0.5
 	}
 
@@ -637,6 +654,8 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 			"description", description)
 	}
 
+	// For now, we'll create the category without type since CreateCategory doesn't support it yet
+	// TODO: Update CreateCategory to accept CategoryType
 	newCategory, err := e.storage.CreateCategory(ctx, categoryName, description)
 	if err != nil {
 		return fmt.Errorf("failed to create category: %w", err)
@@ -644,7 +663,142 @@ func (e *ClassificationEngine) ensureCategoryExists(ctx context.Context, categor
 
 	slog.Info("Created new category",
 		"category", newCategory.Name,
-		"id", newCategory.ID)
+		"id", newCategory.ID,
+		"type", categoryType)
 
 	return nil
+}
+
+// filterCategoriesByDirection filters categories based on transaction direction.
+func (e *ClassificationEngine) filterCategoriesByDirection(categories []model.Category, txns []model.Transaction) []model.Category {
+	if len(txns) == 0 {
+		return categories
+	}
+
+	// Determine the dominant direction of the transactions
+	// For positive amounts, we want expense categories (outgoing money)
+	// For negative amounts, we want income categories (incoming money)
+	var positiveCount, negativeCount int
+	for _, txn := range txns {
+		if txn.Amount >= 0 {
+			positiveCount++
+		} else {
+			negativeCount++
+		}
+	}
+
+	// Determine if we should show income or expense categories
+	showIncomeCategories := negativeCount > positiveCount
+
+	// Also check if any transaction has explicit direction set
+	hasExplicitDirection := false
+	var explicitDirection model.TransactionDirection
+	for _, txn := range txns {
+		if txn.Direction != "" {
+			hasExplicitDirection = true
+			explicitDirection = txn.Direction
+			break
+		}
+	}
+
+	filtered := make([]model.Category, 0, len(categories))
+	for _, cat := range categories {
+		// Always include system categories (transfers)
+		if cat.Type == model.CategoryTypeSystem {
+			filtered = append(filtered, cat)
+			continue
+		}
+
+		// If we have explicit direction, use that
+		if hasExplicitDirection {
+			switch explicitDirection {
+			case model.DirectionIncome:
+				if cat.Type == model.CategoryTypeIncome {
+					filtered = append(filtered, cat)
+				}
+			case model.DirectionExpense:
+				if cat.Type == model.CategoryTypeExpense || cat.Type == "" {
+					// Include expense categories and untyped categories
+					filtered = append(filtered, cat)
+				}
+			case model.DirectionTransfer:
+				if cat.Type == model.CategoryTypeSystem {
+					filtered = append(filtered, cat)
+				}
+			}
+		} else {
+			// Use amount-based heuristic
+			if showIncomeCategories {
+				if cat.Type == model.CategoryTypeIncome {
+					filtered = append(filtered, cat)
+				}
+			} else {
+				if cat.Type == model.CategoryTypeExpense || cat.Type == "" {
+					// Include expense categories and untyped categories
+					filtered = append(filtered, cat)
+				}
+			}
+		}
+	}
+
+	// If we filtered out all categories, return the original list
+	// This shouldn't happen in practice but is a safety measure
+	if len(filtered) == 0 {
+		slog.Warn("All categories filtered out by direction, returning full list")
+		return categories
+	}
+
+	return filtered
+}
+
+// determineCategoryType determines the category type based on transaction characteristics.
+func (e *ClassificationEngine) determineCategoryType(txns []model.Transaction) model.CategoryType {
+	if len(txns) == 0 {
+		return model.CategoryTypeExpense // Default to expense
+	}
+
+	// Check explicit direction first
+	var incomeCount, expenseCount, transferCount int
+	for _, txn := range txns {
+		switch txn.Direction {
+		case model.DirectionIncome:
+			incomeCount++
+		case model.DirectionExpense:
+			expenseCount++
+		case model.DirectionTransfer:
+			transferCount++
+		}
+	}
+
+	// If we have a clear majority, use that
+	total := incomeCount + expenseCount + transferCount
+	if total > 0 {
+		if float64(incomeCount)/float64(total) > 0.7 {
+			return model.CategoryTypeIncome
+		}
+		if float64(transferCount)/float64(total) > 0.7 {
+			return model.CategoryTypeSystem
+		}
+		if float64(expenseCount)/float64(total) > 0.7 {
+			return model.CategoryTypeExpense
+		}
+	}
+
+	// Fall back to amount-based heuristic
+	var positiveCount, negativeCount int
+	for _, txn := range txns {
+		if txn.Amount >= 0 {
+			positiveCount++
+		} else {
+			negativeCount++
+		}
+	}
+
+	// Negative amounts typically indicate income (money coming in)
+	if negativeCount > positiveCount {
+		return model.CategoryTypeIncome
+	}
+
+	// Default to expense for positive amounts
+	return model.CategoryTypeExpense
 }

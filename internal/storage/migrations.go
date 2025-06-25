@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 9
+const ExpectedSchemaVersion = 10
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -262,6 +263,64 @@ var migrations = []Migration{
 					return fmt.Errorf("failed to execute query '%s': %w", query, err)
 				}
 			}
+			return nil
+		},
+	},
+	{
+		Version:     10,
+		Description: "Clean up category descriptions with DESCRIPTION/CONFIDENCE prefixes",
+		Up: func(tx *sql.Tx) error {
+			// First, let's check what categories need cleaning
+			rows, err := tx.Query(`SELECT id, description FROM categories WHERE description LIKE 'DESCRIPTION:%'`)
+			if err != nil {
+				return fmt.Errorf("failed to query categories: %w", err)
+			}
+			defer func() {
+				if err := rows.Close(); err != nil {
+					slog.Warn("failed to close rows", "error", err)
+				}
+			}()
+
+			type categoryUpdate struct {
+				description string
+				id          int
+			}
+			var updates []categoryUpdate
+
+			for rows.Next() {
+				var id int
+				var desc string
+				if err := rows.Scan(&id, &desc); err != nil {
+					return fmt.Errorf("failed to scan category: %w", err)
+				}
+
+				// Extract just the description part
+				lines := strings.Split(desc, "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "DESCRIPTION:") {
+						cleanDesc := strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
+						if cleanDesc != "" {
+							updates = append(updates, categoryUpdate{id: id, description: cleanDesc})
+							break
+						}
+					}
+				}
+			}
+
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("error iterating categories: %w", err)
+			}
+
+			// Apply updates
+			for _, update := range updates {
+				_, err := tx.Exec(`UPDATE categories SET description = ? WHERE id = ?`, update.description, update.id)
+				if err != nil {
+					return fmt.Errorf("failed to update category %d: %w", update.id, err)
+				}
+				slog.Info("cleaned category description", "id", update.id)
+			}
+
 			return nil
 		},
 	},

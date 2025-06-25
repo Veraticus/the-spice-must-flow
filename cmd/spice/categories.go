@@ -35,10 +35,12 @@ func categoriesCmd() *cobra.Command {
 }
 
 func listCategoriesCmd() *cobra.Command {
-	return &cobra.Command{
+	var categoryType string
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all categories",
-		Long:  `Display all active expense categories with their descriptions.`,
+		Long:  `Display all active categories with their types and descriptions.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
 
@@ -59,6 +61,28 @@ func listCategoriesCmd() *cobra.Command {
 				return fmt.Errorf("failed to get categories: %w", err)
 			}
 
+			// Filter by type if specified
+			if categoryType != "" {
+				var filtered []model.Category
+				for _, cat := range categories {
+					switch categoryType {
+					case "income":
+						if cat.Type == model.CategoryTypeIncome {
+							filtered = append(filtered, cat)
+						}
+					case "expense":
+						if cat.Type == model.CategoryTypeExpense || cat.Type == "" {
+							filtered = append(filtered, cat)
+						}
+					case "system":
+						if cat.Type == model.CategoryTypeSystem {
+							filtered = append(filtered, cat)
+						}
+					}
+				}
+				categories = filtered
+			}
+
 			if len(categories) == 0 {
 				fmt.Println(cli.InfoStyle.Render("No categories found. Use 'spice categories add' to create one.")) //nolint:forbidigo // User-facing output
 				return nil
@@ -74,15 +98,17 @@ func listCategoriesCmd() *cobra.Command {
 
 			// Header
 			headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n",
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 				headerStyle.Render("ID"),
 				headerStyle.Render("Name"),
+				headerStyle.Render("Type"),
 				headerStyle.Render("Description")); err != nil {
 				slog.Error("failed to write table header", "error", err)
 			}
-			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n",
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 				strings.Repeat("-", 4),
 				strings.Repeat("-", 20),
+				strings.Repeat("-", 10),
 				strings.Repeat("-", 50)); err != nil {
 				slog.Error("failed to write table separator", "error", err)
 			}
@@ -93,7 +119,22 @@ func listCategoriesCmd() *cobra.Command {
 				if desc == "" {
 					desc = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("(no description)")
 				}
-				if _, err := fmt.Fprintf(w, "%d\t%s\t%s\n", cat.ID, cat.Name, desc); err != nil {
+
+				// Format type with color
+				var typeStr string
+				switch cat.Type {
+				case model.CategoryTypeIncome:
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Render("Income")
+				case model.CategoryTypeExpense:
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Expense")
+				case model.CategoryTypeSystem:
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("System")
+				default:
+					// Default to expense for legacy categories without type
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Expense")
+				}
+
+				if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", cat.ID, cat.Name, typeStr, desc); err != nil {
 					slog.Error("failed to write category row", "error", err, "category", cat.Name)
 				}
 			}
@@ -101,6 +142,10 @@ func listCategoriesCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&categoryType, "type", "", "Filter by category type (income, expense, system)")
+
+	return cmd
 }
 
 func addCategoryCmd() *cobra.Command {
