@@ -29,6 +29,7 @@ func categoriesCmd() *cobra.Command {
 	cmd.AddCommand(addCategoryCmd())
 	cmd.AddCommand(updateCategoryCmd())
 	cmd.AddCommand(deleteCategoryCmd())
+	cmd.AddCommand(mergeCategoriesCmd())
 
 	return cmd
 }
@@ -451,6 +452,57 @@ Examples:
 			}
 
 			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+
+	return cmd
+}
+
+func mergeCategoriesCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "merge <from-category-id> <to-category-id>",
+		Short: "Merge one category into another",
+		Long: `Merge all transactions from one category into another, then delete the source category.
+This is useful for consolidating duplicate or similar categories.
+
+Example:
+  spice categories merge 5 7
+  
+This will move all transactions from category ID 5 to category ID 7 and delete category 5.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			ctx := context.Background()
+
+			// Parse category IDs
+			fromCategoryID, err := strconv.Atoi(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid source category ID: %w", err)
+			}
+
+			toCategoryID, err := strconv.Atoi(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid target category ID: %w", err)
+			}
+
+			// Initialize storage with auto-migration
+			store, err := initStorage(ctx)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if closeErr := store.Close(); closeErr != nil {
+					slog.Error("failed to close storage", "error", closeErr)
+				}
+			}()
+
+			// For now, return a placeholder until we implement the required storage methods
+			_ = fromCategoryID
+			_ = toCategoryID
+			return fmt.Errorf("category merge functionality coming soon - requires additional storage methods")
 		},
 	}
 

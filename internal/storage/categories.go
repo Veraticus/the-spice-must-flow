@@ -21,7 +21,7 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active
+		SELECT id, name, description, created_at, is_active, type
 		FROM categories
 		WHERE is_active = 1
 		ORDER BY name`
@@ -39,8 +39,15 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	var categories []model.Category
 	for rows.Next() {
 		var cat model.Category
-		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive); err != nil {
+		var catType sql.NullString
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType); err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
+		}
+		// Set category type
+		if catType.Valid && catType.String != "" {
+			cat.Type = model.CategoryType(catType.String)
+		} else {
+			cat.Type = model.CategoryTypeExpense // default
 		}
 		categories = append(categories, cat)
 	}
@@ -64,13 +71,14 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active
+		SELECT id, name, description, created_at, is_active, type
 		FROM categories
 		WHERE name = ? AND is_active = 1`
 
 	var cat model.Category
+	var catType sql.NullString
 	err := s.db.QueryRowContext(ctx, query, name).Scan(
-		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive,
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType,
 	)
 
 	if err == sql.ErrNoRows {
@@ -78,6 +86,51 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query category: %w", err)
+	}
+
+	// Set category type
+	if catType.Valid && catType.String != "" {
+		cat.Type = model.CategoryType(catType.String)
+	} else {
+		cat.Type = model.CategoryTypeExpense // default
+	}
+
+	return &cat, nil
+}
+
+// GetCategoryByID returns a category by its ID.
+func (s *SQLiteStorage) GetCategoryByID(ctx context.Context, id int) (*model.Category, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid category ID: %d", id)
+	}
+
+	query := `
+		SELECT id, name, description, created_at, is_active, type
+		FROM categories
+		WHERE id = ? AND is_active = 1`
+
+	var cat model.Category
+	var catType sql.NullString
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, ErrCategoryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query category: %w", err)
+	}
+
+	// Set category type
+	if catType.Valid && catType.String != "" {
+		cat.Type = model.CategoryType(catType.String)
+	} else {
+		cat.Type = model.CategoryTypeExpense // default
 	}
 
 	return &cat, nil
