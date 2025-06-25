@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/engine"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/charmbracelet/lipgloss"
@@ -108,13 +109,22 @@ func addCategoryCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "add <name>",
-		Short: "Add a new category",
-		Long:  `Create a new expense category. An AI-generated description will be created automatically.`,
-		Args:  cobra.ExactArgs(1),
+		Use:   "add <name> [name2] [name3] ...",
+		Short: "Add one or more new categories",
+		Long: `Create one or more expense categories. AI-generated descriptions will be created automatically for each category.
+
+Examples:
+  # Add a single category
+  spice categories add "Travel"
+  
+  # Add multiple categories at once
+  spice categories add "Travel" "Entertainment" "Dining" "Healthcare"
+  
+  # Add categories without AI descriptions
+  spice categories add "Travel" "Entertainment" --no-description`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
-			categoryName := args[0]
 
 			// Initialize storage with auto-migration
 			store, err := initStorage(ctx)
@@ -127,21 +137,12 @@ func addCategoryCmd() *cobra.Command {
 				}
 			}()
 
-			// Check if category already exists
-			existing, err := store.GetCategoryByName(ctx, categoryName)
-			if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
-				return fmt.Errorf("failed to check existing category: %w", err)
-			}
-			if existing != nil {
-				return fmt.Errorf("category %q already exists", categoryName)
-			}
-
-			// Initialize LLM for description generation
-			var description string
-			if !skipDescription {
-				classifier, llmErr := createLLMClient()
-				if llmErr != nil {
-					return fmt.Errorf("failed to initialize LLM: %w", llmErr)
+			// Initialize LLM for description generation if needed
+			var classifier engine.Classifier
+			if !skipDescription && categoryDescription == "" {
+				classifier, err = createLLMClient()
+				if err != nil {
+					return fmt.Errorf("failed to initialize LLM: %w", err)
 				}
 
 				// Classifiers from llm package implement Close via embedded Classifier interface
@@ -152,27 +153,67 @@ func addCategoryCmd() *cobra.Command {
 						}
 					}()
 				}
+			}
 
-				description, llmErr = classifier.GenerateCategoryDescription(ctx, categoryName)
-				if llmErr != nil {
-					return fmt.Errorf("failed to generate category description: %w", llmErr)
+			// Track results
+			var createdCategories []model.Category
+			var skippedCategories []string
+
+			// Process each category
+			for _, categoryName := range args {
+				// Check if category already exists
+				existing, err := store.GetCategoryByName(ctx, categoryName)
+				if err != nil && !errors.Is(err, storage.ErrCategoryNotFound) {
+					return fmt.Errorf("failed to check existing category %q: %w", categoryName, err)
+				}
+				if existing != nil {
+					skippedCategories = append(skippedCategories, categoryName)
+					continue
+				}
+
+				// Generate or use provided description
+				var description string
+				if categoryDescription != "" {
+					// Use the same description for all categories if provided
+					description = categoryDescription
+				} else if !skipDescription && classifier != nil {
+					// Generate unique description for each category
+					description, err = classifier.GenerateCategoryDescription(ctx, categoryName)
+					if err != nil {
+						slog.Warn("Failed to generate category description",
+							"category", categoryName,
+							"error", err)
+						// Continue without description rather than failing
+						description = ""
+					}
+				}
+
+				// Create category
+				category, err := store.CreateCategory(ctx, categoryName, description)
+				if err != nil {
+					return fmt.Errorf("failed to create category %q: %w", categoryName, err)
+				}
+
+				createdCategories = append(createdCategories, *category)
+			}
+
+			// Display results
+			if len(createdCategories) > 0 {
+				fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Created %d categories:", len(createdCategories)))) //nolint:forbidigo // User-facing output
+				for _, cat := range createdCategories {
+					fmt.Printf("  • %s (ID: %d)", cat.Name, cat.ID) //nolint:forbidigo // User-facing output
+					if cat.Description != "" && !skipDescription {
+						fmt.Printf(" - %s", cat.Description) //nolint:forbidigo // User-facing output
+					}
+					fmt.Println() //nolint:forbidigo // User-facing output
 				}
 			}
 
-			// Allow user to edit description if provided
-			if categoryDescription != "" {
-				description = categoryDescription
-			}
-
-			// Create category
-			category, err := store.CreateCategory(ctx, categoryName, description)
-			if err != nil {
-				return fmt.Errorf("failed to create category: %w", err)
-			}
-
-			fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Created category %q (ID: %d)", category.Name, category.ID))) //nolint:forbidigo // User-facing output
-			if description != "" {
-				fmt.Printf("  Description: %s\n", description) //nolint:forbidigo // User-facing output
+			if len(skippedCategories) > 0 {
+				fmt.Println(cli.WarningStyle.Render(fmt.Sprintf("⚠ Skipped %d existing categories:", len(skippedCategories)))) //nolint:forbidigo // User-facing output
+				for _, name := range skippedCategories {
+					fmt.Printf("  • %s\n", name) //nolint:forbidigo // User-facing output
+				}
 			}
 
 			return nil
@@ -295,17 +336,31 @@ func deleteCategoryCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "delete <id>",
-		Short: "Delete a category",
-		Long:  `Delete a category. This will fail if any transactions are using the category.`,
-		Args:  cobra.ExactArgs(1),
+		Use:   "delete <id> [id2] [id3] ...",
+		Short: "Delete one or more categories",
+		Long: `Delete one or more categories. This will fail if any transactions are using the categories.
+
+Examples:
+  # Delete a single category
+  spice categories delete 5
+  
+  # Delete multiple categories
+  spice categories delete 5 7 12
+  
+  # Delete without confirmation
+  spice categories delete 5 7 --force`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 
-			// Parse category ID
-			id, err := strconv.Atoi(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid category ID: %w", err)
+			// Parse category IDs
+			var categoryIDs []int
+			for _, arg := range args {
+				id, err := strconv.Atoi(arg)
+				if err != nil {
+					return fmt.Errorf("invalid category ID %q: %w", arg, err)
+				}
+				categoryIDs = append(categoryIDs, id)
 			}
 
 			// Initialize storage with auto-migration
@@ -321,7 +376,11 @@ func deleteCategoryCmd() *cobra.Command {
 
 			// Confirm deletion
 			if !force {
-				fmt.Printf("Are you sure you want to delete category %d? (y/N): ", id) //nolint:forbidigo // User prompt
+				if len(categoryIDs) == 1 {
+					fmt.Printf("Are you sure you want to delete category %d? (y/N): ", categoryIDs[0]) //nolint:forbidigo // User prompt
+				} else {
+					fmt.Printf("Are you sure you want to delete %d categories (%v)? (y/N): ", len(categoryIDs), categoryIDs) //nolint:forbidigo // User prompt
+				}
 				var response string
 				if _, err := fmt.Scanln(&response); err != nil {
 					// EOF or empty input is treated as "N"
@@ -335,14 +394,46 @@ func deleteCategoryCmd() *cobra.Command {
 				}
 			}
 
-			// Delete category
-			if err := store.DeleteCategory(ctx, id); err != nil {
-				return fmt.Errorf("failed to delete category: %w", err)
+			// Track results
+			var deletedIDs []int
+			var failedIDs []int
+
+			// Delete categories
+			for _, id := range categoryIDs {
+				if err := store.DeleteCategory(ctx, id); err != nil {
+					slog.Warn("Failed to delete category",
+						"id", id,
+						"error", err)
+					failedIDs = append(failedIDs, id)
+				} else {
+					deletedIDs = append(deletedIDs, id)
+				}
 			}
 
-			if _, err := fmt.Fprintln(os.Stdout, cli.SuccessStyle.Render(fmt.Sprintf("✓ Deleted category %d", id))); err != nil {
-				slog.Error("failed to write output", "error", err)
+			// Display results
+			if len(deletedIDs) > 0 {
+				if len(deletedIDs) == 1 {
+					fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Deleted category %d", deletedIDs[0]))) //nolint:forbidigo // User-facing output
+				} else {
+					fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Deleted %d categories:", len(deletedIDs)))) //nolint:forbidigo // User-facing output
+					for _, id := range deletedIDs {
+						fmt.Printf("  • Category %d\n", id) //nolint:forbidigo // User-facing output
+					}
+				}
 			}
+
+			if len(failedIDs) > 0 {
+				fmt.Println(cli.ErrorStyle.Render(fmt.Sprintf("✗ Failed to delete %d categories:", len(failedIDs)))) //nolint:forbidigo // User-facing output
+				for _, id := range failedIDs {
+					fmt.Printf("  • Category %d (likely has associated transactions)\n", id) //nolint:forbidigo // User-facing output
+				}
+			}
+
+			// Return error if all deletions failed
+			if len(deletedIDs) == 0 && len(failedIDs) > 0 {
+				return fmt.Errorf("failed to delete any categories")
+			}
+
 			return nil
 		},
 	}
