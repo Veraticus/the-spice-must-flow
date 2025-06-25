@@ -61,7 +61,7 @@ func newClaudeCodeClient(cfg Config) (Client, error) {
 func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (ClassificationResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a neutral financial transaction classifier. Your role is to categorize transactions based on WHAT they are (merchant type, service provided) not WHO might be using them or WHY. Avoid any assumptions about personal vs business use. Respond only with the category and confidence score in the exact format requested.\n\n%s",
+		"You are a neutral financial transaction classifier. Your role is to categorize transactions based on WHAT they are (merchant type, service provided) not WHO might be using them or WHY. Avoid any assumptions about personal vs business use. Always respond with valid JSON in the exact format requested.\n\n%s",
 		prompt,
 	)
 
@@ -122,6 +122,25 @@ func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (Classif
 
 // parseClassification extracts category and confidence from the response.
 func (c *claudeCodeClient) parseClassification(content string) (ClassificationResponse, error) {
+	// Try to parse as JSON first
+	var jsonResp struct {
+		Category    string  `json:"category"`
+		Confidence  float64 `json:"confidence"`
+		IsNew       bool    `json:"isNew"`
+		Description string  `json:"description"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err == nil {
+		// Successfully parsed JSON
+		return ClassificationResponse{
+			Category:            jsonResp.Category,
+			Confidence:          jsonResp.Confidence,
+			IsNew:               jsonResp.IsNew,
+			CategoryDescription: jsonResp.Description,
+		}, nil
+	}
+
+	// Fallback to text parsing for backward compatibility
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	var category string
 	var confidence float64
@@ -182,7 +201,7 @@ type claudeCodeResponse struct {
 func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a financial transaction classifier. You must rank ALL categories by likelihood and follow the exact format requested.\n\n%s",
+		"You are a financial transaction classifier. You must rank ALL categories by likelihood and respond with valid JSON in the exact format requested.\n\n%s",
 		prompt,
 	)
 
@@ -237,7 +256,44 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 		return RankingResponse{}, fmt.Errorf("claude code error in response")
 	}
 
-	// Parse the content
+	// Try to parse as JSON first
+	var jsonResp struct {
+		Rankings []struct {
+			Category string  `json:"category"`
+			Score    float64 `json:"score"`
+		} `json:"rankings"`
+		NewCategory *struct {
+			Name        string  `json:"name"`
+			Score       float64 `json:"score"`
+			Description string  `json:"description"`
+		} `json:"newCategory,omitempty"`
+	}
+
+	if err := json.Unmarshal([]byte(response.Result), &jsonResp); err == nil {
+		// Successfully parsed JSON
+		var rankings []CategoryRanking
+		for _, r := range jsonResp.Rankings {
+			rankings = append(rankings, CategoryRanking{
+				Category: r.Category,
+				Score:    r.Score,
+				IsNew:    false,
+			})
+		}
+
+		// Add new category if present
+		if jsonResp.NewCategory != nil {
+			rankings = append(rankings, CategoryRanking{
+				Category:    jsonResp.NewCategory.Name,
+				Score:       jsonResp.NewCategory.Score,
+				IsNew:       true,
+				Description: jsonResp.NewCategory.Description,
+			})
+		}
+
+		return RankingResponse{Rankings: rankings}, nil
+	}
+
+	// Fallback to text parsing for backward compatibility
 	rankings, err := parseLLMRankings(response.Result)
 	if err != nil {
 		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
@@ -250,7 +306,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a financial category description generator. Respond only with the description text, no additional formatting.\n\n%s",
+		"You are a financial category description generator. Respond with valid JSON only.\n\n%s",
 		prompt,
 	)
 
@@ -289,13 +345,10 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 		return DescriptionResponse{}, fmt.Errorf("failed to execute claude: %w", err)
 	}
 
-	// Parse JSON response
+	// Parse JSON response from Claude Code
 	var response claudeCodeResponse
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		// If JSON parsing fails, use the raw output
-		return DescriptionResponse{
-			Description: strings.TrimSpace(stdout.String()),
-		}, nil
+		return DescriptionResponse{}, fmt.Errorf("failed to parse claude code response: %w", err)
 	}
 
 	// Check for errors in response
@@ -303,7 +356,25 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 		return DescriptionResponse{}, fmt.Errorf("claude code error in response")
 	}
 
+	// Parse the actual description response from the result
+	var descResp struct {
+		Description string  `json:"description"`
+		Confidence  float64 `json:"confidence"`
+	}
+	if err := json.Unmarshal([]byte(response.Result), &descResp); err != nil {
+		// Fallback: try to parse the old format
+		description, confidence, parseErr := parseDescriptionResponse(response.Result)
+		if parseErr != nil {
+			return DescriptionResponse{}, fmt.Errorf("failed to parse description response: %w", err)
+		}
+		return DescriptionResponse{
+			Description: description,
+			Confidence:  confidence,
+		}, nil
+	}
+
 	return DescriptionResponse{
-		Description: strings.TrimSpace(response.Result),
+		Description: descResp.Description,
+		Confidence:  descResp.Confidence,
 	}, nil
 }

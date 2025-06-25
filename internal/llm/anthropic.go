@@ -298,33 +298,29 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 		return DescriptionResponse{}, fmt.Errorf("no content in response")
 	}
 
-	// Parse the response to extract description and confidence
-	description, confidence, err := parseDescriptionResponse(response.Content[0].Text)
-	if err != nil {
-		// Try to extract just the description part as fallback
-		rawText := strings.TrimSpace(response.Content[0].Text)
-		lines := strings.Split(rawText, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "DESCRIPTION:") {
-				description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
-				if description != "" {
-					return DescriptionResponse{
-						Description: description,
-						Confidence:  0.8, // Default medium confidence
-					}, nil
-				}
-			}
+	// Parse the JSON response
+	var descResp struct {
+		Description string  `json:"description"`
+		Confidence  float64 `json:"confidence"`
+	}
+	if err := json.Unmarshal([]byte(response.Content[0].Text), &descResp); err != nil {
+		// Fallback: try to parse the old format
+		description, confidence, parseErr := parseDescriptionResponse(response.Content[0].Text)
+		if parseErr != nil {
+			// Final fallback: use the whole text
+			return DescriptionResponse{
+				Description: strings.TrimSpace(response.Content[0].Text),
+				Confidence:  0.8, // Default medium confidence
+			}, nil
 		}
-		// Final fallback: use the whole text if no DESCRIPTION: prefix found
 		return DescriptionResponse{
-			Description: rawText,
-			Confidence:  0.8, // Default medium confidence
+			Description: description,
+			Confidence:  confidence,
 		}, nil
 	}
 
 	return DescriptionResponse{
-		Description: description,
-		Confidence:  confidence,
+		Description: descResp.Description,
+		Confidence:  descResp.Confidence,
 	}, nil
 }

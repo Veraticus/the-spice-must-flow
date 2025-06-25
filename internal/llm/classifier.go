@@ -232,16 +232,22 @@ Existing Categories:
 Transaction Details:
 %s
 
-Instructions:
-1. If you are confident (85%% or higher) that the transaction fits one of the existing categories, respond:
-   CATEGORY: <existing category name>
-   CONFIDENCE: <0.85-1.0>
+Respond with a JSON object in this exact format:
 
-2. If you are less confident (<85%%) that it fits existing categories, suggest a new category:
-   CATEGORY: <new category suggestion>
-   CONFIDENCE: <0.0-0.84>
-   NEW: true
-   DESCRIPTION: <1-2 sentence description explaining what transactions belong in this category>
+For existing categories (confidence >= 0.85):
+{
+  "category": "<existing category name>",
+  "confidence": <0.85-1.0>,
+  "isNew": false
+}
+
+For new category suggestions (confidence < 0.85):
+{
+  "category": "<new category suggestion>",
+  "confidence": <0.0-0.84>,
+  "isNew": true,
+  "description": "<1-2 sentence description explaining what transactions belong in this category>"
+}
 
 Focus on WHAT the transaction is, not WHY it might have occurred.`,
 		categoryList,
@@ -274,9 +280,11 @@ The description should:
 - Be clear and specific without being overly technical
 - Help both humans and AI systems understand the category's purpose
 
-Respond in the following format:
-DESCRIPTION: <your 1-2 sentence description>
-CONFIDENCE: <0.0-1.0>
+Respond with a JSON object in this exact format:
+{
+  "description": "<your 1-2 sentence description>",
+  "confidence": <0.0-1.0>
+}
 
 Your confidence should reflect how well you understand what this category represents:
 - 0.90-1.00: Very clear understanding of the category
@@ -458,17 +466,27 @@ Instructions:
 1. Analyze the transaction and rank EVERY category by likelihood (0.0 to 1.0)
 2. The scores should be relative probabilities (they don't need to sum to 1.0)
 3. If none of the existing categories fit well, you may suggest ONE new category with score >0.7
-4. Return results in this exact format:
 
-RANKINGS:
-category_name|score
-category_name|score
-...
+Respond with a JSON object in this exact format:
+{
+  "rankings": [
+    {
+      "category": "category_name",
+      "score": 0.95
+    },
+    {
+      "category": "another_category",
+      "score": 0.05
+    }
+  ],
+  "newCategory": {
+    "name": "New Category Name",
+    "score": 0.75,
+    "description": "One sentence description of what belongs in this category"
+  }
+}
 
-NEW_CATEGORY (only if needed):
-name: Category Name
-score: 0.75
-description: One sentence description of what belongs in this category`,
+Note: "newCategory" field is optional - only include it if suggesting a new category.`,
 		transactionDetails,
 		checkHints,
 		categoryList)

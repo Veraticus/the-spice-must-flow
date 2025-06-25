@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -236,13 +237,28 @@ Examples:
 						// Continue without description rather than failing
 						description = ""
 					} else {
-						description = desc
-						// Log low confidence descriptions
+						slog.Debug("Generated category description",
+							"category", categoryName,
+							"description", desc,
+							"confidence", conf)
+						// Check confidence level
 						if conf < 0.7 {
-							slog.Warn("Low confidence category description",
-								"category", categoryName,
-								"confidence", conf,
-								"description", desc)
+							// Low confidence - prompt user for description
+							fmt.Printf("\n%s\n", cli.WarningStyle.Render(fmt.Sprintf("⚠️  Low confidence (%.2f) for category '%s'", conf, categoryName))) //nolint:forbidigo // User-facing output
+							fmt.Printf("AI suggested: %s\n\n", desc)                                                                                      //nolint:forbidigo // User-facing output
+							fmt.Print("Please provide a better description (or press Enter to use AI suggestion): ")                                      //nolint:forbidigo // User-facing output
+
+							reader := bufio.NewReader(os.Stdin)
+							userDesc, _ := reader.ReadString('\n')
+							userDesc = strings.TrimSpace(userDesc)
+
+							if userDesc != "" {
+								description = userDesc
+							} else {
+								description = desc
+							}
+						} else {
+							description = desc
 						}
 					}
 				}

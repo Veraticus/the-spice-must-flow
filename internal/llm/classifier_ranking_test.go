@@ -373,8 +373,8 @@ func TestClassifier_PromptBuilding(t *testing.T) {
 		t.Error("Prompt missing category with description")
 	}
 
-	if !containsString(prompt, "RANKINGS:") {
-		t.Error("Prompt missing rankings instruction")
+	if !containsString(prompt, "rankings") && !containsString(prompt, "JSON") {
+		t.Error("Prompt missing rankings or JSON instruction")
 	}
 }
 
