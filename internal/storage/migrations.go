@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 10
+const ExpectedSchemaVersion = 12
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -319,6 +319,76 @@ var migrations = []Migration{
 					return fmt.Errorf("failed to update category %d: %w", update.id, err)
 				}
 				slog.Info("cleaned category description", "id", update.id)
+			}
+
+			return nil
+		},
+	},
+	{
+		Version:     11,
+		Description: "Remove active column from check_patterns",
+		Up: func(tx *sql.Tx) error {
+			// Create new table without active column
+			if _, err := tx.Exec(`
+				CREATE TABLE check_patterns_new (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					pattern_name TEXT NOT NULL,
+					amount_min REAL,
+					amount_max REAL,
+					check_number_pattern TEXT,
+					day_of_month_min INTEGER,
+					day_of_month_max INTEGER,
+					category TEXT NOT NULL,
+					notes TEXT,
+					confidence_boost REAL DEFAULT 0.3,
+					use_count INTEGER DEFAULT 0,
+					created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+					updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create new check_patterns table: %w", err)
+			}
+
+			// Copy data from old table (excluding inactive patterns)
+			if _, err := tx.Exec(`
+				INSERT INTO check_patterns_new
+				SELECT id, pattern_name, amount_min, amount_max, check_number_pattern,
+					day_of_month_min, day_of_month_max, category, notes,
+					confidence_boost, use_count, created_at, updated_at
+				FROM check_patterns
+				WHERE active = 1
+			`); err != nil {
+				return fmt.Errorf("failed to copy check patterns: %w", err)
+			}
+
+			// Drop old table
+			if _, err := tx.Exec(`DROP TABLE check_patterns`); err != nil {
+				return fmt.Errorf("failed to drop old check_patterns table: %w", err)
+			}
+
+			// Rename new table
+			if _, err := tx.Exec(`ALTER TABLE check_patterns_new RENAME TO check_patterns`); err != nil {
+				return fmt.Errorf("failed to rename check_patterns table: %w", err)
+			}
+
+			// Recreate indexes
+			if _, err := tx.Exec(`CREATE INDEX idx_check_patterns_amount ON check_patterns(amount_min, amount_max)`); err != nil {
+				return fmt.Errorf("failed to create amount index: %w", err)
+			}
+			if _, err := tx.Exec(`CREATE INDEX idx_check_patterns_category ON check_patterns(category)`); err != nil {
+				return fmt.Errorf("failed to create category index: %w", err)
+			}
+
+			return nil
+		},
+	},
+	{
+		Version:     12,
+		Description: "Add amounts column to check_patterns",
+		Up: func(tx *sql.Tx) error {
+			// Add amounts column to store multiple specific amounts as JSON
+			if _, err := tx.Exec(`ALTER TABLE check_patterns ADD COLUMN amounts TEXT`); err != nil {
+				return fmt.Errorf("failed to add amounts column: %w", err)
 			}
 
 			return nil

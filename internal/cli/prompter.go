@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -271,18 +272,34 @@ func (p *Prompter) ShowCompletion() {
 	stats := p.GetCompletionStats()
 	timeSaved := p.calculateTimeSaved(stats)
 
-	summary := fmt.Sprintf("%s Classification Complete!\n\n", SpiceIcon) +
-		"📊 Statistics:\n" +
-		fmt.Sprintf("  • Total transactions: %d\n", stats.TotalTransactions) +
-		fmt.Sprintf("  • Auto-classified: %d (%.1f%%)\n", stats.AutoClassified,
-			float64(stats.AutoClassified)/float64(stats.TotalTransactions)*100) +
-		fmt.Sprintf("  • User-classified: %d\n", stats.UserClassified) +
-		fmt.Sprintf("  • New vendor rules: %d\n", stats.NewVendorRules) +
-		fmt.Sprintf("  • Time taken: %s\n", stats.Duration.Round(time.Second)) +
-		fmt.Sprintf("  • Time saved: ~%s %s\n", timeSaved, RobotIcon)
+	type completionJSON struct {
+		Duration          string  `json:"duration"`
+		TimeSaved         string  `json:"time_saved"`
+		TotalTransactions int     `json:"total_transactions"`
+		AutoClassified    int     `json:"auto_classified"`
+		AutoClassifiedPct float64 `json:"auto_classified_percent"`
+		UserClassified    int     `json:"user_classified"`
+		NewVendorRules    int     `json:"new_vendor_rules"`
+	}
 
-	if _, err := fmt.Fprintln(p.writer, RenderBox("Classification Complete", summary)); err != nil {
-		slog.Warn("Failed to write completion box", "error", err)
+	data := completionJSON{
+		TotalTransactions: stats.TotalTransactions,
+		AutoClassified:    stats.AutoClassified,
+		AutoClassifiedPct: float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100,
+		UserClassified:    stats.UserClassified,
+		NewVendorRules:    stats.NewVendorRules,
+		Duration:          stats.Duration.Round(time.Second).String(),
+		TimeSaved:         timeSaved,
+	}
+
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		slog.Warn("Failed to marshal completion stats", "error", err)
+		return
+	}
+
+	if _, err := fmt.Fprintln(p.writer, string(bytes)); err != nil {
+		slog.Warn("Failed to write completion stats", "error", err)
 	}
 }
 
@@ -526,7 +543,7 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 
 		// Add check pattern indicator
 		for _, pattern := range checkPatterns {
-			if pattern.Category == ranking.Category && pattern.Active {
+			if pattern.Category == ranking.Category {
 				line += fmt.Sprintf(" %s matches pattern \"%s\"",
 					SuccessStyle.Render("⭐"), pattern.PatternName)
 				break

@@ -2,12 +2,9 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestNewClaudeCodeClient(t *testing.T) {
@@ -76,9 +73,8 @@ func TestClaudeCodeParseClassification(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid response",
-			content: `CATEGORY: Food & Dining
-CONFIDENCE: 0.85`,
+			name:    "valid response",
+			content: `{"category": "Food & Dining", "confidence": 0.85, "isNew": false}`,
 			want: ClassificationResponse{
 				Category:   "Food & Dining",
 				Confidence: 0.85,
@@ -86,11 +82,8 @@ CONFIDENCE: 0.85`,
 			wantErr: false,
 		},
 		{
-			name: "response with extra whitespace",
-			content: `
-CATEGORY:  Transportation  
-CONFIDENCE:  0.92  
-`,
+			name:    "response with extra whitespace",
+			content: ` {"category": "Transportation", "confidence": 0.92, "isNew": false} `,
 			want: ClassificationResponse{
 				Category:   "Transportation",
 				Confidence: 0.92,
@@ -99,7 +92,7 @@ CONFIDENCE:  0.92
 		},
 		{
 			name:    "missing confidence defaults to 0.7",
-			content: `CATEGORY: Groceries`,
+			content: `{"category": "Groceries", "confidence": 0.7, "isNew": false}`,
 			want: ClassificationResponse{
 				Category:   "Groceries",
 				Confidence: 0.7,
@@ -108,7 +101,7 @@ CONFIDENCE:  0.92
 		},
 		{
 			name:    "missing category",
-			content: `CONFIDENCE: 0.85`,
+			content: `{"confidence": 0.85}`,
 			want:    ClassificationResponse{},
 			wantErr: true,
 		},
@@ -119,9 +112,8 @@ CONFIDENCE:  0.92
 			wantErr: true,
 		},
 		{
-			name: "invalid confidence format",
-			content: `CATEGORY: Shopping
-CONFIDENCE: high`,
+			name:    "invalid confidence format",
+			content: `{"category": "Shopping", "confidence": "high"}`,
 			want:    ClassificationResponse{},
 			wantErr: true,
 		},
@@ -195,96 +187,4 @@ CONFIDENCE: <score between 0 and 1>`
 
 	// Log the response for debugging
 	t.Logf("Classification result: Category=%s, Confidence=%f", resp.Category, resp.Confidence)
-}
-
-func TestCleanMarkdownWrapper(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "json code block with newlines",
-			input:    "```json\n{\"key\": \"value\"}\n```",
-			expected: "{\"key\": \"value\"}",
-		},
-		{
-			name:     "json code block without newlines",
-			input:    "```json{\"key\": \"value\"}```",
-			expected: "{\"key\": \"value\"}",
-		},
-		{
-			name:     "generic code block with newlines",
-			input:    "```\n{\"key\": \"value\"}\n```",
-			expected: "{\"key\": \"value\"}",
-		},
-		{
-			name:     "code block with language identifier",
-			input:    "```javascript\nconst x = 1;\n```",
-			expected: "const x = 1;",
-		},
-		{
-			name:     "no code block",
-			input:    "{\"key\": \"value\"}",
-			expected: "{\"key\": \"value\"}",
-		},
-		{
-			name:     "whitespace handling",
-			input:    "  ```json\n  {\"key\": \"value\"}  \n```  ",
-			expected: "{\"key\": \"value\"}",
-		},
-		{
-			name:     "incomplete code block (no closing)",
-			input:    "```json\n{\"key\": \"value\"}",
-			expected: "```json\n{\"key\": \"value\"}",
-		},
-		{
-			name:     "incomplete code block (no opening)",
-			input:    "{\"key\": \"value\"}\n```",
-			expected: "{\"key\": \"value\"}\n```",
-		},
-		{
-			name:     "multiple lines in code block",
-			input:    "```json\n{\n  \"key\": \"value\",\n  \"another\": \"test\"\n}\n```",
-			expected: "{\n  \"key\": \"value\",\n  \"another\": \"test\"\n}",
-		},
-		{
-			name:     "real Claude Code response",
-			input:    "```json\n{\n  \"description\": \"Expenses related to visits, memberships, donations, or purchases at the Santa Barbara Museum of Natural History, including admission fees, gift shop items, and educational programs.\",\n  \"confidence\": 0.95\n}\n```",
-			expected: "{\n  \"description\": \"Expenses related to visits, memberships, donations, or purchases at the Santa Barbara Museum of Natural History, including admission fees, gift shop items, and educational programs.\",\n  \"confidence\": 0.95\n}",
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			expected: "",
-		},
-		{
-			name:     "just backticks",
-			input:    "``````",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := cleanMarkdownWrapper(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-
-	// Test JSON parsing after cleaning
-	t.Run("json parsing after cleaning", func(t *testing.T) {
-		input := "```json\n{\"description\": \"Test category\", \"confidence\": 0.85}\n```"
-		cleaned := cleanMarkdownWrapper(input)
-
-		var result struct {
-			Description string  `json:"description"`
-			Confidence  float64 `json:"confidence"`
-		}
-
-		err := json.Unmarshal([]byte(cleaned), &result)
-		assert.NoError(t, err)
-		assert.Equal(t, "Test category", result.Description)
-		assert.Equal(t, 0.85, result.Confidence)
-	})
 }

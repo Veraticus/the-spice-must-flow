@@ -14,10 +14,9 @@ func checksDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <pattern-id>",
 		Short: "Delete a check pattern",
-		Long: `Delete a check pattern (soft delete - can be recovered).
+		Long: `Delete a check pattern permanently.
 
-The pattern will be marked as inactive and won't be used for matching,
-but the data remains in the database.`,
+This action cannot be undone.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runChecksDelete,
 	}
@@ -86,8 +85,7 @@ func runChecksDelete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to delete pattern: %w", err)
 	}
 
-	fmt.Println(cli.FormatSuccess(fmt.Sprintf("✓ Pattern %d deleted successfully", patternID)))                 //nolint:forbidigo // User-facing output
-	fmt.Println(cli.InfoStyle.Render("Note: This is a soft delete. The pattern data remains in the database.")) //nolint:forbidigo // User-facing output
+	fmt.Println(cli.FormatSuccess(fmt.Sprintf("✓ Pattern %d deleted successfully", patternID))) //nolint:forbidigo // User-facing output
 
 	return nil
 }

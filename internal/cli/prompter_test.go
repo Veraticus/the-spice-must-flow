@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -405,8 +406,18 @@ func TestCLIPrompter_CompletionStats(t *testing.T) {
 
 	prompter.ShowCompletion()
 	completionOutput := output.String()
-	assert.Contains(t, completionOutput, "Classification Complete!")
-	assert.Contains(t, completionOutput, "Time saved:")
+
+	// Find the JSON output (it should be the last line)
+	lines := strings.Split(strings.TrimSpace(completionOutput), "\n")
+	jsonLine := lines[len(lines)-1]
+
+	// Parse and validate JSON
+	var result map[string]any
+	err := json.Unmarshal([]byte(jsonLine), &result)
+	assert.NoError(t, err)
+	assert.Equal(t, float64(2), result["total_transactions"])
+	assert.Equal(t, float64(1), result["auto_classified"])
+	assert.Equal(t, float64(1), result["user_classified"])
 }
 
 func TestCLIPrompter_ContextCancellation(t *testing.T) {
@@ -624,7 +635,6 @@ func TestCLIPrompter_promptCategorySelection(t *testing.T) {
 				ID:              1,
 				PatternName:     "Monthly cleaning",
 				Category:        "Home Services",
-				Active:          true,
 				ConfidenceBoost: 0.3,
 			},
 		}
@@ -807,7 +817,6 @@ func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
 			ID:              1,
 			PatternName:     "Office supplies check",
 			Category:        "Office Supplies",
-			Active:          true,
 			ConfidenceBoost: 0.3,
 		},
 	}

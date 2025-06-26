@@ -86,7 +86,6 @@ func TestMockClassifier_SuggestCategoryRankings(t *testing.T) {
 					PatternName:     "Monthly cleaning",
 					Category:        "Home Services",
 					ConfidenceBoost: 0.5,
-					Active:          true,
 				},
 			},
 			wantTopCat:   "Home Services",
@@ -210,7 +209,6 @@ func TestMockClassifier_CheckPatternBoost(t *testing.T) {
 			PatternName:     "Bi-weekly cleaning",
 			Category:        "Home Services",
 			ConfidenceBoost: 0.4,
-			Active:          true,
 		},
 	}
 

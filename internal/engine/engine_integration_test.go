@@ -209,7 +209,6 @@ func TestCheckPatternIntegration(t *testing.T) {
 			AmountMax:       floatPtr(100.00),
 			Category:        "Home Services",
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		},
 		{
 			PatternName:     "Rent payment",
@@ -217,7 +216,6 @@ func TestCheckPatternIntegration(t *testing.T) {
 			AmountMax:       floatPtr(3100.00),
 			Category:        "Rent",
 			ConfidenceBoost: 0.4,
-			Active:          true,
 		},
 	}
 

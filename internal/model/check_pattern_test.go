@@ -162,7 +162,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "matches exact amount",
 			pattern: CheckPattern{
-				Active:    true,
 				AmountMin: floatPtr(100),
 				AmountMax: floatPtr(100),
 			},
@@ -176,7 +175,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "matches amount range",
 			pattern: CheckPattern{
-				Active:    true,
 				AmountMin: floatPtr(50),
 				AmountMax: floatPtr(150),
 			},
@@ -190,7 +188,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "no match - amount too low",
 			pattern: CheckPattern{
-				Active:    true,
 				AmountMin: floatPtr(200),
 			},
 			txn: Transaction{
@@ -203,7 +200,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "no match - amount too high",
 			pattern: CheckPattern{
-				Active:    true,
 				AmountMax: floatPtr(50),
 			},
 			txn: Transaction{
@@ -216,7 +212,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "matches day of month",
 			pattern: CheckPattern{
-				Active:        true,
 				DayOfMonthMin: intPtr(10),
 				DayOfMonthMax: intPtr(20),
 			},
@@ -229,7 +224,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "no match - day too early",
 			pattern: CheckPattern{
-				Active:        true,
 				DayOfMonthMin: intPtr(20),
 			},
 			txn: Transaction{
@@ -241,7 +235,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "no match - day too late",
 			pattern: CheckPattern{
-				Active:        true,
 				DayOfMonthMax: intPtr(10),
 			},
 			txn: Transaction{
@@ -251,29 +244,16 @@ func TestCheckPattern_Matches(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "no match - not a check",
-			pattern: CheckPattern{
-				Active: true,
-			},
+			name:    "no match - not a check",
+			pattern: CheckPattern{},
 			txn: Transaction{
 				Type: "DEBIT",
 			},
 			want: false,
 		},
 		{
-			name: "no match - inactive pattern",
-			pattern: CheckPattern{
-				Active: false,
-			},
-			txn: Transaction{
-				Type: "CHECK",
-			},
-			want: false,
-		},
-		{
 			name: "matches complex pattern",
 			pattern: CheckPattern{
-				Active:        true,
 				AmountMin:     floatPtr(90),
 				AmountMax:     floatPtr(110),
 				DayOfMonthMin: intPtr(10),
@@ -289,7 +269,6 @@ func TestCheckPattern_Matches(t *testing.T) {
 		{
 			name: "no match - complex pattern amount out of range",
 			pattern: CheckPattern{
-				Active:        true,
 				AmountMin:     floatPtr(90),
 				AmountMax:     floatPtr(110),
 				DayOfMonthMin: intPtr(10),

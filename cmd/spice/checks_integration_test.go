@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
+	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/Veraticus/the-spice-must-flow/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +43,6 @@ func TestCheckPatternsIntegration(t *testing.T) {
 				AmountMax:   ptr(200.00), // Add upper limit to avoid matching rent amounts
 				Category:    "Home Services",
 				Notes:       "Cleaning service",
-				Active:      true,
 			},
 			{
 				PatternName:   "Rent payment",
@@ -51,7 +51,6 @@ func TestCheckPatternsIntegration(t *testing.T) {
 				Category:      "Housing",
 				DayOfMonthMin: ptr(1),
 				DayOfMonthMax: ptr(5),
-				Active:        true,
 			},
 		}
 
@@ -154,10 +153,10 @@ func TestCheckPatternsIntegration(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, remaining, originalCount-1)
 
-		// Verify it still exists but is inactive
-		deleted, err := store.GetCheckPattern(ctx, patterns[0].ID)
-		assert.NoError(t, err)
-		assert.False(t, deleted.Active)
+		// Verify it's completely deleted
+		_, err = store.GetCheckPattern(ctx, patterns[0].ID)
+		assert.Error(t, err)
+		assert.Equal(t, storage.ErrCheckPatternNotFound, err)
 	})
 
 	t.Run("increment use count", func(t *testing.T) {

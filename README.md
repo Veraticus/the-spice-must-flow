@@ -242,6 +242,7 @@ llm:
 classification:
   batch_size: 50
   auto_approve_threshold: 0.95  # Auto-approve if confidence > 95%
+  acceptance_threshold: 0.8     # Default threshold for --batch mode
 
 # Logging
 logging:
@@ -387,6 +388,39 @@ spice classify
 # - Learn from your decisions for future classifications
 # - Suggest new categories when confidence is low
 ```
+
+#### Batch Classification Mode
+
+For faster classification of high-confidence transactions, use batch mode:
+
+```bash
+# Run batch classification with default threshold (0.8)
+spice classify --batch
+
+# Set custom confidence threshold (0.0 to 1.0)
+spice classify --batch --acceptance-threshold 0.9
+
+# Combine with other options
+spice classify --batch --from 2024-01-01 --to 2024-12-31
+```
+
+**How Batch Mode Works:**
+- Automatically classifies transactions that meet the confidence threshold
+- Shows a summary of auto-classified transactions for review
+- Falls back to interactive mode for low-confidence transactions
+- Perfect for recurring vendors and well-established spending patterns
+
+**Confidence Thresholds:**
+- `0.9-1.0`: Very conservative - only auto-classify near-certain matches
+- `0.8` (default): Balanced - auto-classify high-confidence matches
+- `0.7`: More aggressive - may auto-classify some ambiguous transactions
+- `0.5-0.6`: Very aggressive - use with caution
+
+**Best Practices:**
+- Start with the default threshold (0.8) and adjust based on accuracy
+- Run `spice classify` interactively first to train the system
+- Review batch results regularly to ensure accuracy
+- Use higher thresholds for financial/tax-critical categorization
 
 ### 5. Export to Google Sheets
 

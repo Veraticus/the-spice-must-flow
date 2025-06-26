@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -117,50 +116,29 @@ func (c *openAIClient) Classify(ctx context.Context, prompt string) (Classificat
 
 // parseClassification extracts category and confidence from the LLM response.
 func (c *openAIClient) parseClassification(content string) (ClassificationResponse, error) {
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-	var category string
-	var confidence float64
-	var isNew bool
-	var description string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "CATEGORY:"):
-			category = strings.TrimSpace(strings.TrimPrefix(line, "CATEGORY:"))
-		case strings.HasPrefix(line, "CONFIDENCE:"):
-			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
-			var err error
-			confidence, err = strconv.ParseFloat(confStr, 64)
-			if err != nil {
-				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
-			}
-		case strings.HasPrefix(line, "NEW:"):
-			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
-			isNew = strings.ToLower(newStr) == "true"
-		case strings.HasPrefix(line, "DESCRIPTION:"):
-			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
-		}
+	// Parse JSON response
+	var jsonResp struct {
+		Category    string  `json:"category"`
+		Confidence  float64 `json:"confidence"`
+		IsNew       bool    `json:"isNew"`
+		Description string  `json:"description,omitempty"`
 	}
 
-	if category == "" {
-		return ClassificationResponse{}, fmt.Errorf("no category found in response: %s", content)
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return ClassificationResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	if confidence == 0 {
-		confidence = 0.7 // Default confidence if not provided
-	}
-
-	// If confidence is below 0.85 and NEW wasn't explicitly set, assume it's a new category
-	if confidence < 0.85 && !isNew {
-		isNew = true
+	if jsonResp.Category == "" {
+		return ClassificationResponse{}, fmt.Errorf("no category found in response")
 	}
 
 	return ClassificationResponse{
-		Category:            category,
-		Confidence:          confidence,
-		IsNew:               isNew,
-		CategoryDescription: description,
+		Category:            jsonResp.Category,
+		Confidence:          jsonResp.Confidence,
+		IsNew:               jsonResp.IsNew,
+		CategoryDescription: jsonResp.Description,
 	}, nil
 }
 
@@ -240,9 +218,49 @@ func (c *openAIClient) ClassifyWithRankings(ctx context.Context, prompt string) 
 		return RankingResponse{}, fmt.Errorf("no completion choices returned")
 	}
 
-	rankings, err := parseLLMRankings(response.Choices[0].Message.Content)
-	if err != nil {
-		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
+	// Try to parse as JSON first
+	var jsonResp struct {
+		Rankings []struct {
+			Category string  `json:"category"`
+			Score    float64 `json:"score"`
+		} `json:"rankings"`
+		NewCategory *struct {
+			Name        string  `json:"name"`
+			Score       float64 `json:"score"`
+			Description string  `json:"description"`
+		} `json:"newCategory,omitempty"`
+	}
+
+	content := response.Choices[0].Message.Content
+	// Clean any markdown wrappers that might be present
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	// Successfully parsed JSON
+	var rankings []CategoryRanking
+	for _, r := range jsonResp.Rankings {
+		rankings = append(rankings, CategoryRanking{
+			Category: r.Category,
+			Score:    r.Score,
+			IsNew:    false,
+		})
+	}
+
+	// Add new category if present
+	if jsonResp.NewCategory != nil {
+		rankings = append(rankings, CategoryRanking{
+			Category:    jsonResp.NewCategory.Name,
+			Score:       jsonResp.NewCategory.Score,
+			IsNew:       true,
+			Description: jsonResp.NewCategory.Description,
+		})
+	}
+
+	if len(rankings) == 0 {
+		return RankingResponse{}, fmt.Errorf("no rankings found in response")
 	}
 
 	return RankingResponse{Rankings: rankings}, nil
@@ -304,17 +322,21 @@ func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (
 		return DescriptionResponse{}, fmt.Errorf("no completion choices returned")
 	}
 
-	description, confidence, err := parseDescriptionResponse(response.Choices[0].Message.Content)
-	if err != nil {
-		// Fallback to simple parsing if structured parsing fails
-		return DescriptionResponse{
-			Description: strings.TrimSpace(response.Choices[0].Message.Content),
-			Confidence:  0.8, // Default medium confidence
-		}, nil
+	// Parse JSON response
+	var jsonResp struct {
+		Description string  `json:"description"`
+		Confidence  float64 `json:"confidence"`
+	}
+
+	content := response.Choices[0].Message.Content
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return DescriptionResponse{
-		Description: description,
-		Confidence:  confidence,
+		Description: jsonResp.Description,
+		Confidence:  jsonResp.Confidence,
 	}, nil
 }

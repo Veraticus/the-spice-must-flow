@@ -66,21 +66,31 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 	}
 
 	fmt.Println("\nAvailable categories:") //nolint:forbidigo // User-facing output
-	for _, cat := range categories {
-		fmt.Printf("  - %s\n", cat.Name) //nolint:forbidigo // User-facing output
+	for i, cat := range categories {
+		fmt.Printf("  [%d] %s\n", i+1, cat.Name) //nolint:forbidigo // User-facing output
 	}
 
 	var category string
 	for {
-		category, err = promptString(reader, "\nCategory")
+		categoryInput, err := promptString(reader, "\nCategory (enter number)")
 		if err != nil {
 			return fmt.Errorf("failed to get category: %w", err)
 		}
 
-		// Validate category exists
+		// Try to parse as number first
+		if num, parseErr := strconv.Atoi(categoryInput); parseErr == nil {
+			if num >= 1 && num <= len(categories) {
+				category = categories[num-1].Name
+				break
+			}
+			fmt.Println(cli.FormatError(fmt.Sprintf("Please enter a number between 1 and %d", len(categories)))) //nolint:forbidigo // User-facing output
+			continue
+		}
+
+		// Fall back to name matching for backwards compatibility
 		found := false
 		for _, cat := range categories {
-			if strings.EqualFold(cat.Name, category) {
+			if strings.EqualFold(cat.Name, categoryInput) {
 				category = cat.Name // Use exact case
 				found = true
 				break
@@ -91,7 +101,7 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 			break
 		}
 
-		fmt.Println(cli.FormatError("Category not found. Please choose from the list above.")) //nolint:forbidigo // User-facing output
+		fmt.Println(cli.FormatError("Invalid selection. Please enter a number from the list above.")) //nolint:forbidigo // User-facing output
 	}
 
 	// Get amount matching type
@@ -106,8 +116,9 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 	}
 
 	pattern := model.CheckPattern{
-		PatternName: patternName,
-		Category:    category,
+		PatternName:     patternName,
+		Category:        category,
+		ConfidenceBoost: 0.3, // Default confidence boost
 	}
 
 	// Handle amount based on type
@@ -140,22 +151,8 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("failed to get amounts: %w", errAmts)
 		}
 
-		// For multiple amounts, we'll need to create multiple patterns
-		// or store them as a JSON array in check_number_pattern
-		// For now, let's create multiple patterns
-		for i, amount := range amounts {
-			p := pattern // Copy base pattern
-			p.AmountMin = &amount
-			if i == 0 {
-				pattern = p // Use first one as main pattern
-			} else {
-				// Create additional pattern
-				p.PatternName = fmt.Sprintf("%s (%d)", patternName, i+1)
-				if errCreate := storage.CreateCheckPattern(ctx, &p); errCreate != nil {
-					return fmt.Errorf("failed to create additional pattern: %w", errCreate)
-				}
-			}
-		}
+		// Store all amounts in the single pattern
+		pattern.Amounts = amounts
 	}
 
 	// Day of month restriction

@@ -131,7 +131,6 @@ func TestClassifier_SuggestCategoryRankings(t *testing.T) {
 					PatternName:     "Monthly cleaning",
 					Category:        "Home Services",
 					ConfidenceBoost: 0.3,
-					Active:          true,
 				},
 			},
 			mockRankings: []CategoryRanking{
@@ -334,7 +333,6 @@ func TestClassifier_PromptBuilding(t *testing.T) {
 			PatternName: "Monthly cleaning",
 			Category:    "Home Services",
 			UseCount:    10,
-			Active:      true,
 		},
 	}
 

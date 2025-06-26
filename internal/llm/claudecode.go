@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -103,8 +102,7 @@ func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (Classif
 	// Parse JSON response
 	var response claudeCodeResponse
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		// If JSON parsing fails, try to parse as plain text
-		return c.parseClassification(stdout.String())
+		return ClassificationResponse{}, fmt.Errorf("failed to parse claude code response: %w", err)
 	}
 
 	// Check for errors in response
@@ -122,7 +120,7 @@ func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (Classif
 
 // parseClassification extracts category and confidence from the response.
 func (c *claudeCodeClient) parseClassification(content string) (ClassificationResponse, error) {
-	// Try to parse as JSON first
+	// Parse JSON response
 	var jsonResp struct {
 		Category    string  `json:"category"`
 		Confidence  float64 `json:"confidence"`
@@ -130,61 +128,19 @@ func (c *claudeCodeClient) parseClassification(content string) (ClassificationRe
 		Description string  `json:"description"`
 	}
 
-	if err := json.Unmarshal([]byte(content), &jsonResp); err == nil {
-		// Successfully parsed JSON
-		return ClassificationResponse{
-			Category:            jsonResp.Category,
-			Confidence:          jsonResp.Confidence,
-			IsNew:               jsonResp.IsNew,
-			CategoryDescription: jsonResp.Description,
-		}, nil
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return ClassificationResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	// Fallback to text parsing for backward compatibility
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-	var category string
-	var confidence float64
-	var isNew bool
-	var description string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "CATEGORY:"):
-			category = strings.TrimSpace(strings.TrimPrefix(line, "CATEGORY:"))
-		case strings.HasPrefix(line, "CONFIDENCE:"):
-			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
-			var err error
-			confidence, err = strconv.ParseFloat(confStr, 64)
-			if err != nil {
-				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
-			}
-		case strings.HasPrefix(line, "NEW:"):
-			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
-			isNew = strings.ToLower(newStr) == "true"
-		case strings.HasPrefix(line, "DESCRIPTION:"):
-			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
-		}
-	}
-
-	if category == "" {
-		return ClassificationResponse{}, fmt.Errorf("no category found in response: %s", content)
-	}
-
-	if confidence == 0 {
-		confidence = 0.7 // Default confidence if not provided
-	}
-
-	// If confidence is below 0.85 and NEW wasn't explicitly set, assume it's a new category
-	if confidence < 0.85 && !isNew {
-		isNew = true
+	if jsonResp.Category == "" {
+		return ClassificationResponse{}, fmt.Errorf("no category found in response")
 	}
 
 	return ClassificationResponse{
-		Category:            category,
-		Confidence:          confidence,
-		IsNew:               isNew,
-		CategoryDescription: description,
+		Category:            jsonResp.Category,
+		Confidence:          jsonResp.Confidence,
+		IsNew:               jsonResp.IsNew,
+		CategoryDescription: jsonResp.Description,
 	}, nil
 }
 
@@ -195,34 +151,6 @@ type claudeCodeResponse struct {
 	SessionID string  `json:"session_id"`
 	IsError   bool    `json:"is_error"`
 	TotalCost float64 `json:"total_cost_usd"`
-}
-
-// cleanMarkdownWrapper removes markdown code block wrappers from content.
-// Claude Code often wraps JSON responses in ```json ... ``` blocks.
-func cleanMarkdownWrapper(content string) string {
-	content = strings.TrimSpace(content)
-
-	// Check for JSON-specific code blocks first
-	if strings.HasPrefix(content, "```json") && strings.HasSuffix(content, "```") {
-		content = strings.TrimPrefix(content, "```json")
-		content = strings.TrimSuffix(content, "```")
-		return strings.TrimSpace(content)
-	}
-
-	// Check for generic code blocks
-	if strings.HasPrefix(content, "```") && strings.HasSuffix(content, "```") {
-		// Find the end of the first line to skip any language identifier
-		firstNewline := strings.Index(content, "\n")
-		if firstNewline > 0 {
-			content = content[firstNewline+1:]
-		} else {
-			content = strings.TrimPrefix(content, "```")
-		}
-		content = strings.TrimSuffix(content, "```")
-		return strings.TrimSpace(content)
-	}
-
-	return content
 }
 
 // ClassifyWithRankings sends a ranking classification request to Claude Code.
@@ -271,12 +199,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 	// Parse JSON response
 	var response claudeCodeResponse
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		// If JSON parsing fails, try to parse raw output
-		rankings, err := parseLLMRankings(stdout.String())
-		if err != nil {
-			return RankingResponse{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		return RankingResponse{Rankings: rankings}, nil
+		return RankingResponse{}, fmt.Errorf("failed to parse claude code response: %w", err)
 	}
 
 	// Check for errors in response
@@ -284,7 +207,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 		return RankingResponse{}, fmt.Errorf("claude code error in response")
 	}
 
-	// Try to parse as JSON first
+	// Parse the rankings JSON
 	var jsonResp struct {
 		Rankings []struct {
 			Category string  `json:"category"`
@@ -299,34 +222,32 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 
 	cleanedResult := cleanMarkdownWrapper(response.Result)
 
-	if err := json.Unmarshal([]byte(cleanedResult), &jsonResp); err == nil {
-		// Successfully parsed JSON
-		var rankings []CategoryRanking
-		for _, r := range jsonResp.Rankings {
-			rankings = append(rankings, CategoryRanking{
-				Category: r.Category,
-				Score:    r.Score,
-				IsNew:    false,
-			})
-		}
-
-		// Add new category if present
-		if jsonResp.NewCategory != nil {
-			rankings = append(rankings, CategoryRanking{
-				Category:    jsonResp.NewCategory.Name,
-				Score:       jsonResp.NewCategory.Score,
-				IsNew:       true,
-				Description: jsonResp.NewCategory.Description,
-			})
-		}
-
-		return RankingResponse{Rankings: rankings}, nil
+	if err := json.Unmarshal([]byte(cleanedResult), &jsonResp); err != nil {
+		return RankingResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	// Fallback to text parsing for backward compatibility
-	rankings, err := parseLLMRankings(cleanedResult)
-	if err != nil {
-		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
+	// Build rankings
+	var rankings []CategoryRanking
+	for _, r := range jsonResp.Rankings {
+		rankings = append(rankings, CategoryRanking{
+			Category: r.Category,
+			Score:    r.Score,
+			IsNew:    false,
+		})
+	}
+
+	// Add new category if present
+	if jsonResp.NewCategory != nil {
+		rankings = append(rankings, CategoryRanking{
+			Category:    jsonResp.NewCategory.Name,
+			Score:       jsonResp.NewCategory.Score,
+			IsNew:       true,
+			Description: jsonResp.NewCategory.Description,
+		})
+	}
+
+	if len(rankings) == 0 {
+		return RankingResponse{}, fmt.Errorf("no rankings found in response")
 	}
 
 	return RankingResponse{Rankings: rankings}, nil
@@ -394,15 +315,7 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 		Confidence  float64 `json:"confidence"`
 	}
 	if err := json.Unmarshal([]byte(cleanedResult), &descResp); err != nil {
-		// Fallback: try to parse the old format
-		description, confidence, parseErr := parseDescriptionResponse(cleanedResult)
-		if parseErr != nil {
-			return DescriptionResponse{}, fmt.Errorf("failed to parse description response: %w", err)
-		}
-		return DescriptionResponse{
-			Description: description,
-			Confidence:  confidence,
-		}, nil
+		return DescriptionResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return DescriptionResponse{

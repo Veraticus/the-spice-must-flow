@@ -28,7 +28,6 @@ func TestCheckPatternStorage(t *testing.T) {
 			Category:        category,
 			Notes:           "Test pattern",
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		}
 	}
 
@@ -48,7 +47,6 @@ func TestCheckPatternStorage(t *testing.T) {
 	t.Run("CreateCheckPattern_ValidationError", func(t *testing.T) {
 		pattern := &model.CheckPattern{
 			// Missing required fields
-			Active: true,
 		}
 
 		err := storage.CreateCheckPattern(ctx, pattern)
@@ -107,14 +105,7 @@ func TestCheckPatternStorage(t *testing.T) {
 			}
 		}
 
-		// Create an inactive pattern
-		inactive := createTestPattern("Inactive", "Category D")
-		inactive.Active = false
-		if err := storage.CreateCheckPattern(ctx, inactive); err != nil {
-			t.Fatalf("CreateCheckPattern() error = %v", err)
-		}
-
-		// Get active patterns
+		// Get all patterns
 		active, err := storage.GetActiveCheckPatterns(ctx)
 		if err != nil {
 			t.Fatalf("GetActiveCheckPatterns() error = %v", err)
@@ -137,7 +128,6 @@ func TestCheckPatternStorage(t *testing.T) {
 			AmountMax:       &exactAmount,
 			Category:        "Test",
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		}
 
 		rangeMin := 100.0
@@ -148,7 +138,6 @@ func TestCheckPatternStorage(t *testing.T) {
 			AmountMax:       &rangeMax,
 			Category:        "Test",
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		}
 
 		dayMin := 10
@@ -159,7 +148,6 @@ func TestCheckPatternStorage(t *testing.T) {
 			DayOfMonthMax:   &dayMax,
 			Category:        "Test",
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		}
 
 		for _, p := range []*model.CheckPattern{pattern1, pattern2, pattern3} {
@@ -242,17 +230,13 @@ func TestCheckPatternStorage(t *testing.T) {
 			t.Fatalf("DeleteCheckPattern() error = %v", err)
 		}
 
-		// Verify it's soft deleted (still exists but inactive)
-		deleted, err := storage.GetCheckPattern(ctx, pattern.ID)
-		if err != nil {
-			t.Fatalf("GetCheckPattern() error = %v", err)
+		// Verify it no longer exists
+		_, err = storage.GetCheckPattern(ctx, pattern.ID)
+		if err != ErrCheckPatternNotFound {
+			t.Errorf("GetCheckPattern() after delete error = %v, want %v", err, ErrCheckPatternNotFound)
 		}
 
-		if deleted.Active {
-			t.Error("DeleteCheckPattern() did not set active to false")
-		}
-
-		// Verify it's not in active patterns
+		// Verify it's not in the patterns list
 		active, err := storage.GetActiveCheckPatterns(ctx)
 		if err != nil {
 			t.Fatalf("GetActiveCheckPatterns() error = %v", err)
@@ -295,21 +279,6 @@ func TestCheckPatternStorage(t *testing.T) {
 
 		if updated.UseCount != 3 {
 			t.Errorf("UseCount = %v, want %v", updated.UseCount, 3)
-		}
-	})
-
-	t.Run("IncrementCheckPatternUseCount_Inactive", func(t *testing.T) {
-		pattern := createTestPattern("Inactive Use Count", "Test")
-		pattern.Active = false
-		err := storage.CreateCheckPattern(ctx, pattern)
-		if err != nil {
-			t.Fatalf("CreateCheckPattern() error = %v", err)
-		}
-
-		// Try to increment inactive pattern
-		err = storage.IncrementCheckPatternUseCount(ctx, pattern.ID)
-		if err != ErrCheckPatternNotFound {
-			t.Errorf("IncrementCheckPatternUseCount() error = %v, want %v", err, ErrCheckPatternNotFound)
 		}
 	})
 

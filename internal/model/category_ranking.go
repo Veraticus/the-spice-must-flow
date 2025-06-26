@@ -128,9 +128,7 @@ func (r CategoryRankings) ApplyCheckPatternBoosts(patterns []CheckPattern) {
 	boosts := make(map[string]float64)
 
 	for _, pattern := range patterns {
-		if pattern.Active {
-			boosts[pattern.Category] += pattern.ConfidenceBoost
-		}
+		boosts[pattern.Category] += pattern.ConfidenceBoost
 	}
 
 	// Apply boosts to matching categories

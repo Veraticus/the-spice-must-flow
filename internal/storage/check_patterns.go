@@ -39,17 +39,28 @@ func (s *SQLiteStorage) CreateCheckPattern(ctx context.Context, pattern *model.C
 		checkNumberJSON = &str
 	}
 
+	// Convert Amounts to JSON if present
+	var amountsJSON *string
+	if len(pattern.Amounts) > 0 {
+		data, err := json.Marshal(pattern.Amounts)
+		if err != nil {
+			return fmt.Errorf("failed to marshal amounts: %w", err)
+		}
+		str := string(data)
+		amountsJSON = &str
+	}
+
 	query := `
 		INSERT INTO check_patterns (
 			pattern_name, amount_min, amount_max, check_number_pattern,
 			day_of_month_min, day_of_month_max, category, notes,
-			confidence_boost, active
+			confidence_boost, amounts
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.db.ExecContext(ctx, query,
 		pattern.PatternName, pattern.AmountMin, pattern.AmountMax, checkNumberJSON,
 		pattern.DayOfMonthMin, pattern.DayOfMonthMax, pattern.Category, pattern.Notes,
-		pattern.ConfidenceBoost, pattern.Active,
+		pattern.ConfidenceBoost, amountsJSON,
 	)
 
 	if err != nil {
@@ -75,18 +86,19 @@ func (s *SQLiteStorage) GetCheckPattern(ctx context.Context, id int64) (*model.C
 	query := `
 		SELECT id, pattern_name, amount_min, amount_max, check_number_pattern,
 			day_of_month_min, day_of_month_max, category, notes,
-			confidence_boost, active, use_count, created_at, updated_at
+			confidence_boost, use_count, created_at, updated_at, amounts
 		FROM check_patterns
 		WHERE id = ?`
 
 	pattern := &model.CheckPattern{}
 	var checkNumberJSON sql.NullString
+	var amountsJSON sql.NullString
 
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&pattern.ID, &pattern.PatternName, &pattern.AmountMin, &pattern.AmountMax,
 		&checkNumberJSON, &pattern.DayOfMonthMin, &pattern.DayOfMonthMax,
 		&pattern.Category, &pattern.Notes, &pattern.ConfidenceBoost,
-		&pattern.Active, &pattern.UseCount, &pattern.CreatedAt, &pattern.UpdatedAt,
+		&pattern.UseCount, &pattern.CreatedAt, &pattern.UpdatedAt, &amountsJSON,
 	)
 
 	if err == sql.ErrNoRows {
@@ -105,10 +117,17 @@ func (s *SQLiteStorage) GetCheckPattern(ctx context.Context, id int64) (*model.C
 		pattern.CheckNumberPattern = &matcher
 	}
 
+	// Parse amounts if present
+	if amountsJSON.Valid {
+		if err := json.Unmarshal([]byte(amountsJSON.String), &pattern.Amounts); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal amounts: %w", err)
+		}
+	}
+
 	return pattern, nil
 }
 
-// GetActiveCheckPatterns returns all active check patterns.
+// GetActiveCheckPatterns returns all check patterns.
 func (s *SQLiteStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.CheckPattern, error) {
 	if err := validateContext(ctx); err != nil {
 		return nil, err
@@ -117,9 +136,8 @@ func (s *SQLiteStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.Che
 	query := `
 		SELECT id, pattern_name, amount_min, amount_max, check_number_pattern,
 			day_of_month_min, day_of_month_max, category, notes,
-			confidence_boost, active, use_count, created_at, updated_at
+			confidence_boost, use_count, created_at, updated_at, amounts
 		FROM check_patterns
-		WHERE active = 1
 		ORDER BY use_count DESC, pattern_name`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -136,12 +154,13 @@ func (s *SQLiteStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.Che
 	for rows.Next() {
 		var pattern model.CheckPattern
 		var checkNumberJSON sql.NullString
+		var amountsJSON sql.NullString
 
 		if err := rows.Scan(
 			&pattern.ID, &pattern.PatternName, &pattern.AmountMin, &pattern.AmountMax,
 			&checkNumberJSON, &pattern.DayOfMonthMin, &pattern.DayOfMonthMax,
 			&pattern.Category, &pattern.Notes, &pattern.ConfidenceBoost,
-			&pattern.Active, &pattern.UseCount, &pattern.CreatedAt, &pattern.UpdatedAt,
+			&pattern.UseCount, &pattern.CreatedAt, &pattern.UpdatedAt, &amountsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan check pattern: %w", err)
 		}
@@ -153,6 +172,13 @@ func (s *SQLiteStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.Che
 				return nil, fmt.Errorf("failed to unmarshal check number pattern: %w", err)
 			}
 			pattern.CheckNumberPattern = &matcher
+		}
+
+		// Parse amounts if present
+		if amountsJSON.Valid {
+			if err := json.Unmarshal([]byte(amountsJSON.String), &pattern.Amounts); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal amounts: %w", err)
+			}
 		}
 
 		patterns = append(patterns, pattern)
@@ -215,18 +241,29 @@ func (s *SQLiteStorage) UpdateCheckPattern(ctx context.Context, pattern *model.C
 		checkNumberJSON = &str
 	}
 
+	// Convert Amounts to JSON if present
+	var amountsJSON *string
+	if len(pattern.Amounts) > 0 {
+		data, err := json.Marshal(pattern.Amounts)
+		if err != nil {
+			return fmt.Errorf("failed to marshal amounts: %w", err)
+		}
+		str := string(data)
+		amountsJSON = &str
+	}
+
 	query := `
 		UPDATE check_patterns SET
 			pattern_name = ?, amount_min = ?, amount_max = ?, 
 			check_number_pattern = ?, day_of_month_min = ?, 
 			day_of_month_max = ?, category = ?, notes = ?,
-			confidence_boost = ?, active = ?, updated_at = CURRENT_TIMESTAMP
+			confidence_boost = ?, amounts = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`
 
 	result, err := s.db.ExecContext(ctx, query,
 		pattern.PatternName, pattern.AmountMin, pattern.AmountMax, checkNumberJSON,
 		pattern.DayOfMonthMin, pattern.DayOfMonthMax, pattern.Category, pattern.Notes,
-		pattern.ConfidenceBoost, pattern.Active, pattern.ID,
+		pattern.ConfidenceBoost, amountsJSON, pattern.ID,
 	)
 
 	if err != nil {
@@ -246,16 +283,13 @@ func (s *SQLiteStorage) UpdateCheckPattern(ctx context.Context, pattern *model.C
 	return nil
 }
 
-// DeleteCheckPattern performs a soft delete on a check pattern.
+// DeleteCheckPattern permanently deletes a check pattern.
 func (s *SQLiteStorage) DeleteCheckPattern(ctx context.Context, id int64) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
 
-	query := `
-		UPDATE check_patterns 
-		SET active = 0, updated_at = CURRENT_TIMESTAMP 
-		WHERE id = ?`
+	query := `DELETE FROM check_patterns WHERE id = ?`
 
 	result, err := s.db.ExecContext(ctx, query, id)
 	if err != nil {
@@ -284,7 +318,7 @@ func (s *SQLiteStorage) IncrementCheckPatternUseCount(ctx context.Context, id in
 	query := `
 		UPDATE check_patterns 
 		SET use_count = use_count + 1, updated_at = CURRENT_TIMESTAMP 
-		WHERE id = ? AND active = 1`
+		WHERE id = ?`
 
 	result, err := s.db.ExecContext(ctx, query, id)
 	if err != nil {
@@ -334,7 +368,7 @@ func (t *sqliteTransaction) UpdateCheckPattern(ctx context.Context, pattern *mod
 	return t.storage.UpdateCheckPattern(ctx, pattern)
 }
 
-// DeleteCheckPattern soft deletes a check pattern within a transaction.
+// DeleteCheckPattern deletes a check pattern within a transaction.
 func (t *sqliteTransaction) DeleteCheckPattern(ctx context.Context, id int64) error {
 	return t.storage.DeleteCheckPattern(ctx, id)
 }

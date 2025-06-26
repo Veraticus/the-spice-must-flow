@@ -42,7 +42,6 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			DayOfMonthMin:   ptrInt(10),
 			DayOfMonthMax:   ptrInt(15),
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		},
 		{
 			PatternName:     "Cleaning service",
@@ -52,7 +51,6 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			DayOfMonthMin:   ptrInt(20),
 			DayOfMonthMax:   ptrInt(25),
 			ConfidenceBoost: 0.4,
-			Active:          true,
 		},
 		{
 			PatternName:     "Insurance payment",
@@ -62,7 +60,6 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 			DayOfMonthMin:   ptrInt(1),
 			DayOfMonthMax:   ptrInt(7),
 			ConfidenceBoost: 0.5, // Higher boost to ensure it wins
-			Active:          true,
 		},
 	}
 
@@ -235,7 +232,6 @@ func TestClassificationEngine_CheckPatternAutoClassification(t *testing.T) {
 		AmountMin:       ptr(2000.0),
 		AmountMax:       ptr(2000.0),
 		ConfidenceBoost: 0.5, // This should push confidence over 85%
-		Active:          true,
 	}
 	err = db.CreateCheckPattern(ctx, &pattern)
 	require.NoError(t, err)

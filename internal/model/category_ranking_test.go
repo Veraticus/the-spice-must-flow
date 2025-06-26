@@ -1,6 +1,7 @@
 package model
 
 import (
+	"math"
 	"testing"
 )
 
@@ -322,22 +323,18 @@ func TestCategoryRankings_ApplyCheckPatternBoosts(t *testing.T) {
 		{
 			Category:        "Home Services",
 			ConfidenceBoost: 0.3,
-			Active:          true,
 		},
 		{
 			Category:        "Home Services",
 			ConfidenceBoost: 0.1,
-			Active:          true,
 		},
 		{
 			Category:        "Personal Care",
 			ConfidenceBoost: 0.2,
-			Active:          false, // Inactive, should not apply
 		},
 		{
 			Category:        "Shopping",
 			ConfidenceBoost: 0.8, // Would exceed 1.0
-			Active:          true,
 		},
 	}
 
@@ -349,7 +346,7 @@ func TestCategoryRankings_ApplyCheckPatternBoosts(t *testing.T) {
 	}{
 		{category: "Shopping", score: 1.0},      // capped at 1.0
 		{category: "Home Services", score: 0.9}, // with pattern boosts
-		{category: "Personal Care", score: 0.4}, // No boost (inactive pattern)
+		{category: "Personal Care", score: 0.6}, // 0.4 + 0.2 boost
 	}
 
 	for i, exp := range expected {
@@ -357,8 +354,8 @@ func TestCategoryRankings_ApplyCheckPatternBoosts(t *testing.T) {
 			t.Errorf("ApplyCheckPatternBoosts() index %d category = %s, want %s",
 				i, rankings[i].Category, exp.category)
 		}
-		if rankings[i].Score != exp.score {
-			t.Errorf("ApplyCheckPatternBoosts() index %d score = %.1f, want %.1f",
+		if math.Abs(rankings[i].Score-exp.score) > 0.0001 {
+			t.Errorf("ApplyCheckPatternBoosts() index %d score = %v, want %v",
 				i, rankings[i].Score, exp.score)
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -117,50 +116,29 @@ func (c *anthropicClient) Classify(ctx context.Context, prompt string) (Classifi
 
 // parseClassification extracts category and confidence from the LLM response.
 func (c *anthropicClient) parseClassification(content string) (ClassificationResponse, error) {
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-	var category string
-	var confidence float64
-	var isNew bool
-	var description string
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "CATEGORY:"):
-			category = strings.TrimSpace(strings.TrimPrefix(line, "CATEGORY:"))
-		case strings.HasPrefix(line, "CONFIDENCE:"):
-			confStr := strings.TrimSpace(strings.TrimPrefix(line, "CONFIDENCE:"))
-			var err error
-			confidence, err = strconv.ParseFloat(confStr, 64)
-			if err != nil {
-				return ClassificationResponse{}, fmt.Errorf("failed to parse confidence score: %w", err)
-			}
-		case strings.HasPrefix(line, "NEW:"):
-			newStr := strings.TrimSpace(strings.TrimPrefix(line, "NEW:"))
-			isNew = strings.ToLower(newStr) == "true"
-		case strings.HasPrefix(line, "DESCRIPTION:"):
-			description = strings.TrimSpace(strings.TrimPrefix(line, "DESCRIPTION:"))
-		}
+	// Parse JSON response
+	var jsonResp struct {
+		Category    string  `json:"category"`
+		Confidence  float64 `json:"confidence"`
+		IsNew       bool    `json:"isNew"`
+		Description string  `json:"description,omitempty"`
 	}
 
-	if category == "" {
-		return ClassificationResponse{}, fmt.Errorf("no category found in response: %s", content)
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return ClassificationResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	if confidence == 0 {
-		confidence = 0.7 // Default confidence if not provided
-	}
-
-	// If confidence is below 0.85 and NEW wasn't explicitly set, assume it's a new category
-	if confidence < 0.85 && !isNew {
-		isNew = true
+	if jsonResp.Category == "" {
+		return ClassificationResponse{}, fmt.Errorf("no category found in response")
 	}
 
 	return ClassificationResponse{
-		Category:            category,
-		Confidence:          confidence,
-		IsNew:               isNew,
-		CategoryDescription: description,
+		Category:            jsonResp.Category,
+		Confidence:          jsonResp.Confidence,
+		IsNew:               jsonResp.IsNew,
+		CategoryDescription: jsonResp.Description,
 	}, nil
 }
 
@@ -237,12 +215,48 @@ func (c *anthropicClient) ClassifyWithRankings(ctx context.Context, prompt strin
 		return RankingResponse{}, fmt.Errorf("no content in response")
 	}
 
-	rankings, err := parseLLMRankings(response.Content[0].Text)
-	if err != nil {
-		return RankingResponse{}, fmt.Errorf("failed to parse rankings: %w", err)
+	// Try to parse as JSON first
+	var jsonResp struct {
+		Rankings []struct {
+			Category string  `json:"category"`
+			Score    float64 `json:"score"`
+		} `json:"rankings"`
+		NewCategory *struct {
+			Name        string  `json:"name"`
+			Score       float64 `json:"score"`
+			Description string  `json:"description"`
+		} `json:"newCategory,omitempty"`
 	}
 
-	return RankingResponse{Rankings: rankings}, nil
+	content := response.Content[0].Text
+	// Clean any markdown wrappers that might be present
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err == nil {
+		// Successfully parsed JSON
+		var rankings []CategoryRanking
+		for _, r := range jsonResp.Rankings {
+			rankings = append(rankings, CategoryRanking{
+				Category: r.Category,
+				Score:    r.Score,
+				IsNew:    false,
+			})
+		}
+
+		// Add new category if present
+		if jsonResp.NewCategory != nil {
+			rankings = append(rankings, CategoryRanking{
+				Category:    jsonResp.NewCategory.Name,
+				Score:       jsonResp.NewCategory.Score,
+				IsNew:       true,
+				Description: jsonResp.NewCategory.Description,
+			})
+		}
+
+		return RankingResponse{Rankings: rankings}, nil
+	}
+
+	return RankingResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 }
 
 // GenerateDescription generates a description for a category.
@@ -303,20 +317,12 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 		Description string  `json:"description"`
 		Confidence  float64 `json:"confidence"`
 	}
-	if err := json.Unmarshal([]byte(response.Content[0].Text), &descResp); err != nil {
-		// Fallback: try to parse the old format
-		description, confidence, parseErr := parseDescriptionResponse(response.Content[0].Text)
-		if parseErr != nil {
-			// Final fallback: use the whole text
-			return DescriptionResponse{
-				Description: strings.TrimSpace(response.Content[0].Text),
-				Confidence:  0.8, // Default medium confidence
-			}, nil
-		}
-		return DescriptionResponse{
-			Description: description,
-			Confidence:  confidence,
-		}, nil
+
+	content := response.Content[0].Text
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &descResp); err != nil {
+		return DescriptionResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return DescriptionResponse{

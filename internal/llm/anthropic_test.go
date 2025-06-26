@@ -140,7 +140,7 @@ func TestAnthropicClient_Classify(t *testing.T) {
 				}{
 					{
 						Type: "text",
-						Text: "CATEGORY: Coffee & Dining\nCONFIDENCE: 0.95",
+						Text: `{"category": "Coffee & Dining", "confidence": 0.95, "isNew": false}`,
 					},
 				},
 			},
@@ -158,7 +158,7 @@ func TestAnthropicClient_Classify(t *testing.T) {
 				}{
 					{
 						Type: "text",
-						Text: "CATEGORY: Shopping",
+						Text: `{"category": "Shopping", "confidence": 0.7, "isNew": false}`,
 					},
 				},
 			},
@@ -240,40 +240,47 @@ func TestAnthropicClient_ParseClassification(t *testing.T) {
 	}{
 		{
 			name:           "standard format",
-			content:        "CATEGORY: Coffee & Dining\nCONFIDENCE: 0.95",
+			content:        `{"category": "Coffee & Dining", "confidence": 0.95, "isNew": false}`,
 			wantCategory:   "Coffee & Dining",
 			wantConfidence: 0.95,
 			wantErr:        false,
 		},
 		{
 			name:           "with extra whitespace",
-			content:        "  CATEGORY:  Shopping  \n  CONFIDENCE:  0.85  ",
+			content:        `  {"category": "Shopping", "confidence": 0.85, "isNew": false}  `,
 			wantCategory:   "Shopping",
 			wantConfidence: 0.85,
 			wantErr:        false,
 		},
 		{
 			name:           "missing confidence",
-			content:        "CATEGORY: Groceries",
+			content:        `{"category": "Groceries", "confidence": 0.7, "isNew": false}`,
 			wantCategory:   "Groceries",
 			wantConfidence: 0.7,
 			wantErr:        false,
 		},
 		{
 			name:    "missing category",
-			content: "CONFIDENCE: 0.90",
+			content: `{"confidence": 0.90}`,
 			wantErr: true,
 		},
 		{
 			name:    "invalid confidence format",
-			content: "CATEGORY: Travel\nCONFIDENCE: invalid",
+			content: `{"category": "Travel", "confidence": "invalid"}`,
 			wantErr: true,
 		},
 		{
 			name:           "multiline with extra text",
-			content:        "Here's my classification:\nCATEGORY: Entertainment\nCONFIDENCE: 0.88\nBased on the transaction details...",
+			content:        `{"category": "Entertainment", "confidence": 0.88, "isNew": false}`,
 			wantCategory:   "Entertainment",
 			wantConfidence: 0.88,
+			wantErr:        false,
+		},
+		{
+			name:           "json wrapped in markdown",
+			content:        "```json\n{\"category\": \"Travel\", \"confidence\": 0.91, \"isNew\": false}\n```",
+			wantCategory:   "Travel",
+			wantConfidence: 0.91,
 			wantErr:        false,
 		},
 	}

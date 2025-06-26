@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -192,7 +193,7 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("batch classification failed: %w", err)
 		}
 
-		// Show batch summary
+		// Show batch summary as JSON
 		slog.Info(summary.GetDisplay())
 
 	} else {
@@ -231,30 +232,43 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 }
 
 func showCompletionStats(stats service.CompletionStats) {
-	slog.Info("Excellent! All transactions have been categorized", "total_transactions", stats.TotalTransactions)
-
-	if stats.TotalTransactions > 0 {
-		autoPercent := float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100
-		userPercent := float64(stats.UserClassified) / float64(stats.TotalTransactions) * 100
-
-		slog.Info("Classification statistics",
-			"auto_classified", stats.AutoClassified,
-			"auto_percent", autoPercent,
-			"user_classified", stats.UserClassified,
-			"user_percent", userPercent)
+	type completionJSON struct {
+		Duration          string  `json:"duration"`
+		TimeSaved         string  `json:"time_saved,omitempty"`
+		Message           string  `json:"message"`
+		TotalTransactions int     `json:"total_transactions"`
+		AutoClassified    int     `json:"auto_classified"`
+		AutoPercent       float64 `json:"auto_percent,omitempty"`
+		UserClassified    int     `json:"user_classified"`
+		UserPercent       float64 `json:"user_percent,omitempty"`
+		NewVendorRules    int     `json:"new_vendor_rules"`
 	}
 
-	slog.Info("Classification details",
-		"new_vendor_rules", stats.NewVendorRules,
-		"duration", stats.Duration.Round(time.Second))
+	data := completionJSON{
+		TotalTransactions: stats.TotalTransactions,
+		AutoClassified:    stats.AutoClassified,
+		UserClassified:    stats.UserClassified,
+		NewVendorRules:    stats.NewVendorRules,
+		Duration:          stats.Duration.Round(time.Second).String(),
+		Message:           "Ready for export: spice flow --export",
+	}
 
 	if stats.TotalTransactions > 0 {
+		data.AutoPercent = float64(stats.AutoClassified) / float64(stats.TotalTransactions) * 100
+		data.UserPercent = float64(stats.UserClassified) / float64(stats.TotalTransactions) * 100
+
 		// Estimate time saved (30 seconds per manual transaction)
 		timeSaved := time.Duration(stats.AutoClassified) * 30 * time.Second
-		slog.Info("Time saved", "estimated_time", timeSaved.Round(time.Minute))
+		data.TimeSaved = timeSaved.Round(time.Minute).String()
 	}
 
-	slog.Info("Ready for export: spice flow --export")
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		slog.Error("Failed to marshal completion stats", "error", err)
+		return
+	}
+
+	slog.Info(string(bytes))
 }
 
 func expandPath(path string) string {

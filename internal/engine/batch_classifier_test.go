@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -29,16 +30,28 @@ func TestBatchClassificationSummaryDisplay(t *testing.T) {
 	}
 
 	display := summary.GetDisplay()
-	assert.Contains(t, display, "Batch Classification Complete")
-	assert.Contains(t, display, "100")
-	assert.Contains(t, display, "85 merchants (85%)")
-	assert.Contains(t, display, "30s")
+
+	// Parse JSON output
+	var result map[string]any
+	err := json.Unmarshal([]byte(display), &result)
+	assert.NoError(t, err)
+
+	// Check JSON fields
+	assert.Equal(t, float64(100), result["total_merchants"])
+	assert.Equal(t, float64(500), result["total_transactions"])
+	assert.Equal(t, float64(85), result["auto_accepted_count"])
+	assert.Equal(t, float64(85), result["auto_accepted_percent"])
+	assert.Equal(t, float64(400), result["auto_accepted_transactions"])
+	assert.Equal(t, float64(10), result["needs_review_count"])
+	assert.Equal(t, float64(80), result["needs_review_transactions"])
+	assert.Equal(t, float64(5), result["failed_count"])
+	assert.Equal(t, "30s", result["processing_time"])
 }
 
 func TestBatchClassificationEmptySummary(t *testing.T) {
 	summary := &BatchClassificationSummary{}
 	display := summary.GetDisplay()
-	assert.Equal(t, "No transactions to classify", display)
+	assert.Equal(t, `{"message":"No transactions to classify"}`, display)
 }
 
 func TestBatchResultStructure(t *testing.T) {

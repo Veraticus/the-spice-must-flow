@@ -40,7 +40,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					AmountMax:       floatPtr(150.00),
 					Category:        "Home Services",
 					ConfidenceBoost: 0.35,
-					Active:          true,
 					Notes:           "House cleaning every 2 weeks",
 				},
 				{
@@ -51,7 +50,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(5),
 					Category:        "Home Services",
 					ConfidenceBoost: 0.30,
-					Active:          true,
 					Notes:           "Lawn care at beginning of month",
 				},
 				{
@@ -60,7 +58,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					AmountMax:       floatPtr(125.00),
 					Category:        "Home Services",
 					ConfidenceBoost: 0.25,
-					Active:          true,
 					Notes:           "Pest control every 3 months",
 				},
 			},
@@ -123,7 +120,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(5),
 					Category:        "Housing",
 					ConfidenceBoost: 0.45,
-					Active:          true,
 					Notes:           "Apartment rent due by 5th",
 				},
 				{
@@ -134,7 +130,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(20),
 					Category:        "Utilities",
 					ConfidenceBoost: 0.30,
-					Active:          true,
 					Notes:           "Water/sewer bill mid-month",
 				},
 				{
@@ -145,7 +140,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(31),
 					Category:        "Housing",
 					ConfidenceBoost: 0.35,
-					Active:          true,
 					Notes:           "Homeowners association quarterly",
 				},
 			},
@@ -198,7 +192,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(10),
 					Category:        "Childcare",
 					ConfidenceBoost: 0.40,
-					Active:          true,
 					Notes:           "Monthly daycare tuition",
 				},
 				{
@@ -207,7 +200,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					AmountMax:       floatPtr(160.00),
 					Category:        "Education",
 					ConfidenceBoost: 0.30,
-					Active:          true,
 					Notes:           "Weekly piano lessons (4x month)",
 				},
 				{
@@ -218,7 +210,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(15),
 					Category:        "Childcare",
 					ConfidenceBoost: 0.35,
-					Active:          true,
 					Notes:           "After-school care monthly fee",
 				},
 			},
@@ -269,7 +260,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					AmountMax:       floatPtr(30.00),
 					Category:        "Healthcare",
 					ConfidenceBoost: 0.35,
-					Active:          true,
 					Notes:           "Weekly therapy copayment",
 				},
 				{
@@ -280,7 +270,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(20),
 					Category:        "Healthcare",
 					ConfidenceBoost: 0.30,
-					Active:          true,
 					Notes:           "Monthly orthodontics payment",
 				},
 				{
@@ -291,7 +280,6 @@ func TestCheckPatternRealWorldScenarios(t *testing.T) {
 					DayOfMonthMax:   intPtr(5),
 					Category:        "Insurance",
 					ConfidenceBoost: 0.40,
-					Active:          true,
 					Notes:           "Term life insurance monthly",
 				},
 			},
@@ -430,7 +418,6 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				AmountMin:   floatPtr(100.00),
 				AmountMax:   floatPtr(100.00),
 				Category:    "Test",
-				Active:      true,
 			},
 			transaction: model.Transaction{
 				Amount: 100.00,
@@ -445,7 +432,6 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				AmountMin:   floatPtr(100.00),
 				AmountMax:   floatPtr(200.00),
 				Category:    "Test",
-				Active:      true,
 			},
 			transaction: model.Transaction{
 				Amount: 99.99,
@@ -460,7 +446,6 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				AmountMin:   floatPtr(100.00),
 				AmountMax:   floatPtr(200.00),
 				Category:    "Test",
-				Active:      true,
 			},
 			transaction: model.Transaction{
 				Amount: 200.01,
@@ -477,7 +462,6 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 				DayOfMonthMin: intPtr(28),
 				DayOfMonthMax: intPtr(31),
 				Category:      "Test",
-				Active:        true,
 			},
 			transaction: model.Transaction{
 				Amount: 100.00,
@@ -487,28 +471,12 @@ func TestCheckPatternEdgeCases(t *testing.T) {
 			shouldMatch: true,
 		},
 		{
-			name: "inactive pattern should not match",
-			pattern: model.CheckPattern{
-				PatternName: "Inactive",
-				AmountMin:   floatPtr(100.00),
-				AmountMax:   floatPtr(100.00),
-				Category:    "Test",
-				Active:      false,
-			},
-			transaction: model.Transaction{
-				Amount: 100.00,
-				Type:   "CHECK",
-			},
-			shouldMatch: false,
-		},
-		{
 			name: "non-check transaction should not match",
 			pattern: model.CheckPattern{
 				PatternName: "Check only",
 				AmountMin:   floatPtr(100.00),
 				AmountMax:   floatPtr(100.00),
 				Category:    "Test",
-				Active:      true,
 			},
 			transaction: model.Transaction{
 				Amount: 100.00,
@@ -601,7 +569,6 @@ func TestCheckPatternPerformance(t *testing.T) {
 			AmountMax:       floatPtr(float64(i*10 + 5)),
 			Category:        categories[i%len(categories)],
 			ConfidenceBoost: 0.25,
-			Active:          true,
 		}
 		saveErr := db.CreateCheckPattern(ctx, &pattern)
 		require.NoError(t, saveErr)

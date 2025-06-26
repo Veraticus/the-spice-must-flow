@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -478,36 +479,42 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 	return nil
 }
 
-// GetDisplay returns a formatted summary for display.
+// GetDisplay returns a JSON representation of the summary.
 func (s *BatchClassificationSummary) GetDisplay() string {
 	if s.TotalMerchants == 0 {
-		return "No transactions to classify"
+		return `{"message":"No transactions to classify"}`
 	}
 
 	autoPercent := float64(s.AutoAcceptedCount) / float64(s.TotalMerchants) * 100
 
-	summary := fmt.Sprintf(`📊 Batch Classification Complete
-────────────────────────────────────
-Total merchants:      %d
-Total transactions:   %d
-
-✅ Auto-accepted:     %d merchants (%.0f%%) - %d transactions`,
-		s.TotalMerchants,
-		s.TotalTransactions,
-		s.AutoAcceptedCount,
-		autoPercent,
-		s.AutoAcceptedTxns)
-
-	if s.NeedsReviewCount > 0 {
-		summary += fmt.Sprintf("\n⚠️  Needs review:      %d merchants - %d transactions",
-			s.NeedsReviewCount, s.NeedsReviewTxns)
+	type summaryJSON struct {
+		ProcessingTime      string  `json:"processing_time"`
+		TotalMerchants      int     `json:"total_merchants"`
+		TotalTransactions   int     `json:"total_transactions"`
+		AutoAcceptedCount   int     `json:"auto_accepted_count"`
+		AutoAcceptedPercent float64 `json:"auto_accepted_percent"`
+		AutoAcceptedTxns    int     `json:"auto_accepted_transactions"`
+		NeedsReviewCount    int     `json:"needs_review_count"`
+		NeedsReviewTxns     int     `json:"needs_review_transactions"`
+		FailedCount         int     `json:"failed_count"`
 	}
 
-	if s.FailedCount > 0 {
-		summary += fmt.Sprintf("\n❌ Failed:            %d merchants", s.FailedCount)
+	data := summaryJSON{
+		TotalMerchants:      s.TotalMerchants,
+		TotalTransactions:   s.TotalTransactions,
+		AutoAcceptedCount:   s.AutoAcceptedCount,
+		AutoAcceptedPercent: autoPercent,
+		AutoAcceptedTxns:    s.AutoAcceptedTxns,
+		NeedsReviewCount:    s.NeedsReviewCount,
+		NeedsReviewTxns:     s.NeedsReviewTxns,
+		FailedCount:         s.FailedCount,
+		ProcessingTime:      s.ProcessingTime.Round(time.Second).String(),
 	}
 
-	summary += fmt.Sprintf("\n\n⏱️  Processing time:   %s", s.ProcessingTime.Round(time.Second))
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Sprintf(`{"error":"Failed to marshal summary: %v"}`, err)
+	}
 
-	return summary
+	return string(bytes)
 }
