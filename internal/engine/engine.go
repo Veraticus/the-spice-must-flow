@@ -354,6 +354,7 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 			IsNewCategory:       isNew,
 			CategoryDescription: description,
 			CategoryRankings:    rankings,
+			AllCategories:       categories,
 			CheckPatterns:       checkPatterns,
 		}
 	}
@@ -366,23 +367,40 @@ func (e *ClassificationEngine) classifyMerchantGroup(ctx context.Context, mercha
 
 	// Save vendor rule if confirmed
 	if len(classifications) > 0 {
-		// If this is a new category that was accepted, create it
-		if isNew && classifications[0].Category != "" {
-			// Check if category exists first
-			_, err := e.storage.GetCategoryByName(ctx, classifications[0].Category)
-			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
-				// Create the new category with the provided description
-				_, createErr := e.storage.CreateCategoryWithType(ctx, classifications[0].Category, description, model.CategoryTypeExpense)
-				if createErr != nil {
-					return nil, fmt.Errorf("failed to create new category %q: %w", classifications[0].Category, createErr)
-				}
-				slog.Info("Created new category from batch confirmation",
-					"category", classifications[0].Category,
-					"description", description)
+		// Handle special "|DESC|" format for user-provided descriptions
+		category := classifications[0].Category
+		userProvidedDescription := ""
+
+		if idx := strings.Index(category, "|DESC|"); idx > 0 {
+			userProvidedDescription = category[idx+6:]
+			category = category[:idx]
+			// Update all classifications with the cleaned category name
+			for i := range classifications {
+				classifications[i].Category = category
 			}
 		}
 
-		category := classifications[0].Category
+		// If this is a new category that was accepted, or if user created a new category via 'E' option
+		if (isNew || userProvidedDescription != "") && category != "" {
+			// Check if category exists first
+			_, err := e.storage.GetCategoryByName(ctx, category)
+			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
+				// Use user-provided description if available, otherwise use AI-generated description
+				finalDescription := description
+				if userProvidedDescription != "" {
+					finalDescription = userProvidedDescription
+				}
+
+				// Create the new category with the description
+				_, createErr := e.storage.CreateCategoryWithType(ctx, category, finalDescription, model.CategoryTypeExpense)
+				if createErr != nil {
+					return nil, fmt.Errorf("failed to create new category %q: %w", category, createErr)
+				}
+				slog.Info("Created new category from batch confirmation",
+					"category", category,
+					"description", finalDescription)
+			}
+		}
 
 		vendor := &model.Vendor{
 			Name:        merchant,
@@ -479,6 +497,7 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 			IsNewCategory:       top.IsNew,
 			CategoryDescription: top.Description,
 			CategoryRankings:    rankings,
+			AllCategories:       categories,
 			CheckPatterns:       checkPatterns,
 		}
 
@@ -490,22 +509,39 @@ func (e *ClassificationEngine) reviewIndividually(ctx context.Context, _ string,
 			continue
 		}
 
-		// If this is a new category that was accepted, create it
-		if pending.IsNewCategory && classification.Category != "" {
+		// Handle special "|DESC|" format for user-provided descriptions
+		category := classification.Category
+		userProvidedDescription := ""
+
+		if idx := strings.Index(category, "|DESC|"); idx > 0 {
+			userProvidedDescription = category[idx+6:]
+			category = category[:idx]
+			// Update the classification with the cleaned category name
+			classification.Category = category
+		}
+
+		// If this is a new category that was accepted, or if user created a new category via 'E' option
+		if (pending.IsNewCategory || userProvidedDescription != "") && category != "" {
 			// Check if category exists first
-			_, err := e.storage.GetCategoryByName(ctx, classification.Category)
+			_, err := e.storage.GetCategoryByName(ctx, category)
 			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
-				// Create the new category with the provided description
-				_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, pending.CategoryDescription, model.CategoryTypeExpense)
+				// Use user-provided description if available, otherwise use AI-generated description
+				finalDescription := pending.CategoryDescription
+				if userProvidedDescription != "" {
+					finalDescription = userProvidedDescription
+				}
+
+				// Create the new category with the description
+				_, createErr := e.storage.CreateCategoryWithType(ctx, category, finalDescription, model.CategoryTypeExpense)
 				if createErr != nil {
 					slog.Error("Failed to create new category",
-						"category", classification.Category,
+						"category", category,
 						"error", createErr)
 					continue
 				}
 				slog.Info("Created new category from user confirmation",
-					"category", classification.Category,
-					"description", pending.CategoryDescription)
+					"category", category,
+					"description", finalDescription)
 			}
 		}
 

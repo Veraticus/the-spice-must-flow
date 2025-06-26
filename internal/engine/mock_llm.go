@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 )
@@ -286,4 +287,66 @@ func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction 
 	m.calls = append(m.calls, call)
 
 	return rankings, nil
+}
+
+// SuggestCategoryBatch provides deterministic batch category suggestions for testing.
+func (m *MockClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.MerchantBatchRequest, categories []model.Category) (map[string]model.CategoryRankings, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	results := make(map[string]model.CategoryRankings)
+
+	// Process each merchant request
+	for _, req := range requests {
+		// Create rankings similar to SuggestCategoryRankings
+		rankings := make(model.CategoryRankings, 0, len(categories))
+
+		merchantLower := strings.ToLower(req.MerchantName)
+
+		// Score each category
+		for _, cat := range categories {
+			var score float64
+			catLower := strings.ToLower(cat.Name)
+
+			// Simple scoring based on merchant name patterns
+			switch {
+			case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "coffee"):
+				score = 0.95
+			case strings.Contains(merchantLower, "walmart") && strings.Contains(catLower, "groceries"):
+				score = 0.90
+			case strings.Contains(merchantLower, "target") && strings.Contains(catLower, "department"):
+				score = 0.88
+			case strings.Contains(merchantLower, "shell") && strings.Contains(catLower, "gas"):
+				score = 0.92
+			case strings.Contains(merchantLower, "check") && req.SampleTransaction.Type == "CHECK":
+				// For check transactions, give base scores similar to SuggestCategoryRankings
+				switch {
+				case strings.Contains(catLower, "rent"):
+					score = 0.55
+				case strings.Contains(catLower, "other"):
+					score = 0.20
+				default:
+					score = 0.10
+				}
+			default:
+				// Give a low score to other categories
+				score = 0.10
+			}
+
+			rankings = append(rankings, model.CategoryRanking{
+				Category:    cat.Name,
+				Score:       score,
+				IsNew:       false,
+				Description: cat.Description,
+			})
+		}
+
+		// Sort rankings
+		rankings.Sort()
+
+		// Store results
+		results[req.MerchantID] = rankings
+	}
+
+	return results, nil
 }

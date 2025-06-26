@@ -10,6 +10,7 @@ import (
 type Client interface {
 	Classify(ctx context.Context, prompt string) (ClassificationResponse, error)
 	ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error)
+	ClassifyMerchantBatch(ctx context.Context, prompt string) (MerchantBatchResponse, error)
 	GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error)
 	// TODO: Add when implementing direction detection
 	// ClassifyDirection(ctx context.Context, prompt string) (DirectionResponse, error)
@@ -47,4 +48,23 @@ type DirectionResponse struct {
 	Direction  model.TransactionDirection
 	Reasoning  string
 	Confidence float64
+}
+
+// MerchantBatchRequest represents a single merchant in a batch classification request.
+type MerchantBatchRequest struct {
+	MerchantID        string
+	MerchantName      string
+	SampleTransaction model.Transaction
+	TransactionCount  int
+}
+
+// MerchantBatchResponse contains classification results for multiple merchants.
+type MerchantBatchResponse struct {
+	Classifications []MerchantClassification
+}
+
+// MerchantClassification represents the classification result for a single merchant.
+type MerchantClassification struct {
+	MerchantID string
+	Rankings   []CategoryRanking
 }

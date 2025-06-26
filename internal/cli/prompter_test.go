@@ -65,7 +65,7 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 				Confidence:        0.75,
 				CategoryRankings:  defaultRankings,
 			},
-			input:            "c\n3\n", // Select Office Supplies by number
+			input:            "e\n3\n", // Select Office Supplies by number
 			expectedStatus:   model.StatusUserModified,
 			expectedCategory: "Office Supplies",
 		},
@@ -130,7 +130,7 @@ func TestCLIPrompter_ConfirmClassification(t *testing.T) {
 				Confidence:        0.85,
 				CategoryRankings:  defaultRankings,
 			},
-			input:            "c\nn\n\nRestaurants\n", // Create new category with empty name then valid
+			input:            "e\nn\n\nRestaurants\nn\n", // Select category, create new with empty name then valid, no description
 			expectedStatus:   model.StatusUserModified,
 			expectedCategory: "Restaurants",
 		},
@@ -259,7 +259,7 @@ func TestCLIPrompter_BatchConfirmClassifications(t *testing.T) {
 		{
 			name:             "custom category for all",
 			pending:          createPendingBatch(3, "Amazon", "Shopping"),
-			input:            "c\nn\nOffice Supplies\n", // Create new category "Office Supplies"
+			input:            "e\nn\nOffice Supplies\nn\n", // Select category, create new "Office Supplies", no description
 			expectedStatuses: repeatStatus(model.StatusUserModified, 3),
 			expectedCategory: "Office Supplies",
 		},
@@ -272,7 +272,7 @@ func TestCLIPrompter_BatchConfirmClassifications(t *testing.T) {
 		{
 			name:    "review each individually",
 			pending: createPendingBatch(3, "Target", "Shopping"),
-			input:   "r\na\nc\nn\nGroceries\ns\n", // Review -> Accept first, Custom+New "Groceries" for second, Skip third
+			input:   "r\na\ne\nn\nGroceries\nn\ns\n", // Review -> Accept first, Select category+New "Groceries" for second, Skip third
 			expectedStatuses: []model.ClassificationStatus{
 				model.StatusClassifiedByAI,
 				model.StatusUserModified,
@@ -359,7 +359,7 @@ func TestCLIPrompter_CompletionStats(t *testing.T) {
 		{Category: "Other", Score: 0.1},
 	}
 
-	reader := strings.NewReader("a\nc\nn\nFood\ns\n") // Accept, Custom+New "Food", Skip
+	reader := strings.NewReader("a\ne\nn\nFood\nn\ns\n") // Accept, Select category+New "Food"+No description, Skip
 	var output bytes.Buffer
 	prompter := NewCLIPrompter(reader, &output)
 	prompter.SetTotalTransactions(3)
@@ -382,7 +382,7 @@ func TestCLIPrompter_CompletionStats(t *testing.T) {
 				SuggestedCategory: "Other",
 				CategoryRankings:  statsRankings,
 			},
-			expectedChoice: "c",
+			expectedChoice: "e",
 		},
 		{
 			pending: model.PendingClassification{
@@ -452,10 +452,10 @@ func TestCLIPrompter_RecentCategories(t *testing.T) {
 	}
 
 	inputs := []string{
-		"c\n1\n", // Select Food & Dining by number
-		"c\n2\n", // Select Shopping by number
-		"c\n3\n", // Select Transportation by number
-		"c\n\n",  // Empty input for error test
+		"e\n1\n", // Select Food & Dining by number
+		"e\n2\n", // Select Shopping by number
+		"e\n3\n", // Select Transportation by number
+		"e\n\n",  // Empty input for error test
 	}
 
 	reader := strings.NewReader(strings.Join(inputs, ""))
@@ -482,8 +482,8 @@ func TestCLIPrompter_RecentCategories(t *testing.T) {
 	assert.Error(t, err)
 
 	outputStr := output.String()
-	// The new UI shows categories in ranked order, not "Recent categories"
-	assert.Contains(t, outputStr, "Select category (ranked by likelihood)")
+	// The new UI shows categories in ranked order
+	assert.Contains(t, outputStr, "Select category:")
 	assert.Contains(t, outputStr, "Transportation")
 	assert.Contains(t, outputStr, "Shopping")
 	assert.Contains(t, outputStr, "Food & Dining")
@@ -669,7 +669,7 @@ func TestCLIPrompter_promptCategorySelection(t *testing.T) {
 		},
 		{
 			name:             "create new category",
-			input:            "n\nBusiness Expenses\n",
+			input:            "n\nBusiness Expenses\nn\n", // Create new, enter name, no description
 			rankings:         createTestRankings(),
 			expectedCategory: "Business Expenses",
 		},
@@ -694,7 +694,7 @@ func TestCLIPrompter_promptCategorySelection(t *testing.T) {
 		},
 		{
 			name:             "create new category with empty name then valid",
-			input:            "n\n\nTravel\n",
+			input:            "n\n\nTravel\nn\n", // Create new, empty name, then valid name, no description
 			rankings:         createTestRankings(),
 			expectedCategory: "Travel",
 		},
@@ -719,7 +719,9 @@ func TestCLIPrompter_promptCategorySelection(t *testing.T) {
 				cancel()
 			}
 
-			category, err := prompter.promptCategorySelection(ctx, tt.rankings, tt.checkPatterns)
+			// Create empty category list for test
+			allCategories := []model.Category{}
+			category, err := prompter.promptCategorySelection(ctx, tt.rankings, allCategories, tt.checkPatterns)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -731,7 +733,7 @@ func TestCLIPrompter_promptCategorySelection(t *testing.T) {
 			// Verify output contains expected elements
 			outputStr := output.String()
 			if !tt.expectError {
-				assert.Contains(t, outputStr, "Select category (ranked by likelihood)")
+				assert.Contains(t, outputStr, "Select category:")
 
 				// Check that categories are displayed with scores
 				if tt.rankings[0].Score > 0.01 {
@@ -762,9 +764,14 @@ func TestCLIPrompter_promptCategorySelection_ManyCategories(t *testing.T) {
 	// Create rankings with more than 15 categories
 	var rankings model.CategoryRankings
 	for i := 0; i < 20; i++ {
+		// Make categories 16-20 have scores below 0.01 so they won't be shown initially
+		score := float64(20-i) / 100
+		if i >= 15 {
+			score = 0.005 // Below 0.01 threshold
+		}
 		rankings = append(rankings, model.CategoryRanking{
 			Category: fmt.Sprintf("Category %d", i+1),
-			Score:    float64(20-i) / 100,
+			Score:    score,
 		})
 	}
 
@@ -791,14 +798,16 @@ func TestCLIPrompter_promptCategorySelection_ManyCategories(t *testing.T) {
 			var output bytes.Buffer
 			prompter := NewCLIPrompter(reader, &output)
 
-			category, err := prompter.promptCategorySelection(context.Background(), rankings, nil)
+			// Create empty category list for test
+			allCategories := []model.Category{}
+			category, err := prompter.promptCategorySelection(context.Background(), rankings, allCategories, nil)
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedCategory, category)
 
 			// Verify "Show more" option appears
 			outputStr := output.String()
-			assert.Contains(t, outputStr, "[M] Show 5 more categories")
+			assert.Contains(t, outputStr, "[M] Show")
 		})
 	}
 }
@@ -842,7 +851,7 @@ func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
 				Confidence:        0.75,
 				CategoryRankings:  rankings,
 			},
-			input:            "c\n2\n", // Choose custom category, then select #2 (Office Supplies)
+			input:            "e\n2\n", // Choose select category, then select #2 (Office Supplies)
 			expectedCategory: "Office Supplies",
 			expectedStatus:   model.StatusUserModified,
 		},
@@ -860,7 +869,7 @@ func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
 				Confidence:        0.75,
 				CategoryRankings:  rankings,
 			},
-			input:            "c\nhome & garden\n", // Case insensitive name selection
+			input:            "e\nhome & garden\n", // Case insensitive name selection
 			expectedCategory: "Home & Garden",
 			expectedStatus:   model.StatusUserModified,
 		},
@@ -880,7 +889,7 @@ func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
 				CategoryRankings:  rankings,
 				CheckPatterns:     checkPatterns,
 			},
-			input:            "c\nn\nBusiness Services\n", // Custom category -> New -> Enter name
+			input:            "e\nn\nBusiness Services\nn\n", // Select category -> New -> Enter name -> No description
 			expectedCategory: "Business Services",
 			expectedStatus:   model.StatusUserModified,
 		},
@@ -920,9 +929,9 @@ func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
 
 			// Verify enhanced UI elements appear in output
 			output := writer.String()
-			if strings.Contains(tt.input, "c\n") || strings.Contains(tt.input, "e\n") {
-				// Should show ranked categories when custom category is selected
-				assert.Contains(t, output, "Select category (ranked by likelihood)")
+			if strings.Contains(tt.input, "e\n") {
+				// Should show ranked categories when select category is chosen
+				assert.Contains(t, output, "Select category:")
 				assert.Contains(t, output, "(75% match)")                           // Shopping score
 				assert.Contains(t, output, "Clothing, electronics, general retail") // Description
 				assert.Contains(t, output, "[N] Create new category")

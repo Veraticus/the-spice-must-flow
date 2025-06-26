@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
@@ -675,6 +676,10 @@ func (f *failingClassifier) SuggestCategoryRankings(_ context.Context, transacti
 	}, nil
 }
 
+func (f *failingClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
+	return make(map[string]model.CategoryRankings), nil
+}
+
 // TestNewCategoryFlow tests the flow when AI suggests a new category.
 func TestNewCategoryFlow(t *testing.T) {
 	ctx := context.Background()
@@ -803,6 +808,10 @@ func (n *newCategoryClassifier) SuggestCategoryRankings(_ context.Context, _ mod
 			Description: description,
 		},
 	}, nil
+}
+
+func (n *newCategoryClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
+	return make(map[string]model.CategoryRankings), nil
 }
 
 // newCategoryPrompter simulates user accepting a new category.

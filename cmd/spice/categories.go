@@ -3,18 +3,19 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/cli"
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -84,39 +85,61 @@ func listCategoriesCmd() *cobra.Command {
 			}
 
 			if len(categories) == 0 {
-				slog.Info(`{"message":"No categories found. Use 'spice categories add' to create one."}`)
+				fmt.Println(cli.InfoStyle.Render("No categories found. Use 'spice categories add' to create one.")) //nolint:forbidigo // User-facing output
 				return nil
 			}
 
-			// Convert categories to JSON
-			type categoryJSON struct {
-				Name        string `json:"name"`
-				Type        string `json:"type"`
-				Description string `json:"description"`
-				ID          int    `json:"id"`
-			}
-
-			var jsonCategories []categoryJSON
-			for _, cat := range categories {
-				catType := string(cat.Type)
-				if catType == "" {
-					catType = "expense"
+			// Create table writer
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			defer func() {
+				if flushErr := w.Flush(); flushErr != nil {
+					slog.Error("failed to flush table writer", "error", flushErr)
 				}
-				jsonCategories = append(jsonCategories, categoryJSON{
-					ID:          cat.ID,
-					Name:        cat.Name,
-					Type:        catType,
-					Description: cat.Description,
-				})
+			}()
+
+			// Header
+			headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+				headerStyle.Render("ID"),
+				headerStyle.Render("Name"),
+				headerStyle.Render("Type"),
+				headerStyle.Render("Description")); err != nil {
+				slog.Error("failed to write table header", "error", err)
+			}
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+				strings.Repeat("-", 4),
+				strings.Repeat("-", 20),
+				strings.Repeat("-", 10),
+				strings.Repeat("-", 50)); err != nil {
+				slog.Error("failed to write table separator", "error", err)
 			}
 
-			bytes, err := json.Marshal(jsonCategories)
-			if err != nil {
-				slog.Error("Failed to marshal categories", "error", err)
-				return err
+			// List categories
+			for _, cat := range categories {
+				desc := cat.Description
+				if desc == "" {
+					desc = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("(no description)")
+				}
+
+				// Format type with color
+				var typeStr string
+				switch cat.Type {
+				case model.CategoryTypeIncome:
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Render("Income")
+				case model.CategoryTypeExpense:
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render("Expense")
+				case model.CategoryTypeSystem:
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("System")
+				default:
+					// Default to expense for legacy categories without type
+					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Expense")
+				}
+
+				if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", cat.ID, cat.Name, typeStr, desc); err != nil {
+					slog.Error("failed to write category row", "error", err, "category", cat.Name)
+				}
 			}
 
-			slog.Info(string(bytes))
 			return nil
 		},
 	}

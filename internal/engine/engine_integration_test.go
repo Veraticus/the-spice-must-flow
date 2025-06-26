@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
@@ -505,6 +506,10 @@ func (c *configuredClassifier) SuggestCategoryRankings(_ context.Context, _ mode
 	return rankings, nil
 }
 
+func (c *configuredClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
+	return make(map[string]model.CategoryRankings), nil
+}
+
 type trackingPrompter struct {
 	*MockPrompter
 	wasCalled bool
@@ -535,6 +540,10 @@ func (n *neverCallClassifier) GenerateCategoryDescription(_ context.Context, _ s
 }
 
 func (n *neverCallClassifier) SuggestCategoryRankings(_ context.Context, _ model.Transaction, _ []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
+	panic("Classifier should not be called when vendor rule exists")
+}
+
+func (n *neverCallClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
 	panic("Classifier should not be called when vendor rule exists")
 }
 

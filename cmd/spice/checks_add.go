@@ -72,9 +72,9 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 
 	var category string
 	for {
-		categoryInput, err := promptString(reader, "\nCategory (enter number)")
-		if err != nil {
-			return fmt.Errorf("failed to get category: %w", err)
+		categoryInput, catErr := promptString(reader, "\nCategory (enter number)")
+		if catErr != nil {
+			return fmt.Errorf("failed to get category: %w", catErr)
 		}
 
 		// Try to parse as number first

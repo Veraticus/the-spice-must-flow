@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Veraticus/the-spice-must-flow/internal/common"
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
-	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 )
 
@@ -28,8 +27,8 @@ type BatchClassificationOptions struct {
 func DefaultBatchOptions() BatchClassificationOptions {
 	return BatchClassificationOptions{
 		AutoAcceptThreshold: 0.95,
-		BatchSize:           20,
-		ParallelWorkers:     5,
+		BatchSize:           5,
+		ParallelWorkers:     2,
 	}
 }
 
@@ -206,7 +205,7 @@ func (e *ClassificationEngine) batchWorker(
 
 		// Process batch when full or channel empty
 		if len(batch) >= opts.BatchSize || len(workChan) == 0 {
-			results := e.processMerchantBatch(ctx, batch, merchantGroups, categories)
+			results := e.processMerchantBatch(ctx, batch, merchantGroups, categories, opts)
 			for _, result := range results {
 				resultsChan <- result
 			}
@@ -216,23 +215,26 @@ func (e *ClassificationEngine) batchWorker(
 
 	// Process any remaining merchants
 	if len(batch) > 0 {
-		results := e.processMerchantBatch(ctx, batch, merchantGroups, categories)
+		results := e.processMerchantBatch(ctx, batch, merchantGroups, categories, opts)
 		for _, result := range results {
 			resultsChan <- result
 		}
 	}
 }
 
-// processMerchantBatch processes a batch of merchants.
+// processMerchantBatch processes a batch of merchants using the new batch LLM API.
 func (e *ClassificationEngine) processMerchantBatch(
 	ctx context.Context,
 	merchants []string,
 	merchantGroups map[string][]model.Transaction,
 	categories []model.Category,
+	_ BatchClassificationOptions,
 ) []BatchResult {
 	results := make([]BatchResult, len(merchants))
+	needsLLM := make([]llm.MerchantBatchRequest, 0, len(merchants))
+	needsLLMIndices := make([]int, 0, len(merchants))
 
-	// First check for existing vendor rules
+	// First pass: check for existing vendor rules and prepare LLM requests
 	for i, merchant := range merchants {
 		txns := merchantGroups[merchant]
 		result := BatchResult{
@@ -262,63 +264,93 @@ func (e *ClassificationEngine) processMerchantBatch(
 			continue
 		}
 
-		representative := txns[0]
-
-		// Get check patterns if applicable
-		var checkPatterns []model.CheckPattern
-		if representative.Type == "CHECK" {
-			checkPatterns, _ = e.storage.GetMatchingCheckPatterns(ctx, representative)
+		// Prepare batch request for this merchant
+		req := llm.MerchantBatchRequest{
+			MerchantID:        merchant,
+			MerchantName:      merchant,
+			SampleTransaction: txns[0],
+			TransactionCount:  len(txns),
 		}
-
-		// Filter categories by direction
-		filteredCategories := e.filterCategoriesByDirection(categories, txns)
-
-		// Get LLM suggestion with retry
-		rankings, err := e.getSuggestionWithRetry(ctx, representative, filteredCategories, checkPatterns)
-		if err != nil {
-			result.Error = err
-			results[i] = result
-			continue
-		}
-
-		top := rankings.Top()
-		if top == nil {
-			result.Error = fmt.Errorf("no category suggestion returned")
-			results[i] = result
-			continue
-		}
-
-		result.Suggestion = top
+		needsLLM = append(needsLLM, req)
+		needsLLMIndices = append(needsLLMIndices, i)
 		results[i] = result
 	}
 
-	return results
-}
+	// If no merchants need LLM classification, return early
+	if len(needsLLM) == 0 {
+		return results
+	}
 
-// getSuggestionWithRetry gets LLM suggestion with retry logic.
-func (e *ClassificationEngine) getSuggestionWithRetry(
-	ctx context.Context,
-	transaction model.Transaction,
-	categories []model.Category,
-	checkPatterns []model.CheckPattern,
-) (model.CategoryRankings, error) {
-	var rankings model.CategoryRankings
+	// Filter categories by direction for all transactions
+	// Use the most common direction from all transactions
+	allTxns := make([]model.Transaction, 0)
+	for _, req := range needsLLM {
+		allTxns = append(allTxns, merchantGroups[req.MerchantID]...)
+	}
+	filteredCategories := e.filterCategoriesByDirection(categories, allTxns)
 
-	err := common.WithRetry(ctx, func() error {
-		var err error
-		rankings, err = e.classifier.SuggestCategoryRankings(ctx, transaction, categories, checkPatterns)
-		if err != nil {
-			return &common.RetryableError{Err: err, Retryable: true}
+	// Process LLM requests in batches
+	// Using a fixed batch size of 5 merchants per LLM call for optimal performance
+	llmBatchSize := 5
+	for start := 0; start < len(needsLLM); start += llmBatchSize {
+		end := start + llmBatchSize
+		if end > len(needsLLM) {
+			end = len(needsLLM)
 		}
-		return nil
-	}, service.RetryOptions{
-		MaxAttempts:  3,
-		InitialDelay: 500 * time.Millisecond,
-		MaxDelay:     5 * time.Second,
-		Multiplier:   2.0,
-	})
 
-	return rankings, err
+		batch := needsLLM[start:end]
+		batchIndices := needsLLMIndices[start:end]
+
+		// Get batch classifications from LLM
+		batchRankings, err := e.classifier.SuggestCategoryBatch(ctx, batch, filteredCategories)
+		if err != nil {
+			// If batch fails, mark all merchants in batch as failed
+			for j, idx := range batchIndices {
+				results[idx].Error = fmt.Errorf("batch classification failed: %w", err)
+				results[idx].Merchant = batch[j].MerchantID
+				results[idx].Transactions = merchantGroups[batch[j].MerchantID]
+			}
+			continue
+		}
+
+		// Process batch results
+		for j, req := range batch {
+			idx := batchIndices[j]
+			merchantID := req.MerchantID
+
+			rankings, found := batchRankings[merchantID]
+			if !found || len(rankings) == 0 {
+				results[idx].Error = fmt.Errorf("no rankings returned for merchant")
+				results[idx].Merchant = merchantID
+				results[idx].Transactions = merchantGroups[merchantID]
+				continue
+			}
+
+			// Apply check pattern boosts if applicable
+			txns := merchantGroups[merchantID]
+			if len(txns) > 0 && txns[0].Type == "CHECK" {
+				checkPatterns, _ := e.storage.GetMatchingCheckPatterns(ctx, txns[0])
+				if len(checkPatterns) > 0 {
+					rankings.ApplyCheckPatternBoosts(checkPatterns)
+					rankings.Sort()
+				}
+			}
+
+			top := rankings.Top()
+			if top == nil {
+				results[idx].Error = fmt.Errorf("no category suggestion returned")
+				results[idx].Merchant = merchantID
+				results[idx].Transactions = txns
+				continue
+			}
+
+			results[idx].Merchant = merchantID
+			results[idx].Transactions = txns
+			results[idx].Suggestion = top
+		}
+	}
+
+	return results
 }
 
 // saveAutoAcceptedBatch saves all auto-accepted classifications.
@@ -402,8 +434,11 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 		return scoreI < scoreJ
 	})
 
-	// Process each merchant that needs review
-	for i, result := range needsReview {
+	// Build list of pending classifications
+	pendingClassifications := make([]model.PendingClassification, 0, len(needsReview))
+	merchantToPending := make(map[string]int) // Map merchant to index in pendingClassifications
+
+	for _, result := range needsReview {
 		if len(result.Transactions) == 0 {
 			continue
 		}
@@ -422,15 +457,30 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 			pending.CategoryDescription = result.Suggestion.Description
 		}
 
-		// Get user confirmation
-		classification, err := e.prompter.ConfirmClassification(ctx, pending)
-		if err != nil {
-			if err == context.Canceled {
-				return err
-			}
-			slog.Error("Failed to get user confirmation", "error", err)
+		merchantToPending[result.Merchant] = len(pendingClassifications)
+		pendingClassifications = append(pendingClassifications, pending)
+	}
+
+	// Get batch confirmation from user
+	classifications, err := e.prompter.BatchConfirmClassifications(ctx, pendingClassifications)
+	if err != nil {
+		return fmt.Errorf("batch confirmation failed: %w", err)
+	}
+
+	// Process each confirmed classification
+	for _, result := range needsReview {
+		if len(result.Transactions) == 0 {
 			continue
 		}
+
+		// Find the corresponding classification
+		pendingIdx, found := merchantToPending[result.Merchant]
+		if !found || pendingIdx >= len(classifications) {
+			continue
+		}
+
+		classification := classifications[pendingIdx]
+		pending := pendingClassifications[pendingIdx]
 
 		// If this is a new category that was accepted, create it
 		if pending.IsNewCategory && classification.Category != "" {
@@ -469,10 +519,6 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 					"error", err)
 			}
 
-			// Update the pending classification's transaction for the next iteration if needed
-			if i+1 < len(result.Transactions) {
-				pending.Transaction = result.Transactions[i+1]
-			}
 		}
 	}
 

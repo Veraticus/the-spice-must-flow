@@ -29,6 +29,7 @@ type PendingClassification struct {
 	SuggestedCategory   string
 	CategoryDescription string
 	CategoryRankings    CategoryRankings
+	AllCategories       []Category
 	CheckPatterns       []CheckPattern
 	Transaction         Transaction
 	Confidence          float64

@@ -83,6 +83,11 @@ func (m *mockClient) GenerateDescription(_ context.Context, categoryName string)
 	}, nil
 }
 
+func (m *mockClient) ClassifyMerchantBatch(_ context.Context, _ string) (MerchantBatchResponse, error) {
+	// For testing, return an empty response
+	return MerchantBatchResponse{}, nil
+}
+
 func TestNewClassifier(t *testing.T) {
 	logger := slog.Default()
 

@@ -233,7 +233,7 @@ func (c *anthropicClient) ClassifyWithRankings(ctx context.Context, prompt strin
 	// Clean any markdown wrappers that might be present
 	content = cleanMarkdownWrapper(content)
 
-	if err := json.Unmarshal([]byte(content), &jsonResp); err == nil {
+	if unmarshalErr := json.Unmarshal([]byte(content), &jsonResp); unmarshalErr == nil {
 		// Successfully parsed JSON
 		var rankings []CategoryRanking
 		for _, r := range jsonResp.Rankings {
@@ -329,5 +329,119 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 	return DescriptionResponse{
 		Description: descResp.Description,
 		Confidence:  descResp.Confidence,
+	}, nil
+}
+
+// ClassifyMerchantBatch classifies multiple merchants in a single API call.
+func (c *anthropicClient) ClassifyMerchantBatch(ctx context.Context, prompt string) (MerchantBatchResponse, error) {
+	systemPrompt := "You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object containing merchant classifications. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }."
+
+	requestBody := map[string]any{
+		"model":       c.model,
+		"max_tokens":  c.maxTokens * 10, // More tokens needed for batch response
+		"temperature": c.temperature,
+		"system":      systemPrompt,
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return MerchantBatchResponse{}, fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response anthropicResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Content) == 0 {
+		return MerchantBatchResponse{}, fmt.Errorf("no content in response")
+	}
+
+	return c.parseMerchantBatchResponse(response.Content[0].Text)
+}
+
+// parseMerchantBatchResponse parses the batch classification response.
+func (c *anthropicClient) parseMerchantBatchResponse(content string) (MerchantBatchResponse, error) {
+	// Expected JSON structure:
+	// {
+	//   "classifications": [
+	//     {
+	//       "merchantId": "merchant-1",
+	//       "rankings": [
+	//         {"category": "Groceries", "score": 0.95, "isNew": false},
+	//         {"category": "Food & Dining", "score": 0.05, "isNew": false}
+	//       ]
+	//     },
+	//     ...
+	//   ]
+	// }
+	var jsonResp struct {
+		Classifications []struct {
+			MerchantID string `json:"merchantId"`
+			Rankings   []struct {
+				Category    string  `json:"category"`
+				Score       float64 `json:"score"`
+				IsNew       bool    `json:"isNew"`
+				Description string  `json:"description,omitempty"`
+			} `json:"rankings"`
+		} `json:"classifications"`
+	}
+
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	// Convert to our response format
+	classifications := make([]MerchantClassification, 0, len(jsonResp.Classifications))
+	for _, c := range jsonResp.Classifications {
+		rankings := make([]CategoryRanking, 0, len(c.Rankings))
+		for _, r := range c.Rankings {
+			rankings = append(rankings, CategoryRanking{
+				Category:    r.Category,
+				Score:       r.Score,
+				IsNew:       r.IsNew,
+				Description: r.Description,
+			})
+		}
+		classifications = append(classifications, MerchantClassification{
+			MerchantID: c.MerchantID,
+			Rankings:   rankings,
+		})
+	}
+
+	return MerchantBatchResponse{
+		Classifications: classifications,
 	}, nil
 }

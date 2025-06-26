@@ -52,6 +52,11 @@ func (m *mockRankingClient) GenerateDescription(_ context.Context, _ string) (De
 	return DescriptionResponse{Description: "Test description"}, nil
 }
 
+func (m *mockRankingClient) ClassifyMerchantBatch(_ context.Context, _ string) (MerchantBatchResponse, error) {
+	// For testing, return an empty response
+	return MerchantBatchResponse{}, nil
+}
+
 func TestClassifier_SuggestCategoryRankings(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 

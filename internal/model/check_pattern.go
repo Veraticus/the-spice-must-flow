@@ -123,11 +123,9 @@ func (p *CheckPattern) Validate() error {
 				return fmt.Errorf("amount at index %d must be positive", i)
 			}
 		}
-	} else {
+	} else if p.AmountMin != nil && p.AmountMax != nil && *p.AmountMin > *p.AmountMax {
 		// Validate amount range
-		if p.AmountMin != nil && p.AmountMax != nil && *p.AmountMin > *p.AmountMax {
-			return fmt.Errorf("amount min must be less than or equal to amount max")
-		}
+		return fmt.Errorf("amount min must be less than or equal to amount max")
 	}
 
 	// Validate day of month range

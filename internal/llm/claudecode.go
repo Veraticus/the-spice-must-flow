@@ -227,7 +227,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 	}
 
 	// Build rankings
-	var rankings []CategoryRanking
+	rankings := make([]CategoryRanking, 0, len(jsonResp.Rankings))
 	for _, r := range jsonResp.Rankings {
 		rankings = append(rankings, CategoryRanking{
 			Category: r.Category,
@@ -321,5 +321,121 @@ func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt strin
 	return DescriptionResponse{
 		Description: descResp.Description,
 		Confidence:  descResp.Confidence,
+	}, nil
+}
+
+// ClassifyMerchantBatch classifies multiple merchants in a single API call.
+func (c *claudeCodeClient) ClassifyMerchantBatch(ctx context.Context, prompt string) (MerchantBatchResponse, error) {
+	// Build the full prompt with system context
+	fullPrompt := fmt.Sprintf(
+		"You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object containing merchant classifications. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.\n\n%s",
+		prompt,
+	)
+
+	// Build command arguments
+	args := []string{
+		"-p", fullPrompt,
+		"--output-format", "json",
+		"--model", c.model,
+		"--max-turns", strconv.Itoa(c.maxTurns),
+	}
+
+	// Create command with context
+	cmd := exec.CommandContext(ctx, c.cliPath, args...)
+
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Set timeout if not already set in context
+	cmdCtx := ctx
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		cmdCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+	cmd = exec.CommandContext(cmdCtx, c.cliPath, args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Execute command
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return MerchantBatchResponse{}, fmt.Errorf("claude code error: %s", stderr.String())
+		}
+		return MerchantBatchResponse{}, fmt.Errorf("failed to execute claude: %w", err)
+	}
+
+	// Parse JSON response
+	var response claudeCodeResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to parse claude code response: %w", err)
+	}
+
+	// Check for errors in response
+	if response.IsError {
+		return MerchantBatchResponse{}, fmt.Errorf("claude code error in response")
+	}
+
+	// Extract classification from response
+	if response.Result == "" {
+		return MerchantBatchResponse{}, fmt.Errorf("empty response from claude code")
+	}
+
+	return c.parseMerchantBatchResponse(cleanMarkdownWrapper(response.Result))
+}
+
+// parseMerchantBatchResponse parses the batch classification response.
+func (c *claudeCodeClient) parseMerchantBatchResponse(content string) (MerchantBatchResponse, error) {
+	// Expected JSON structure:
+	// {
+	//   "classifications": [
+	//     {
+	//       "merchantId": "merchant-1",
+	//       "rankings": [
+	//         {"category": "Groceries", "score": 0.95, "isNew": false},
+	//         {"category": "Food & Dining", "score": 0.05, "isNew": false}
+	//       ]
+	//     },
+	//     ...
+	//   ]
+	// }
+	var jsonResp struct {
+		Classifications []struct {
+			MerchantID string `json:"merchantId"`
+			Rankings   []struct {
+				Category    string  `json:"category"`
+				Score       float64 `json:"score"`
+				IsNew       bool    `json:"isNew"`
+				Description string  `json:"description,omitempty"`
+			} `json:"rankings"`
+		} `json:"classifications"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	// Convert to our response format
+	classifications := make([]MerchantClassification, 0, len(jsonResp.Classifications))
+	for _, c := range jsonResp.Classifications {
+		rankings := make([]CategoryRanking, 0, len(c.Rankings))
+		for _, r := range c.Rankings {
+			rankings = append(rankings, CategoryRanking{
+				Category:    r.Category,
+				Score:       r.Score,
+				IsNew:       r.IsNew,
+				Description: r.Description,
+			})
+		}
+		classifications = append(classifications, MerchantClassification{
+			MerchantID: c.MerchantID,
+			Rankings:   rankings,
+		})
+	}
+
+	return MerchantBatchResponse{
+		Classifications: classifications,
 	}, nil
 }

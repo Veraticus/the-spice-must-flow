@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
@@ -199,6 +200,10 @@ func (c *categoryReloadTestClassifier) BatchSuggestCategories(_ context.Context,
 // GenerateCategoryDescription implements the Classifier interface.
 func (c *categoryReloadTestClassifier) GenerateCategoryDescription(_ context.Context, categoryName string) (string, float64, error) {
 	return "Test description for " + categoryName, 0.95, nil
+}
+
+func (c *categoryReloadTestClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
+	return make(map[string]model.CategoryRankings), nil
 }
 
 // categoryReloadTestPrompter is a test prompter that creates a new category

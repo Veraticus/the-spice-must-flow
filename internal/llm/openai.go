@@ -241,7 +241,7 @@ func (c *openAIClient) ClassifyWithRankings(ctx context.Context, prompt string) 
 	}
 
 	// Successfully parsed JSON
-	var rankings []CategoryRanking
+	rankings := make([]CategoryRanking, 0, len(jsonResp.Rankings))
 	for _, r := range jsonResp.Rankings {
 		rankings = append(rankings, CategoryRanking{
 			Category: r.Category,
@@ -339,5 +339,119 @@ func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (
 	return DescriptionResponse{
 		Description: jsonResp.Description,
 		Confidence:  jsonResp.Confidence,
+	}, nil
+}
+
+// ClassifyMerchantBatch classifies multiple merchants in a single API call.
+func (c *openAIClient) ClassifyMerchantBatch(ctx context.Context, prompt string) (MerchantBatchResponse, error) {
+	requestBody := map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object containing merchant classifications. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.",
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": c.temperature,
+		"max_tokens":  c.maxTokens * 10, // More tokens needed for batch response
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return MerchantBatchResponse{}, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response openAIResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Choices) == 0 {
+		return MerchantBatchResponse{}, fmt.Errorf("no completion choices returned")
+	}
+
+	return c.parseMerchantBatchResponse(response.Choices[0].Message.Content)
+}
+
+// parseMerchantBatchResponse parses the batch classification response.
+func (c *openAIClient) parseMerchantBatchResponse(content string) (MerchantBatchResponse, error) {
+	// Expected JSON structure:
+	// {
+	//   "classifications": [
+	//     {
+	//       "merchantId": "merchant-1",
+	//       "rankings": [
+	//         {"category": "Groceries", "score": 0.95, "isNew": false},
+	//         {"category": "Food & Dining", "score": 0.05, "isNew": false}
+	//       ]
+	//     },
+	//     ...
+	//   ]
+	// }
+	var jsonResp struct {
+		Classifications []struct {
+			MerchantID string `json:"merchantId"`
+			Rankings   []struct {
+				Category    string  `json:"category"`
+				Score       float64 `json:"score"`
+				IsNew       bool    `json:"isNew"`
+				Description string  `json:"description,omitempty"`
+			} `json:"rankings"`
+		} `json:"classifications"`
+	}
+
+	content = cleanMarkdownWrapper(content)
+
+	if err := json.Unmarshal([]byte(content), &jsonResp); err != nil {
+		return MerchantBatchResponse{}, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	// Convert to our response format
+	classifications := make([]MerchantClassification, 0, len(jsonResp.Classifications))
+	for _, c := range jsonResp.Classifications {
+		rankings := make([]CategoryRanking, 0, len(c.Rankings))
+		for _, r := range c.Rankings {
+			rankings = append(rankings, CategoryRanking{
+				Category:    r.Category,
+				Score:       r.Score,
+				IsNew:       r.IsNew,
+				Description: r.Description,
+			})
+		}
+		classifications = append(classifications, MerchantClassification{
+			MerchantID: c.MerchantID,
+			Rankings:   rankings,
+		})
+	}
+
+	return MerchantBatchResponse{
+		Classifications: classifications,
 	}, nil
 }

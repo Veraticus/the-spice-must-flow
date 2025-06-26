@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
@@ -129,6 +130,10 @@ func (c *debuggingClassifier) BatchSuggestCategories(_ context.Context, _ []mode
 
 func (c *debuggingClassifier) GenerateCategoryDescription(_ context.Context, _ string) (string, float64, error) {
 	return "Test description", 0.95, nil
+}
+
+func (c *debuggingClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
+	return make(map[string]model.CategoryRankings), nil
 }
 
 // simpleAcceptPrompter accepts all suggestions.

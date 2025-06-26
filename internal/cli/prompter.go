@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -73,17 +74,14 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category: %s\n", WarningStyle.Render(pending.SuggestedCategory)); err != nil {
 			return model.Classification{}, fmt.Errorf("failed to write new category option: %w", err)
 		}
-		if _, err := fmt.Fprintln(p.writer, "  [E] Use existing category instead"); err != nil {
-			return model.Classification{}, fmt.Errorf("failed to write existing option: %w", err)
-		}
 	} else {
 		if _, err := fmt.Fprintf(p.writer, "  [A] Accept AI suggestion: %s\n", SuccessStyle.Render(pending.SuggestedCategory)); err != nil {
 			return model.Classification{}, fmt.Errorf("failed to write AI suggestion: %w", err)
 		}
 	}
 
-	if _, err := fmt.Fprintln(p.writer, "  [C] Enter custom category"); err != nil {
-		return model.Classification{}, fmt.Errorf("failed to write custom option: %w", err)
+	if _, err := fmt.Fprintln(p.writer, "  [E] Select category"); err != nil {
+		return model.Classification{}, fmt.Errorf("failed to write select category option: %w", err)
 	}
 	if _, err := fmt.Fprintln(p.writer, "  [S] Skip this transaction"); err != nil {
 		return model.Classification{}, fmt.Errorf("failed to write skip option: %w", err)
@@ -92,12 +90,7 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 		return model.Classification{}, fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	var validChoices []string
-	if pending.IsNewCategory {
-		validChoices = []string{"a", "e", "c", "s"}
-	} else {
-		validChoices = []string{"a", "c", "s"}
-	}
+	var validChoices = []string{"a", "e", "s"}
 
 	choice, err := p.promptChoice(ctx, "Choice", validChoices)
 	if err != nil {
@@ -122,25 +115,14 @@ func (p *Prompter) ConfirmClassification(ctx context.Context, pending model.Pend
 			}
 		}
 	case "e":
-		// This option is only available for new category suggestions
-		if pending.IsNewCategory {
-			category, err := p.promptCategorySelection(ctx, pending.CategoryRankings, pending.CheckPatterns)
-			if err != nil {
-				return model.Classification{}, err
-			}
-			classification.Category = category
-			classification.Status = model.StatusUserModified
-			classification.Confidence = 1.0
-			p.trackCategorization(pending.Transaction.MerchantName, category)
-			p.incrementStats(true, false)
-		}
-	case "c":
-		category, err := p.promptCategorySelection(ctx, pending.CategoryRankings, pending.CheckPatterns)
+		// Show all categories for selection
+		category, err := p.promptCategorySelection(ctx, pending.CategoryRankings, pending.AllCategories, pending.CheckPatterns)
 		if err != nil {
 			return model.Classification{}, err
 		}
 		classification.Category = category
 		classification.Status = model.StatusUserModified
+		classification.Confidence = 1.0
 		p.trackCategorization(pending.Transaction.MerchantName, category)
 		p.incrementStats(true, false)
 	case "s":
@@ -181,17 +163,14 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 			pending[0].SuggestedCategory, len(pending)); err != nil {
 			return nil, fmt.Errorf("failed to write new category accept option: %w", err)
 		}
-		if _, err := fmt.Fprintln(p.writer, "  [E] Use existing category for all"); err != nil {
-			return nil, fmt.Errorf("failed to write existing category option: %w", err)
-		}
 	} else {
 		if _, err := fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending)); err != nil {
 			return nil, fmt.Errorf("failed to write batch accept option: %w", err)
 		}
 	}
 
-	if _, err := fmt.Fprintln(p.writer, "  [C] Set custom category for all"); err != nil {
-		return nil, fmt.Errorf("failed to write custom category option: %w", err)
+	if _, err := fmt.Fprintln(p.writer, "  [E] Select category for all"); err != nil {
+		return nil, fmt.Errorf("failed to write select category option: %w", err)
 	}
 	if _, err := fmt.Fprintln(p.writer, "  [R] Review each transaction individually"); err != nil {
 		return nil, fmt.Errorf("failed to write review option: %w", err)
@@ -203,15 +182,8 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 		return nil, fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	var validChoices []string
-	var promptText string
-	if pending[0].IsNewCategory {
-		validChoices = []string{"a", "e", "c", "r", "s"}
-		promptText = "Choice [A/E/C/R/S]"
-	} else {
-		validChoices = []string{"a", "c", "r", "s"}
-		promptText = "Choice [A/C/R/S]"
-	}
+	var validChoices = []string{"a", "e", "r", "s"}
+	var promptText = "Choice [A/E/R/S]"
 
 	choice, err := p.promptChoice(ctx, promptText, validChoices)
 	if err != nil {
@@ -227,11 +199,7 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 		}
 		return p.acceptAllClassifications(pending)
 	case "e":
-		// This option is only available for new category suggestions
-		if pending[0].IsNewCategory {
-			return p.customCategoryForAll(ctx, pending)
-		}
-	case "c":
+		// Select category for all transactions
 		return p.customCategoryForAll(ctx, pending)
 	case "r":
 		return p.reviewEachTransaction(ctx, pending)
@@ -506,12 +474,12 @@ func (p *Prompter) promptChoice(ctx context.Context, prompt string, validChoices
 	}
 }
 
-func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.CategoryRankings, checkPatterns []model.CheckPattern) (string, error) {
+func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.CategoryRankings, allCategories []model.Category, checkPatterns []model.CheckPattern) (string, error) {
 	if _, err := fmt.Fprintln(p.writer); err != nil {
 		return "", fmt.Errorf("failed to write newline: %w", err)
 	}
 
-	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Select category (ranked by likelihood):")); err != nil {
+	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Select category:")); err != nil {
 		return "", fmt.Errorf("failed to write selection header: %w", err)
 	}
 	if _, err := fmt.Fprintln(p.writer); err != nil {
@@ -522,28 +490,82 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 	categoryMap := make(map[string]string)  // number -> category name
 	categoryByName := make(map[string]bool) // for name-based selection
 
-	// Display ranked categories
-	for i, ranking := range rankings {
-		if i >= 15 { // Limit display to top 15 categories
+	// Create a map of rankings for quick lookup
+	rankingScores := make(map[string]float64)
+	for _, ranking := range rankings {
+		rankingScores[ranking.Category] = ranking.Score
+	}
+
+	// Merge rankings with all categories
+	type categoryDisplay struct {
+		name        string
+		description string
+		score       float64
+		isNew       bool
+	}
+
+	var displayCategories []categoryDisplay
+	seenCategories := make(map[string]bool)
+
+	// First add ranked categories
+	for _, ranking := range rankings {
+		if !ranking.IsNew {
+			displayCategories = append(displayCategories, categoryDisplay{
+				name:        ranking.Category,
+				score:       ranking.Score,
+				isNew:       false,
+				description: ranking.Description,
+			})
+			seenCategories[ranking.Category] = true
+		}
+	}
+
+	// Then add unranked categories from allCategories
+	for _, cat := range allCategories {
+		if !seenCategories[cat.Name] {
+			displayCategories = append(displayCategories, categoryDisplay{
+				name:        cat.Name,
+				score:       0.0,
+				isNew:       false,
+				description: cat.Description,
+			})
+			seenCategories[cat.Name] = true
+		}
+	}
+
+	// Sort: high scores first, then alphabetically
+	sort.Slice(displayCategories, func(i, j int) bool {
+		if displayCategories[i].score != displayCategories[j].score {
+			return displayCategories[i].score > displayCategories[j].score
+		}
+		return displayCategories[i].name < displayCategories[j].name
+	})
+
+	// Display categories
+	displayCount := 0
+	for i, cat := range displayCategories {
+		if displayCount >= 15 && cat.score < 0.01 { // Show max 15 unless they have significant scores
 			break
 		}
 
 		num := fmt.Sprintf("%d", i+1)
-		categoryMap[num] = ranking.Category
-		categoryByName[strings.ToLower(ranking.Category)] = true
+		categoryMap[num] = cat.name
+		categoryByName[strings.ToLower(cat.name)] = true
 
 		// Build the display line
 		var line string
-		if ranking.Score >= 0.01 { // Only show percentage if >= 1%
+		if cat.score >= 0.01 { // Only show percentage if >= 1%
 			line = fmt.Sprintf("  [%s] %s (%.0f%% match)",
-				num, ranking.Category, ranking.Score*100)
+				num, cat.name, cat.score*100)
 		} else {
-			line = fmt.Sprintf("  [%s] %s", num, ranking.Category)
+			line = fmt.Sprintf("  [%s] %s", num, cat.name)
 		}
+
+		displayCount++
 
 		// Add check pattern indicator
 		for _, pattern := range checkPatterns {
-			if pattern.Category == ranking.Category {
+			if pattern.Category == cat.name {
 				line += fmt.Sprintf(" %s matches pattern \"%s\"",
 					SuccessStyle.Render("⭐"), pattern.PatternName)
 				break
@@ -555,9 +577,9 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 		}
 
 		// Show description if available
-		if ranking.Description != "" {
+		if cat.description != "" && cat.score >= 0.01 {
 			if _, err := fmt.Fprintf(p.writer, "      %s\n",
-				SubtleStyle.Render(ranking.Description)); err != nil {
+				SubtleStyle.Render(cat.description)); err != nil {
 				return "", fmt.Errorf("failed to write category description: %w", err)
 			}
 		}
@@ -567,10 +589,10 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 		}
 	}
 
-	// Add option to show more categories if there are more than 15
-	if len(rankings) > 15 {
+	// Add option to show more categories if there are more
+	if displayCount < len(displayCategories) {
 		if _, err := fmt.Fprintf(p.writer, "  [M] Show %d more categories\n",
-			len(rankings)-15); err != nil {
+			len(displayCategories)-displayCount); err != nil {
 			return "", fmt.Errorf("failed to write show more option: %w", err)
 		}
 		if _, err := fmt.Fprintln(p.writer); err != nil {
@@ -614,7 +636,7 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 
 		// Handle special options
 		lowerChoice := strings.ToLower(choice)
-		if lowerChoice == "m" && len(rankings) > 15 && !showingAll {
+		if lowerChoice == "m" && displayCount < len(displayCategories) && !showingAll {
 			// Show all categories
 			showingAll = true
 			if _, err := fmt.Fprintln(p.writer); err != nil {
@@ -622,18 +644,18 @@ func (p *Prompter) promptCategorySelection(ctx context.Context, rankings model.C
 			}
 
 			// Display remaining categories
-			for i := 15; i < len(rankings); i++ {
-				ranking := rankings[i]
+			for i := displayCount; i < len(displayCategories); i++ {
+				cat := displayCategories[i]
 				num := fmt.Sprintf("%d", i+1)
-				categoryMap[num] = ranking.Category
-				categoryByName[strings.ToLower(ranking.Category)] = true
+				categoryMap[num] = cat.name
+				categoryByName[strings.ToLower(cat.name)] = true
 
 				var line string
-				if ranking.Score >= 0.01 {
+				if cat.score >= 0.01 {
 					line = fmt.Sprintf("  [%s] %s (%.0f%% match)",
-						num, ranking.Category, ranking.Score*100)
+						num, cat.name, cat.score*100)
 				} else {
-					line = fmt.Sprintf("  [%s] %s", num, ranking.Category)
+					line = fmt.Sprintf("  [%s] %s", num, cat.name)
 				}
 
 				if _, err := fmt.Fprintln(p.writer, line); err != nil {
@@ -678,6 +700,8 @@ func (p *Prompter) promptNewCategoryName(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to write newline: %w", err)
 	}
 
+	// First, get the category name
+	var categoryName string
 	for {
 		select {
 		case <-ctx.Done():
@@ -694,16 +718,58 @@ func (p *Prompter) promptNewCategoryName(ctx context.Context) (string, error) {
 			return "", err
 		}
 
-		category := strings.TrimSpace(input)
-		if category == "" {
+		categoryName = strings.TrimSpace(input)
+		if categoryName == "" {
 			if _, err := fmt.Fprintln(p.writer, FormatError("Category name cannot be empty. Please try again.")); err != nil {
 				slog.Warn("Failed to write empty category error", "error", err)
 			}
 			continue
 		}
-
-		return category, nil
+		break
 	}
+
+	// Then, ask about description
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
+	}
+
+	if _, err := fmt.Fprintln(p.writer, FormatInfo("Would you like to add a description for this category?")); err != nil {
+		return "", fmt.Errorf("failed to write description prompt: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [Y] Yes, I'll provide a description"); err != nil {
+		return "", fmt.Errorf("failed to write yes option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer, "  [N] No, let AI generate one"); err != nil {
+		return "", fmt.Errorf("failed to write no option: %w", err)
+	}
+	if _, err := fmt.Fprintln(p.writer); err != nil {
+		return "", fmt.Errorf("failed to write newline: %w", err)
+	}
+
+	choice, err := p.promptChoice(ctx, "Choice [Y/N]", []string{"y", "n"})
+	if err != nil {
+		return "", err
+	}
+
+	if choice == "y" {
+		// Get description from user
+		if _, err := fmt.Fprint(p.writer, FormatPrompt("Enter description: ")); err != nil {
+			return "", fmt.Errorf("failed to write description prompt: %w", err)
+		}
+
+		input, err := p.reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+
+		description := strings.TrimSpace(input)
+		// Return category name with description marker
+		// We'll use a special format to indicate it has a description
+		return categoryName + "|DESC|" + description, nil
+	}
+
+	// Return just the category name, AI will generate description
+	return categoryName, nil
 }
 
 func (p *Prompter) acceptAllClassifications(pending []model.PendingClassification) ([]model.Classification, error) {
@@ -733,13 +799,15 @@ func (p *Prompter) acceptAllClassifications(pending []model.PendingClassificatio
 func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.PendingClassification) ([]model.Classification, error) {
 	// Use rankings from the first transaction (they should all be similar for a merchant group)
 	var rankings model.CategoryRankings
+	var allCategories []model.Category
 	var checkPatterns []model.CheckPattern
 	if len(pending) > 0 {
 		rankings = pending[0].CategoryRankings
+		allCategories = pending[0].AllCategories
 		checkPatterns = pending[0].CheckPatterns
 	}
 
-	category, err := p.promptCategorySelection(ctx, rankings, checkPatterns)
+	category, err := p.promptCategorySelection(ctx, rankings, allCategories, checkPatterns)
 	if err != nil {
 		return nil, err
 	}
