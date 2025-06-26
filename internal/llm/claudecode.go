@@ -60,7 +60,7 @@ func newClaudeCodeClient(cfg Config) (Client, error) {
 func (c *claudeCodeClient) Classify(ctx context.Context, prompt string) (ClassificationResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a neutral financial transaction classifier. Your role is to categorize transactions based on WHAT they are (merchant type, service provided) not WHO might be using them or WHY. Avoid any assumptions about personal vs business use. Always respond with valid JSON in the exact format requested.\n\n%s",
+		"You are a neutral financial transaction classifier. Your role is to categorize transactions based on WHAT they are (merchant type, service provided) not WHO might be using them or WHY. Avoid any assumptions about personal vs business use. You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.\n\n%s",
 		prompt,
 	)
 
@@ -157,7 +157,7 @@ type claudeCodeResponse struct {
 func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a financial transaction classifier. You must rank ALL categories by likelihood and respond with valid JSON in the exact format requested.\n\n%s",
+		"You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object containing rankings. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.\n\n%s",
 		prompt,
 	)
 
@@ -257,7 +257,7 @@ func (c *claudeCodeClient) ClassifyWithRankings(ctx context.Context, prompt stri
 func (c *claudeCodeClient) GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error) {
 	// Build the full prompt with system context
 	fullPrompt := fmt.Sprintf(
-		"You are a financial category description generator. Respond with valid JSON only.\n\n%s",
+		"You are a financial category description generator. You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.\n\n%s",
 		prompt,
 	)
 

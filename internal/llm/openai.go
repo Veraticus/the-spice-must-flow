@@ -63,7 +63,7 @@ func (c *openAIClient) Classify(ctx context.Context, prompt string) (Classificat
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a financial transaction classifier. Respond only with the category and confidence score in the exact format requested.",
+				"content": "You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.",
 			},
 			{
 				"role":    "user",
@@ -170,7 +170,7 @@ func (c *openAIClient) ClassifyWithRankings(ctx context.Context, prompt string) 
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a financial transaction classifier. You must rank ALL categories by likelihood and follow the exact format requested.",
+				"content": "You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object containing rankings. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.",
 			},
 			{
 				"role":    "user",
@@ -232,6 +232,7 @@ func (c *openAIClient) ClassifyWithRankings(ctx context.Context, prompt string) 
 	}
 
 	content := response.Choices[0].Message.Content
+
 	// Clean any markdown wrappers that might be present
 	content = cleanMarkdownWrapper(content)
 
@@ -273,7 +274,7 @@ func (c *openAIClient) GenerateDescription(ctx context.Context, prompt string) (
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a financial category description generator. Follow the response format exactly as specified in the prompt.",
+				"content": "You are a financial category description generator. You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.",
 			},
 			{
 				"role":    "user",

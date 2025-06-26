@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 12
+const ExpectedSchemaVersion = 13
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -389,6 +389,43 @@ var migrations = []Migration{
 			// Add amounts column to store multiple specific amounts as JSON
 			if _, err := tx.Exec(`ALTER TABLE check_patterns ADD COLUMN amounts TEXT`); err != nil {
 				return fmt.Errorf("failed to add amounts column: %w", err)
+			}
+
+			return nil
+		},
+	},
+	{
+		Version:     13,
+		Description: "Convert negative transaction amounts to absolute values",
+		Up: func(tx *sql.Tx) error {
+			// First, let's see how many negative amounts we have
+			var negativeCount int
+			err := tx.QueryRow(`SELECT COUNT(*) FROM transactions WHERE amount < 0`).Scan(&negativeCount)
+			if err != nil {
+				return fmt.Errorf("failed to count negative amounts: %w", err)
+			}
+
+			if negativeCount > 0 {
+				slog.Info("Converting negative transaction amounts to positive", "count", negativeCount)
+
+				// Convert all negative amounts to positive (absolute values)
+				_, err := tx.Exec(`UPDATE transactions SET amount = ABS(amount) WHERE amount < 0`)
+				if err != nil {
+					return fmt.Errorf("failed to convert negative amounts: %w", err)
+				}
+
+				// Verify the conversion
+				var remainingNegative int
+				err = tx.QueryRow(`SELECT COUNT(*) FROM transactions WHERE amount < 0`).Scan(&remainingNegative)
+				if err != nil {
+					return fmt.Errorf("failed to verify conversion: %w", err)
+				}
+
+				if remainingNegative > 0 {
+					return fmt.Errorf("conversion failed: %d transactions still have negative amounts", remainingNegative)
+				}
+
+				slog.Info("Successfully converted all negative amounts to positive")
 			}
 
 			return nil

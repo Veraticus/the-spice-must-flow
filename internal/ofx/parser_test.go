@@ -206,7 +206,7 @@ func TestParseBankTransactions(t *testing.T) {
 	assert.Equal(t, "2024011501", tx1.ID)
 	assert.Equal(t, "STARBUCKS STORE #1234", tx1.Name)
 	assert.Equal(t, "STARBUCKS STORE #1234", tx1.MerchantName) // No PAYEE, so uses NAME
-	assert.Equal(t, -25.50, tx1.Amount)                        // Negative for debit
+	assert.Equal(t, 25.50, tx1.Amount)                         // Absolute value
 	assert.Equal(t, "1234567890", tx1.AccountID)
 	assert.Equal(t, model.DirectionExpense, tx1.Direction) // DEBIT type
 	// Compare just the date components, ignoring timezone
@@ -219,14 +219,14 @@ func TestParseBankTransactions(t *testing.T) {
 	assert.Equal(t, "2024012001", tx2.ID)
 	assert.Equal(t, "Whole Foods Market", tx2.Name)
 	assert.Equal(t, "Whole Foods Market", tx2.MerchantName)
-	assert.Equal(t, -125.00, tx2.Amount)                   // Negative for debit
+	assert.Equal(t, 125.00, tx2.Amount)                    // Absolute value
 	assert.Equal(t, model.DirectionExpense, tx2.Direction) // DEBIT type
 
 	// Test third transaction (Check)
 	tx3 := transactions[2]
 	assert.Equal(t, "2024012501", tx3.ID)
 	assert.Equal(t, "CHECK #1234", tx3.Name)
-	assert.Equal(t, -500.00, tx3.Amount)                   // Negative for check
+	assert.Equal(t, 500.00, tx3.Amount)                    // Absolute value
 	assert.Equal(t, model.DirectionExpense, tx3.Direction) // CHECK type
 }
 
@@ -242,7 +242,7 @@ func TestParseCreditCardTransactions(t *testing.T) {
 	tx1 := transactions[0]
 	assert.Equal(t, "CC2024011001", tx1.ID)
 	assert.Equal(t, "AMAZON.COM*RT4Y7HG2", tx1.Name)
-	assert.Equal(t, -45.99, tx1.Amount) // Negative for credit card debit
+	assert.Equal(t, 45.99, tx1.Amount) // Absolute value
 	assert.Equal(t, "4111111111111111", tx1.AccountID)
 	assert.Equal(t, model.DirectionExpense, tx1.Direction) // DEBIT type for CC
 
@@ -250,7 +250,7 @@ func TestParseCreditCardTransactions(t *testing.T) {
 	tx2 := transactions[1]
 	assert.Equal(t, "CC2024011501", tx2.ID)
 	assert.Equal(t, "NETFLIX.COM", tx2.Name)
-	assert.Equal(t, -15.00, tx2.Amount)                    // Negative for credit card debit
+	assert.Equal(t, 15.00, tx2.Amount)                     // Absolute value
 	assert.Equal(t, model.DirectionExpense, tx2.Direction) // DEBIT type for CC
 }
 
@@ -316,7 +316,7 @@ func TestTransactionDirectionDetection(t *testing.T) {
 			name:              "debit expense",
 			ofxContent:        generateTestOFX("DEBIT", "-25.50", "2024011502", "STARBUCKS STORE #1234"),
 			expectedDirection: model.DirectionExpense,
-			expectedAmount:    -25.50,
+			expectedAmount:    25.50,
 		},
 		{
 			name:              "interest income",
@@ -328,13 +328,13 @@ func TestTransactionDirectionDetection(t *testing.T) {
 			name:              "check expense",
 			ofxContent:        generateTestOFXWithCheck("-500.00", "2024012501", "1234", "CHECK #1234"),
 			expectedDirection: model.DirectionExpense,
-			expectedAmount:    -500.00,
+			expectedAmount:    500.00,
 		},
 		{
 			name:              "transfer",
 			ofxContent:        generateTestOFX("XFER", "-1000.00", "2024012001", "Transfer to Savings"),
 			expectedDirection: model.DirectionExpense,
-			expectedAmount:    -1000.00,
+			expectedAmount:    1000.00,
 		},
 		{
 			name:              "credit refund",

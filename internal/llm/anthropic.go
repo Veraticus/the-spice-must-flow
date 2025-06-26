@@ -58,7 +58,7 @@ func newAnthropicClient(cfg Config) (Client, error) {
 
 // Classify sends a classification request to Anthropic.
 func (c *anthropicClient) Classify(ctx context.Context, prompt string) (ClassificationResponse, error) {
-	systemPrompt := "You are a financial transaction classifier. Respond only with the category and confidence score in the exact format requested."
+	systemPrompt := "You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }."
 
 	requestBody := map[string]any{
 		"model":       c.model,
@@ -162,7 +162,7 @@ type anthropicResponse struct {
 
 // ClassifyWithRankings sends a ranking classification request to Anthropic.
 func (c *anthropicClient) ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error) {
-	systemPrompt := "You are a financial transaction classifier. You must rank ALL categories by likelihood and follow the exact format requested."
+	systemPrompt := "You are a financial transaction classifier. You MUST respond with ONLY a valid JSON object containing rankings. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }."
 
 	requestBody := map[string]any{
 		"model":       c.model,
@@ -229,6 +229,7 @@ func (c *anthropicClient) ClassifyWithRankings(ctx context.Context, prompt strin
 	}
 
 	content := response.Content[0].Text
+
 	// Clean any markdown wrappers that might be present
 	content = cleanMarkdownWrapper(content)
 
@@ -265,7 +266,7 @@ func (c *anthropicClient) GenerateDescription(ctx context.Context, prompt string
 		"model":       c.model,
 		"max_tokens":  c.maxTokens,
 		"temperature": c.temperature,
-		"system":      "You are a financial category description generator. Respond only with the description text, no additional formatting.",
+		"system":      "You are a financial category description generator. You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.",
 		"messages": []map[string]string{
 			{
 				"role":    "user",

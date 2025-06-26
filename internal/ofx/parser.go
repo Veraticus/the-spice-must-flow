@@ -139,8 +139,11 @@ func (p *Parser) convertTransaction(ofxTx ofxgo.Transaction, accountID string) m
 	// ofxTx.TrnAmt is a big.Rat, convert to float64
 	amountFloat, _ := ofxTx.TrnAmt.Float64()
 
-	// Preserve the original amount with its sign
+	// Convert to absolute value - we use the direction field to indicate income/expense
 	amount := amountFloat
+	if amount < 0 {
+		amount = -amount
+	}
 
 	// Determine transaction direction based on amount sign and transaction type
 	var direction model.TransactionDirection

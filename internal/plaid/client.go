@@ -281,16 +281,31 @@ func (c *Client) mapPlaidTransaction(pt plaid.Transaction) model.Transaction {
 		}
 	}
 
+	// Get amount as absolute value
+	amount := pt.GetAmount()
+
+	// Determine direction based on amount sign
+	// In Plaid: positive amounts are debits (money out), negative are credits (money in)
+	var direction model.TransactionDirection
+	if amount > 0 {
+		direction = model.DirectionExpense
+	} else if amount < 0 {
+		direction = model.DirectionIncome
+		amount = -amount // Convert to absolute value
+	}
+	// If amount is 0, leave direction empty
+
 	tx := model.Transaction{
 		Date:         date,
 		ID:           pt.GetTransactionId(),
 		Name:         pt.GetName(),
 		MerchantName: merchantName,
 		AccountID:    pt.GetAccountId(),
-		Amount:       pt.GetAmount(),
+		Amount:       amount,
 		Category:     categories,
 		Type:         transactionType,
 		CheckNumber:  checkNumber,
+		Direction:    direction,
 	}
 
 	// Generate hash for deduplication

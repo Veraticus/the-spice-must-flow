@@ -4,7 +4,7 @@ This file provides project-specific guidance that complements ~/.claude/CLAUDE.m
 
 ## Project Overview
 
-the-spice-must-flow is a personal finance categorization engine that ingests financial transactions from Plaid, uses AI to intelligently categorize them, and exports reports to Google Sheets. Written in idiomatic Go with emphasis on testability, extensibility, and delightful CLI experience.
+the-spice-must-flow is a personal finance categorization engine that ingests financial transactions from Plaid, OFX/QFX files, and SimpleFin, uses AI to intelligently categorize them, and exports reports to Google Sheets. Written in idiomatic Go with emphasis on testability, extensibility, and delightful CLI experience.
 
 **Module**: `github.com/Veraticus/the-spice-must-flow`
 
@@ -19,6 +19,22 @@ make test-all  # includes race detection, integration tests
 
 # Auto-fix common issues:
 make fix
+
+# Build the CLI:
+make build
+
+# Database debugging (on nix systems):
+nix-shell -p sqlite --run 'sqlite3 ~/.local/share/spice/spice.db "SELECT * FROM transactions LIMIT 5;"'
+
+# Common database queries:
+# Check for negative amounts (should be 0 after migration 13):
+nix-shell -p sqlite --run 'sqlite3 ~/.local/share/spice/spice.db "SELECT COUNT(*) FROM transactions WHERE amount < 0;"'
+
+# View check patterns:
+nix-shell -p sqlite --run 'sqlite3 ~/.local/share/spice/spice.db "SELECT * FROM check_patterns;"'
+
+# View categories:
+nix-shell -p sqlite --run 'sqlite3 ~/.local/share/spice/spice.db "SELECT id, name, type, description FROM categories ORDER BY name;"'
 ```
 
 ## Project-Specific Ultrathinking Triggers
@@ -115,14 +131,18 @@ func TestCheckPattern_Matches(t *testing.T) {
 
 ### Static Typing Rules
 ```go
-// NEVER use interface{} or any
-// ALWAYS use concrete types
+// AVOID interface{} or any - use concrete types
+// Exception: When working with JSON unmarshaling or truly dynamic data
 
 // GOOD
 func ProcessTransaction(txn model.Transaction) error
 
 // BAD  
 func ProcessTransaction(data interface{}) error
+
+// ACCEPTABLE for JSON parsing
+var result map[string]any
+err := json.Unmarshal(data, &result)
 
 // GOOD - Explicit type conversion
 amount := decimal.NewFromFloat(txn.Amount)
@@ -144,6 +164,13 @@ All major components follow interface-first design:
 - Transactions use explicit transaction objects
 - Migrations are forward-only (no rollbacks)
 - Use prepared statements exclusively
+- Schema version tracked via SQLite PRAGMA user_version
+
+### Transaction Amount Storage
+- **ALWAYS store amounts as absolute values (positive)**
+- Use the `direction` field (income/expense/transfer) to indicate money flow
+- Never store negative amounts in the database
+- All import sources (Plaid, OFX, SimpleFin) must convert to absolute values
 
 ### CLI Command Structure
 ```go
@@ -203,6 +230,34 @@ for _, txn := range txns {
 3. **Use parameterized queries**: Never concatenate SQL
 4. **Sanitize for display**: HTML escape user-provided data
 
+## Database Schema & Migrations
+
+### Migration System
+- Migrations defined in `internal/storage/migrations.go`
+- Version tracked via SQLite PRAGMA user_version
+- Current schema version: 13 (check ExpectedSchemaVersion constant)
+- Run migrations: `./spice migrate`
+- Check status: `./spice migrate --status`
+
+### Key Tables
+- `transactions`: Core transaction data (amounts are ALWAYS positive)
+- `classifications`: Transaction categorization data
+- `vendors`: Merchant-to-category mappings
+- `categories`: Available categories with types (income/expense/system)
+- `check_patterns`: Rules for auto-categorizing check transactions
+
+## CLI Commands Overview
+
+### Core Commands
+- `spice classify [--batch]`: Categorize transactions (batch mode recommended)
+- `spice import`: Import from Plaid
+- `spice import-ofx <file>`: Import OFX/QFX files
+- `spice flow --export`: Export to Google Sheets
+- `spice categories`: Manage categories
+- `spice vendors`: Manage vendor rules
+- `spice checks`: Manage check patterns
+- `spice recategorize`: Re-classify existing transactions
+
 ## Project-Specific Checkpoints
 
 Before marking any task complete:
@@ -212,6 +267,8 @@ Before marking any task complete:
 - [ ] Ensure all new files have proper package documentation
 - [ ] Confirm interfaces are small and focused
 - [ ] Validate error messages provide context
+- [ ] If modifying transactions: ensure amounts remain positive
+- [ ] If adding migrations: increment ExpectedSchemaVersion
 
 ## When to Re-read This File
 
@@ -220,3 +277,4 @@ Before marking any task complete:
 - When design feels complex
 - Every 30 minutes of coding
 - Before asking for review
+- When working with database or migrations
