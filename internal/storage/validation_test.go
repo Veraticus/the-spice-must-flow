@@ -401,40 +401,5 @@ func TestValidateTransactions(t *testing.T) {
 	}
 }
 
-func TestValidateProgress(t *testing.T) {
-	tests := []struct {
-		progress *model.ClassificationProgress
-		name     string
-		wantErr  bool
-	}{
-		{
-			name: "valid progress",
-			progress: &model.ClassificationProgress{
-				LastProcessedID:   "txn123",
-				LastProcessedDate: time.Now(),
-				TotalProcessed:    10,
-				StartedAt:         time.Now().Add(-1 * time.Hour),
-			},
-			wantErr: false,
-		},
-		{
-			name:     "nil progress",
-			progress: nil,
-			wantErr:  true,
-		},
-		{
-			name:     "empty progress is valid",
-			progress: &model.ClassificationProgress{},
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateProgress(tt.progress)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateProgress() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
+// TestValidateProgress has been removed as progress tracking functionality
+// has been removed from the codebase

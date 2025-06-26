@@ -18,8 +18,8 @@ import (
 
 func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 	tests := []struct {
-		setupStorage      func(*testing.T) service.Storage
-		setupProgress     *model.ClassificationProgress
+		setupStorage func(*testing.T) service.Storage
+		// setupProgress removed - progress tracking functionality has been removed from the codebase
 		name              string
 		setupTransactions []model.Transaction
 		setupVendors      []model.Vendor
@@ -131,12 +131,13 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 					AccountID:    "acc1",
 				},
 			},
-			setupProgress: &model.ClassificationProgress{
-				LastProcessedID:   "4",
-				LastProcessedDate: time.Now().AddDate(0, 0, -2),
-				TotalProcessed:    1,
-				StartedAt:         time.Now().AddDate(0, 0, -1),
-			},
+			// setupProgress removed - progress tracking functionality has been removed from the codebase
+			// setupProgress: &model.ClassificationProgress{
+			// 	LastProcessedID:   "4",
+			// 	LastProcessedDate: time.Now().AddDate(0, 0, -2),
+			// 	TotalProcessed:    1,
+			// 	StartedAt:         time.Now().AddDate(0, 0, -1),
+			// },
 			llmAutoAccept: true,
 			expectedStats: service.CompletionStats{
 				TotalTransactions: 1, // Only new transaction
@@ -302,10 +303,11 @@ func TestClassificationEngine_ClassifyTransactions(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			if tt.setupProgress != nil {
-				err := storage.SaveProgress(ctx, tt.setupProgress)
-				require.NoError(t, err)
-			}
+			// Progress tracking removed from the codebase
+			// if tt.setupProgress != nil {
+			// 	err := storage.SaveProgress(ctx, tt.setupProgress)
+			// 	require.NoError(t, err)
+			// }
 
 			// Create mocks
 			llm := NewMockClassifier()
@@ -365,56 +367,8 @@ func TestClassificationEngine_SortMerchantsByVolume(t *testing.T) {
 	assert.Equal(t, []string{"HighVolume", "MediumVolume", "LowVolume"}, sorted)
 }
 
-func TestClassificationEngine_HasHighVariance(t *testing.T) {
-	engine := &ClassificationEngine{}
-
-	tests := []struct {
-		name     string
-		amounts  []float64
-		expected bool
-	}{
-		{
-			name:     "low variance",
-			amounts:  []float64{5.00, 6.00, 7.00, 8.00, 9.00},
-			expected: false,
-		},
-		{
-			name:     "high variance",
-			amounts:  []float64{5.00, 10.00, 15.00, 25.00, 100.00},
-			expected: true,
-		},
-		{
-			name:     "not enough transactions",
-			amounts:  []float64{5.00, 500.00},
-			expected: false,
-		},
-		{
-			name:     "negative amounts",
-			amounts:  []float64{-5.00, -10.00, -15.00, -25.00, -100.00},
-			expected: true,
-		},
-		{
-			name:     "zero minimum",
-			amounts:  []float64{0.00, 50.00, 100.00, 150.00, 200.00},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			transactions := make([]model.Transaction, len(tt.amounts))
-			for i, amount := range tt.amounts {
-				transactions[i] = model.Transaction{
-					ID:     string(rune(i)),
-					Amount: amount,
-				}
-			}
-
-			result := engine.hasHighVariance(transactions)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
+// TestClassificationEngine_HasHighVariance has been removed as the hasHighVariance method
+// no longer exists in the engine
 
 func TestClassificationEngine_VendorRetrieval(t *testing.T) {
 	ctx := context.Background()
@@ -446,41 +400,20 @@ func TestClassificationEngine_VendorRetrieval(t *testing.T) {
 	engine := New(db, NewMockClassifier(), NewMockPrompter(true))
 
 	// Test vendor retrieval (storage layer handles caching)
-	retrievedVendor, err := engine.getVendor(ctx, "Test Vendor")
+	retrievedVendor, err := engine.GetVendor(ctx, "Test Vendor")
 	require.NoError(t, err)
 	assert.Equal(t, vendor.Name, retrievedVendor.Name)
 	assert.Equal(t, vendor.Category, retrievedVendor.Category)
 
 	// Test vendor not found
-	notFound, err := engine.getVendor(ctx, "Nonexistent Vendor")
+	notFound, err := engine.GetVendor(ctx, "Nonexistent Vendor")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, sql.ErrNoRows))
 	assert.Nil(t, notFound)
 }
 
-func TestClassificationEngine_ApplyVendorRule(t *testing.T) {
-	engine := &ClassificationEngine{}
-
-	vendor := &model.Vendor{
-		Name:     "Starbucks",
-		Category: "Coffee & Dining",
-	}
-
-	transactions := []model.Transaction{
-		{ID: "1", MerchantName: "Starbucks", Amount: 5.75},
-		{ID: "2", MerchantName: "Starbucks", Amount: 6.25},
-	}
-
-	classifications := engine.applyVendorRule(transactions, vendor)
-
-	assert.Len(t, classifications, 2)
-	for _, c := range classifications {
-		assert.Equal(t, "Coffee & Dining", c.Category)
-		assert.Equal(t, model.StatusClassifiedByRule, c.Status)
-		assert.Equal(t, 1.0, c.Confidence)
-		assert.False(t, c.ClassifiedAt.IsZero())
-	}
-}
+// TestClassificationEngine_ApplyVendorRule has been removed as the applyVendorRule method
+// no longer exists in the engine
 
 func TestClassificationEngine_ContextCancellation(t *testing.T) {
 	// Create storage with test data
@@ -542,15 +475,15 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, context.Canceled))
 
-	// Verify progress was saved or not needed
-	progress, err := db.GetLatestProgress(context.Background())
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("Failed to get progress: %v", err)
-	}
-	// Progress may not be saved if canceled too quickly
-	if progress != nil {
-		assert.Greater(t, progress.TotalProcessed, 0)
-	}
+	// Progress tracking removed from the codebase
+	// progress, err := db.GetLatestProgress(context.Background())
+	// if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	// 	t.Fatalf("Failed to get progress: %v", err)
+	// }
+	// // Progress may not be saved if canceled too quickly
+	// if progress != nil {
+	// 	assert.Greater(t, progress.TotalProcessed, 0)
+	// }
 }
 
 // slowMockPrompter adds delay to simulate slow user interaction.

@@ -120,12 +120,3 @@ func validateClassification(classification *model.Classification) error {
 
 	return nil
 }
-
-// validateProgress validates classification progress.
-func validateProgress(progress *model.ClassificationProgress) error {
-	if progress == nil {
-		return fmt.Errorf("%w: progress", ErrNilParameter)
-	}
-	// Progress fields are optional, but dates should not be zero if set
-	return nil
-}

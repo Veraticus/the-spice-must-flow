@@ -73,10 +73,10 @@ func TestStorageValidation(t *testing.T) {
 			t.Errorf("SaveClassification should fail with nil classification, got: %v", err)
 		}
 
-		// SaveProgress with nil progress
-		if err := store.SaveProgress(ctx, nil); err == nil || !strings.Contains(err.Error(), "parameter cannot be nil") {
-			t.Errorf("SaveProgress should fail with nil progress, got: %v", err)
-		}
+		// SaveProgress removed - progress tracking functionality has been removed from the codebase
+		// if err := store.SaveProgress(ctx, nil); err == nil || !strings.Contains(err.Error(), "parameter cannot be nil") {
+		// 	t.Errorf("SaveProgress should fail with nil progress, got: %v", err)
+		// }
 	})
 
 	t.Run("invalid transaction validation", func(t *testing.T) {

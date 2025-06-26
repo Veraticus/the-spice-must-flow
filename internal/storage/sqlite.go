@@ -176,23 +176,6 @@ func (t *sqliteTransaction) GetClassificationsByDateRange(ctx context.Context, s
 	return t.storage.getClassificationsByDateRangeTx(ctx, t.tx, start, end)
 }
 
-func (t *sqliteTransaction) SaveProgress(ctx context.Context, progress *model.ClassificationProgress) error {
-	if err := validateContext(ctx); err != nil {
-		return err
-	}
-	if err := validateProgress(progress); err != nil {
-		return err
-	}
-	return t.storage.saveProgressTx(ctx, t.tx, progress)
-}
-
-func (t *sqliteTransaction) GetLatestProgress(ctx context.Context) (*model.ClassificationProgress, error) {
-	if err := validateContext(ctx); err != nil {
-		return nil, err
-	}
-	return t.storage.getLatestProgressTx(ctx, t.tx)
-}
-
 func (t *sqliteTransaction) Migrate(_ context.Context) error {
 	// Migrations should not be run within a transaction
 	return fmt.Errorf("migrations cannot be run within a transaction")

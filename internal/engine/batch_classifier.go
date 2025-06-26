@@ -254,6 +254,13 @@ func (e *ClassificationEngine) processMerchantBatch(
 			}
 			result.AutoAccepted = true
 			results[i] = result
+
+			// Log vendor rule match
+			slog.Info("merchant classified (vendor rule)",
+				"merchant", merchant,
+				"category", vendor.Category,
+				"confidence", "1.00",
+				"transaction_count", len(txns))
 			continue
 		}
 
@@ -347,6 +354,14 @@ func (e *ClassificationEngine) processMerchantBatch(
 			results[idx].Merchant = merchantID
 			results[idx].Transactions = txns
 			results[idx].Suggestion = top
+
+			// Log the classification result for this merchant
+			slog.Info("merchant classified",
+				"merchant", merchantID,
+				"category", top.Category,
+				"confidence", fmt.Sprintf("%.2f", top.Score),
+				"isNew", top.IsNew,
+				"transaction_count", len(txns))
 		}
 	}
 

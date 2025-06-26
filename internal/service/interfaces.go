@@ -38,10 +38,6 @@ type Storage interface {
 	SaveClassification(ctx context.Context, classification *model.Classification) error
 	GetClassificationsByDateRange(ctx context.Context, start, end time.Time) ([]model.Classification, error)
 
-	// Progress tracking
-	SaveProgress(ctx context.Context, progress *model.ClassificationProgress) error
-	GetLatestProgress(ctx context.Context) (*model.ClassificationProgress, error)
-
 	// Category operations
 	GetCategories(ctx context.Context) ([]model.Category, error)
 	GetCategoryByName(ctx context.Context, name string) (*model.Category, error)

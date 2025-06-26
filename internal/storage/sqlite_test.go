@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -644,115 +643,8 @@ func TestSQLiteStorage_GetClassificationsByDateRange(t *testing.T) {
 	}
 }
 
-func TestSQLiteStorage_ProgressTracking(t *testing.T) {
-	tests := []struct {
-		progress *model.ClassificationProgress
-		setup    func(*SQLiteStorage, context.Context)
-		validate func(*testing.T, *SQLiteStorage, context.Context, *model.ClassificationProgress)
-		name     string
-		wantErr  bool
-	}{
-		{
-			name: "save new progress",
-			progress: &model.ClassificationProgress{
-				LastProcessedID:   "txn123",
-				LastProcessedDate: time.Now(),
-				TotalProcessed:    42,
-				StartedAt:         time.Now().Add(-10 * time.Minute),
-			},
-			wantErr: false,
-			validate: func(t *testing.T, s *SQLiteStorage, ctx context.Context, p *model.ClassificationProgress) {
-				t.Helper()
-				retrieved, err := s.GetLatestProgress(ctx)
-				if err != nil {
-					t.Errorf("Failed to get progress: %v", err)
-				}
-				if retrieved == nil || retrieved.TotalProcessed != p.TotalProcessed {
-					t.Errorf("Retrieved progress doesn't match: got %+v, want TotalProcessed=%d",
-						retrieved, p.TotalProcessed)
-				}
-			},
-		},
-		{
-			name: "update existing progress",
-			progress: &model.ClassificationProgress{
-				LastProcessedID:   "txn456",
-				LastProcessedDate: time.Now(),
-				TotalProcessed:    100,
-				StartedAt:         time.Now().Add(-30 * time.Minute),
-			},
-			setup: func(s *SQLiteStorage, ctx context.Context) {
-				// Save initial progress
-				initial := &model.ClassificationProgress{
-					LastProcessedID:   "txn123",
-					LastProcessedDate: time.Now().Add(-1 * time.Hour),
-					TotalProcessed:    42,
-					StartedAt:         time.Now().Add(-2 * time.Hour),
-				}
-				_ = s.SaveProgress(ctx, initial)
-			},
-			wantErr: false,
-			validate: func(t *testing.T, s *SQLiteStorage, ctx context.Context, _ *model.ClassificationProgress) {
-				t.Helper()
-				retrieved, err := s.GetLatestProgress(ctx)
-				if err != nil {
-					t.Errorf("Failed to get progress: %v", err)
-				}
-				if retrieved.TotalProcessed != 100 || retrieved.LastProcessedID != "txn456" {
-					t.Errorf("Progress not updated: got %+v", retrieved)
-				}
-			},
-		},
-		{
-			name: "clear progress",
-			setup: func(s *SQLiteStorage, ctx context.Context) {
-				// Save initial progress
-				progress := &model.ClassificationProgress{
-					LastProcessedID:   "txn123",
-					LastProcessedDate: time.Now(),
-					TotalProcessed:    42,
-					StartedAt:         time.Now().Add(-10 * time.Minute),
-				}
-				_ = s.SaveProgress(ctx, progress)
-				_ = s.ClearProgress(ctx)
-			},
-			wantErr: false,
-			validate: func(t *testing.T, s *SQLiteStorage, ctx context.Context, _ *model.ClassificationProgress) {
-				t.Helper()
-				retrieved, err := s.GetLatestProgress(ctx)
-				if err != sql.ErrNoRows {
-					t.Errorf("Expected sql.ErrNoRows after clear, got: %v", err)
-				}
-				if retrieved != nil {
-					t.Errorf("Expected nil progress after clear, got %+v", retrieved)
-				}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store, cleanup := createTestStorage(t)
-			defer cleanup()
-			ctx := context.Background()
-
-			if tt.setup != nil {
-				tt.setup(store, ctx)
-			}
-
-			if tt.progress != nil {
-				err := store.SaveProgress(ctx, tt.progress)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("SaveProgress() error = %v, wantErr %v", err, tt.wantErr)
-				}
-			}
-
-			if tt.validate != nil {
-				tt.validate(t, store, ctx, tt.progress)
-			}
-		})
-	}
-}
+// TestSQLiteStorage_ProgressTracking has been removed as progress tracking functionality
+// has been removed from the codebase
 
 func TestSQLiteStorage_Transaction(t *testing.T) {
 	tests := []struct {

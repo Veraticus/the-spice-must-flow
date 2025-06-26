@@ -82,13 +82,14 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 
 	// Step 3: Start classification session
 	t.Log("Step 3: Starting classification session")
-	progress := &model.ClassificationProgress{
-		StartedAt:      time.Now(),
-		TotalProcessed: 0,
-	}
-	if err2 := store.SaveProgress(ctx, progress); err2 != nil {
-		t.Fatalf("Failed to save initial progress: %v", err2)
-	}
+	// Progress tracking has been removed from the codebase
+	// progress := &model.ClassificationProgress{
+	// 	StartedAt:      time.Now(),
+	// 	TotalProcessed: 0,
+	// }
+	// if err2 := store.SaveProgress(ctx, progress); err2 != nil {
+	// 	t.Fatalf("Failed to save initial progress: %v", err2)
+	// }
 
 	// Step 4: Classify first Starbucks transaction (user classification)
 	t.Log("Step 4: User classifies first Starbucks transaction")
@@ -102,13 +103,13 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 		t.Fatalf("Failed to save classification: %v", err2)
 	}
 
-	// Update progress
-	progress.LastProcessedID = unclassified[0].ID
-	progress.LastProcessedDate = unclassified[0].Date
-	progress.TotalProcessed = 1
-	if err2 := store.SaveProgress(ctx, progress); err2 != nil {
-		t.Fatalf("Failed to update progress: %v", err2)
-	}
+	// Update progress - removed from codebase
+	// progress.LastProcessedID = unclassified[0].ID
+	// progress.LastProcessedDate = unclassified[0].Date
+	// progress.TotalProcessed = 1
+	// if err2 := store.SaveProgress(ctx, progress); err2 != nil {
+	// 	t.Fatalf("Failed to update progress: %v", err2)
+	// }
 
 	// Step 5: Check vendor was created
 	t.Log("Step 5: Verifying vendor rule was created")
@@ -260,83 +261,8 @@ func TestSQLiteStorage_FullWorkflow(t *testing.T) {
 	}
 }
 
-func TestSQLiteStorage_ResumableSession(t *testing.T) {
-	store, cleanup := createTestStorage(t)
-	defer cleanup()
-	ctx := context.Background()
-
-	// Seed required category
-	if _, err := store.CreateCategory(ctx, "Test Category", "Description for Test Category"); err != nil {
-		t.Fatalf("Failed to create Test Category: %v", err)
-	}
-
-	// Create transactions
-	transactions := createTestTransactions(10)
-	if err := store.SaveTransactions(ctx, transactions); err != nil {
-		t.Fatalf("Failed to save transactions: %v", err)
-	}
-
-	// Start classification session
-	startTime := time.Now()
-	progress := &model.ClassificationProgress{
-		StartedAt:      startTime,
-		TotalProcessed: 0,
-	}
-	if err := store.SaveProgress(ctx, progress); err != nil {
-		t.Fatalf("Failed to save progress: %v", err)
-	}
-
-	// Classify first 3 transactions
-	for i := 0; i < 3; i++ {
-		classification := &model.Classification{
-			Transaction: transactions[i],
-			Category:    "Test Category",
-			Status:      model.StatusUserModified,
-			Confidence:  1.0,
-		}
-		if err := store.SaveClassification(ctx, classification); err != nil {
-			t.Fatalf("Failed to classify transaction %d: %v", i, err)
-		}
-
-		// Update progress
-		progress.LastProcessedID = transactions[i].ID
-		progress.LastProcessedDate = transactions[i].Date
-		progress.TotalProcessed = i + 1
-		if err := store.SaveProgress(ctx, progress); err != nil {
-			t.Fatalf("Failed to update progress: %v", err)
-		}
-	}
-
-	// Simulate interruption - get latest progress
-	savedProgress, err := store.GetLatestProgress(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get progress: %v", err)
-	}
-
-	if savedProgress.TotalProcessed != 3 {
-		t.Errorf("Progress TotalProcessed = %d, want 3", savedProgress.TotalProcessed)
-	}
-	if savedProgress.LastProcessedID != transactions[2].ID {
-		t.Errorf("Progress LastProcessedID = %s, want %s",
-			savedProgress.LastProcessedID, transactions[2].ID)
-	}
-
-	// Resume session - get remaining transactions
-	remaining, err := store.GetTransactionsToClassify(ctx, &savedProgress.LastProcessedDate)
-	if err != nil {
-		t.Fatalf("Failed to get remaining: %v", err)
-	}
-
-	// Should have 7 remaining (10 - 3)
-	if len(remaining) != 7 {
-		t.Errorf("Expected 7 remaining transactions, got %d", len(remaining))
-	}
-
-	// Verify we're starting from the right place
-	if remaining[0].Date.Before(savedProgress.LastProcessedDate) {
-		t.Error("Remaining transactions include already processed dates")
-	}
-}
+// TestSQLiteStorage_ResumableSession has been removed as progress tracking functionality
+// has been removed from the codebase
 
 func TestSQLiteStorage_ErrorRecovery(t *testing.T) {
 	store, cleanup := createTestStorage(t)

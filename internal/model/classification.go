@@ -36,11 +36,3 @@ type PendingClassification struct {
 	SimilarCount        int
 	IsNewCategory       bool
 }
-
-// ClassificationProgress tracks where we are in a classification run.
-type ClassificationProgress struct {
-	LastProcessedDate time.Time
-	StartedAt         time.Time
-	LastProcessedID   string
-	TotalProcessed    int
-}

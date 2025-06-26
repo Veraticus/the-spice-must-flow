@@ -21,10 +21,10 @@ func classifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "classify",
 		Short: "Categorize transactions",
-		Long: `Categorize financial transactions with AI assistance and smart batching.
+		Long: `Categorize financial transactions with AI assistance using efficient batch processing.
 		
 This command fetches transactions from Plaid, groups them by merchant,
-and guides you through categorization with minimal effort.
+and guides you through categorization with minimal effort using batch LLM calls.
 
 By default, this will classify ALL unclassified transactions. Use --year or --month
 to limit the scope to a specific time period.
@@ -33,34 +33,29 @@ Examples:
   # Classify all unclassified transactions
   spice classify
   
-  # Use batch mode for faster processing (5-10x speedup)
-  spice classify --batch
+  # Only auto-accept high confidence items, skip manual review
+  spice classify --auto-only
   
-  # Batch mode - only auto-accept high confidence items
-  spice classify --batch --auto-only
+  # Custom auto-accept threshold (default: 95%)
+  spice classify --auto-accept-threshold=0.90
   
-  # Batch mode with custom auto-accept threshold
-  spice classify --batch --auto-accept-threshold=0.90
-  
-  # Maximum performance batch mode
-  spice classify --batch --auto-only --parallel-workers=10
+  # Maximum performance with more parallel workers
+  spice classify --auto-only --parallel-workers=10
   
   # Classify only 2024 transactions
   spice classify --year 2024
   
-  # Resume from a previous session (sequential mode only)
-  spice classify --resume`,
+  # Classify specific month
+  spice classify --month 2024-03`,
 		RunE: runClassify,
 	}
 
 	// Flags
 	cmd.Flags().IntP("year", "y", 0, "Year to classify transactions for (default: all transactions)")
 	cmd.Flags().StringP("month", "m", "", "Specific month to classify (format: 2024-01)")
-	cmd.Flags().BoolP("resume", "r", false, "Resume from previous session")
 	cmd.Flags().Bool("dry-run", false, "Preview without saving changes")
 
-	// Batch mode flags
-	cmd.Flags().BoolP("batch", "b", false, "Use batch mode for faster processing")
+	// Batch configuration flags
 	cmd.Flags().Float64("auto-accept-threshold", 0.95, "Auto-accept classifications above this confidence (0.0-1.0)")
 	cmd.Flags().Int("batch-size", 20, "Number of merchants to process in each LLM batch")
 	cmd.Flags().Int("parallel-workers", 5, "Number of parallel workers for batch processing")
@@ -69,9 +64,7 @@ Examples:
 	// Bind to viper (errors are rare and can be ignored in practice)
 	_ = viper.BindPFlag("classification.year", cmd.Flags().Lookup("year"))
 	_ = viper.BindPFlag("classification.month", cmd.Flags().Lookup("month"))
-	_ = viper.BindPFlag("classification.resume", cmd.Flags().Lookup("resume"))
 	_ = viper.BindPFlag("classification.dry_run", cmd.Flags().Lookup("dry-run"))
-	_ = viper.BindPFlag("classification.batch", cmd.Flags().Lookup("batch"))
 	_ = viper.BindPFlag("classification.auto_accept_threshold", cmd.Flags().Lookup("auto-accept-threshold"))
 	_ = viper.BindPFlag("classification.batch_size", cmd.Flags().Lookup("batch-size"))
 	_ = viper.BindPFlag("classification.parallel_workers", cmd.Flags().Lookup("parallel-workers"))
