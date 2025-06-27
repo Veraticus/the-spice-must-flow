@@ -120,33 +120,3 @@ func (r CategoryRankings) Validate() error {
 
 	return nil
 }
-
-// ApplyCheckPatternBoosts applies confidence boosts from matching check patterns.
-// This modifies scores in-place and re-sorts the rankings.
-func (r CategoryRankings) ApplyCheckPatternBoosts(patterns []CheckPattern) {
-	// Create a map of category to total boost
-	boosts := make(map[string]float64)
-
-	for _, pattern := range patterns {
-		boosts[pattern.Category] += pattern.ConfidenceBoost
-	}
-
-	// Apply boosts to matching categories
-	for i := range r {
-		if boost, ok := boosts[r[i].Category]; ok {
-			// Apply boost but cap at 1.0
-			r[i].Score = minFloat(r[i].Score+boost, 1.0)
-		}
-	}
-
-	// Re-sort after applying boosts
-	r.Sort()
-}
-
-// minFloat returns the smaller of two float64 values.
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}

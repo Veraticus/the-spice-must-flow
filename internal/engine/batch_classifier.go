@@ -273,6 +273,33 @@ func (e *ClassificationEngine) processMerchantBatch(
 			continue
 		}
 
+		// Check for check patterns (only for check transactions)
+		if len(txns) > 0 && txns[0].Type == "CHECK" {
+			checkPatterns, err := e.storage.GetMatchingCheckPatterns(ctx, txns[0])
+			if err == nil && len(checkPatterns) > 0 {
+				// Use the first matching pattern
+				pattern := checkPatterns[0]
+				result.Suggestion = &model.CategoryRanking{
+					Category:    pattern.Category,
+					Score:       1.0, // Check patterns have 100% confidence
+					IsNew:       false,
+					Description: "", // Check patterns don't have descriptions
+				}
+				result.AutoAccepted = true
+				result.UsedPatterns = []model.CheckPattern{pattern}
+				results[i] = result
+
+				// Log check pattern match
+				slog.Info("check classified (pattern rule)",
+					"merchant", merchant,
+					"pattern", pattern.PatternName,
+					"category", pattern.Category,
+					"confidence", "1.00",
+					"transaction_count", len(txns))
+				continue
+			}
+		}
+
 		// Need LLM classification
 		if len(txns) == 0 {
 			result.Error = fmt.Errorf("no transactions for merchant")
@@ -341,30 +368,8 @@ func (e *ClassificationEngine) processMerchantBatch(
 				continue
 			}
 
-			// Apply check pattern boosts if applicable
+			// Get transactions for this merchant
 			txns := merchantGroups[merchantID]
-			var usedPatterns []model.CheckPattern
-			if len(txns) > 0 && txns[0].Type == "CHECK" {
-				checkPatterns, _ := e.storage.GetMatchingCheckPatterns(ctx, txns[0])
-				if len(checkPatterns) > 0 {
-					// Apply boosts
-					rankings.ApplyCheckPatternBoosts(checkPatterns)
-					rankings.Sort()
-
-					// Check if any pattern's category is now the top after boosting
-					newTopCategory := ""
-					if top := rankings.Top(); top != nil {
-						newTopCategory = top.Category
-					}
-
-					// Track patterns that match the final chosen category
-					for _, pattern := range checkPatterns {
-						if pattern.Category == newTopCategory {
-							usedPatterns = append(usedPatterns, pattern)
-						}
-					}
-				}
-			}
 
 			top := rankings.Top()
 			if top == nil {
@@ -377,7 +382,6 @@ func (e *ClassificationEngine) processMerchantBatch(
 			results[idx].Merchant = merchantID
 			results[idx].Transactions = txns
 			results[idx].Suggestion = top
-			results[idx].UsedPatterns = usedPatterns
 
 			// Log the classification result for this merchant
 			slog.Info("merchant classified",

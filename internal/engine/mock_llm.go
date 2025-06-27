@@ -269,11 +269,6 @@ func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction 
 		}
 	}
 
-	// Apply check pattern boosts if this is a check transaction
-	if transaction.Type == "CHECK" && len(checkPatterns) > 0 {
-		rankings.ApplyCheckPatternBoosts(checkPatterns)
-	}
-
 	// Sort rankings by score
 	rankings.Sort()
 

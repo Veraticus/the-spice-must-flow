@@ -20,7 +20,6 @@ type CheckPattern struct {
 	PatternName        string
 	Amounts            []float64
 	ID                 int64
-	ConfidenceBoost    float64
 	UseCount           int
 }
 
@@ -137,11 +136,6 @@ func (p *CheckPattern) Validate() error {
 	}
 	if p.DayOfMonthMin != nil && p.DayOfMonthMax != nil && *p.DayOfMonthMin > *p.DayOfMonthMax {
 		return fmt.Errorf("day of month min must be less than or equal to day of month max")
-	}
-
-	// Validate confidence boost
-	if p.ConfidenceBoost < 0 || p.ConfidenceBoost > 1 {
-		return fmt.Errorf("confidence boost must be between 0 and 1")
 	}
 
 	return nil

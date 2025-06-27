@@ -35,31 +35,28 @@ func TestClassificationEngine_CheckPatternIntegration(t *testing.T) {
 	// Create check patterns
 	patterns := []model.CheckPattern{
 		{
-			PatternName:     "Monthly electric bill",
-			Category:        "Utilities",
-			AmountMin:       ptr(100.0),
-			AmountMax:       ptr(200.0),
-			DayOfMonthMin:   ptrInt(10),
-			DayOfMonthMax:   ptrInt(15),
-			ConfidenceBoost: 0.3,
+			PatternName:   "Monthly electric bill",
+			Category:      "Utilities",
+			AmountMin:     ptr(100.0),
+			AmountMax:     ptr(200.0),
+			DayOfMonthMin: ptrInt(10),
+			DayOfMonthMax: ptrInt(15),
 		},
 		{
-			PatternName:     "Cleaning service",
-			Category:        "Home Services",
-			AmountMin:       ptr(250.0),
-			AmountMax:       ptr(250.0), // Exact amount, different from electric bill
-			DayOfMonthMin:   ptrInt(20),
-			DayOfMonthMax:   ptrInt(25),
-			ConfidenceBoost: 0.4,
+			PatternName:   "Cleaning service",
+			Category:      "Home Services",
+			AmountMin:     ptr(250.0),
+			AmountMax:     ptr(250.0), // Exact amount, different from electric bill
+			DayOfMonthMin: ptrInt(20),
+			DayOfMonthMax: ptrInt(25),
 		},
 		{
-			PatternName:     "Insurance payment",
-			Category:        "Insurance",
-			AmountMin:       ptr(500.0),
-			AmountMax:       ptr(700.0),
-			DayOfMonthMin:   ptrInt(1),
-			DayOfMonthMax:   ptrInt(7),
-			ConfidenceBoost: 0.5, // Higher boost to ensure it wins
+			PatternName:   "Insurance payment",
+			Category:      "Insurance",
+			AmountMin:     ptr(500.0),
+			AmountMax:     ptr(700.0),
+			DayOfMonthMin: ptrInt(1),
+			DayOfMonthMax: ptrInt(7),
 		},
 	}
 
@@ -227,11 +224,10 @@ func TestClassificationEngine_CheckPatternAutoClassification(t *testing.T) {
 
 	// Create a high-confidence check pattern
 	pattern := model.CheckPattern{
-		PatternName:     "Monthly rent",
-		Category:        "Rent",
-		AmountMin:       ptr(2000.0),
-		AmountMax:       ptr(2000.0),
-		ConfidenceBoost: 0.5, // This should push confidence over 85%
+		PatternName: "Monthly rent",
+		Category:    "Rent",
+		AmountMin:   ptr(2000.0),
+		AmountMax:   ptr(2000.0),
 	}
 	err = db.CreateCheckPattern(ctx, &pattern)
 	require.NoError(t, err)

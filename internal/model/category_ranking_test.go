@@ -1,7 +1,6 @@
 package model
 
 import (
-	"math"
 	"testing"
 )
 
@@ -309,55 +308,6 @@ func TestCategoryRankings_Validate(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestCategoryRankings_ApplyCheckPatternBoosts(t *testing.T) {
-	rankings := CategoryRankings{
-		{Category: "Home Services", Score: 0.5},
-		{Category: "Personal Care", Score: 0.4},
-		{Category: "Shopping", Score: 0.3},
-	}
-
-	patterns := []CheckPattern{
-		{
-			Category:        "Home Services",
-			ConfidenceBoost: 0.3,
-		},
-		{
-			Category:        "Home Services",
-			ConfidenceBoost: 0.1,
-		},
-		{
-			Category:        "Personal Care",
-			ConfidenceBoost: 0.2,
-		},
-		{
-			Category:        "Shopping",
-			ConfidenceBoost: 0.8, // Would exceed 1.0
-		},
-	}
-
-	rankings.ApplyCheckPatternBoosts(patterns)
-
-	expected := []struct {
-		category string
-		score    float64
-	}{
-		{category: "Shopping", score: 1.0},      // capped at 1.0
-		{category: "Home Services", score: 0.9}, // with pattern boosts
-		{category: "Personal Care", score: 0.6}, // 0.4 + 0.2 boost
-	}
-
-	for i, exp := range expected {
-		if rankings[i].Category != exp.category {
-			t.Errorf("ApplyCheckPatternBoosts() index %d category = %s, want %s",
-				i, rankings[i].Category, exp.category)
-		}
-		if math.Abs(rankings[i].Score-exp.score) > 0.0001 {
-			t.Errorf("ApplyCheckPatternBoosts() index %d score = %v, want %v",
-				i, rankings[i].Score, exp.score)
-		}
 	}
 }
 

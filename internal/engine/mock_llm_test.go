@@ -83,13 +83,12 @@ func TestMockClassifier_SuggestCategoryRankings(t *testing.T) {
 			},
 			checkPatterns: []model.CheckPattern{
 				{
-					PatternName:     "Monthly cleaning",
-					Category:        "Home Services",
-					ConfidenceBoost: 0.5,
+					PatternName: "Monthly cleaning",
+					Category:    "Home Services",
 				},
 			},
 			wantTopCat:   "Home Services",
-			wantMinScore: 0.50, // Will be boosted by pattern
+			wantMinScore: 0.45, // Base score for Home Services in checks
 			wantNewCat:   false,
 		},
 		{
@@ -206,9 +205,8 @@ func TestMockClassifier_CheckPatternBoost(t *testing.T) {
 	// Now test with pattern boost
 	patterns := []model.CheckPattern{
 		{
-			PatternName:     "Bi-weekly cleaning",
-			Category:        "Home Services",
-			ConfidenceBoost: 0.4,
+			PatternName: "Bi-weekly cleaning",
+			Category:    "Home Services",
 		},
 	}
 
@@ -226,19 +224,15 @@ func TestMockClassifier_CheckPatternBoost(t *testing.T) {
 		}
 	}
 
-	expectedBoost := baseScore + 0.4
-	if expectedBoost > 1.0 {
-		expectedBoost = 1.0
+	// Without boost, score should remain the same
+	if boostedScore != baseScore {
+		t.Errorf("Score with pattern = %v, want %v (no boost anymore)",
+			boostedScore, baseScore)
 	}
 
-	if boostedScore != expectedBoost {
-		t.Errorf("Boosted score = %v, want %v (base %v + boost 0.4)",
-			boostedScore, expectedBoost, baseScore)
-	}
-
-	// Verify Home Services is now the top category
+	// Top category should remain Home Services since there's no boost
 	if rankingsWithPat.Top().Category != "Home Services" {
-		t.Errorf("Top category after boost = %v, want Home Services", rankingsWithPat.Top().Category)
+		t.Errorf("Top category with pattern = %v, want Home Services", rankingsWithPat.Top().Category)
 	}
 }
 

@@ -107,9 +107,8 @@ func runChecksTest(cmd *cobra.Command, args []string) error {
 		// Show pattern details
 		fmt.Printf("✓ Pattern: %s (ID: %d)\n", //nolint:forbidigo // User-facing output
 			cli.SuccessStyle.Render(pattern.PatternName), pattern.ID)
-		fmt.Printf("  Category: %s\n", pattern.Category)                         //nolint:forbidigo // User-facing output
-		fmt.Printf("  Confidence boost: +%.1f%%\n", pattern.ConfidenceBoost*100) //nolint:forbidigo // User-facing output
-		fmt.Printf("  Previous uses: %d\n", pattern.UseCount)                    //nolint:forbidigo // User-facing output
+		fmt.Printf("  Category: %s\n", pattern.Category)      //nolint:forbidigo // User-facing output
+		fmt.Printf("  Previous uses: %d\n", pattern.UseCount) //nolint:forbidigo // User-facing output
 
 		// Show why it matched
 		fmt.Printf("  Matched because:\n") //nolint:forbidigo // User-facing output

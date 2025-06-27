@@ -53,14 +53,13 @@ func (s *SQLiteStorage) CreateCheckPattern(ctx context.Context, pattern *model.C
 	query := `
 		INSERT INTO check_patterns (
 			pattern_name, amount_min, amount_max, check_number_pattern,
-			day_of_month_min, day_of_month_max, category, notes,
-			confidence_boost, amounts
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			day_of_month_min, day_of_month_max, category, notes, amounts
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.db.ExecContext(ctx, query,
 		pattern.PatternName, pattern.AmountMin, pattern.AmountMax, checkNumberJSON,
 		pattern.DayOfMonthMin, pattern.DayOfMonthMax, pattern.Category, pattern.Notes,
-		pattern.ConfidenceBoost, amountsJSON,
+		amountsJSON,
 	)
 
 	if err != nil {
@@ -86,7 +85,7 @@ func (s *SQLiteStorage) GetCheckPattern(ctx context.Context, id int64) (*model.C
 	query := `
 		SELECT id, pattern_name, amount_min, amount_max, check_number_pattern,
 			day_of_month_min, day_of_month_max, category, notes,
-			confidence_boost, use_count, created_at, updated_at, amounts
+			use_count, created_at, updated_at, amounts
 		FROM check_patterns
 		WHERE id = ?`
 
@@ -97,7 +96,7 @@ func (s *SQLiteStorage) GetCheckPattern(ctx context.Context, id int64) (*model.C
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
 		&pattern.ID, &pattern.PatternName, &pattern.AmountMin, &pattern.AmountMax,
 		&checkNumberJSON, &pattern.DayOfMonthMin, &pattern.DayOfMonthMax,
-		&pattern.Category, &pattern.Notes, &pattern.ConfidenceBoost,
+		&pattern.Category, &pattern.Notes,
 		&pattern.UseCount, &pattern.CreatedAt, &pattern.UpdatedAt, &amountsJSON,
 	)
 
@@ -136,7 +135,7 @@ func (s *SQLiteStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.Che
 	query := `
 		SELECT id, pattern_name, amount_min, amount_max, check_number_pattern,
 			day_of_month_min, day_of_month_max, category, notes,
-			confidence_boost, use_count, created_at, updated_at, amounts
+			use_count, created_at, updated_at, amounts
 		FROM check_patterns
 		ORDER BY use_count DESC, pattern_name`
 
@@ -159,7 +158,7 @@ func (s *SQLiteStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.Che
 		if err := rows.Scan(
 			&pattern.ID, &pattern.PatternName, &pattern.AmountMin, &pattern.AmountMax,
 			&checkNumberJSON, &pattern.DayOfMonthMin, &pattern.DayOfMonthMax,
-			&pattern.Category, &pattern.Notes, &pattern.ConfidenceBoost,
+			&pattern.Category, &pattern.Notes,
 			&pattern.UseCount, &pattern.CreatedAt, &pattern.UpdatedAt, &amountsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan check pattern: %w", err)
@@ -257,13 +256,13 @@ func (s *SQLiteStorage) UpdateCheckPattern(ctx context.Context, pattern *model.C
 			pattern_name = ?, amount_min = ?, amount_max = ?, 
 			check_number_pattern = ?, day_of_month_min = ?, 
 			day_of_month_max = ?, category = ?, notes = ?,
-			confidence_boost = ?, amounts = ?, updated_at = CURRENT_TIMESTAMP
+			amounts = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`
 
 	result, err := s.db.ExecContext(ctx, query,
 		pattern.PatternName, pattern.AmountMin, pattern.AmountMax, checkNumberJSON,
 		pattern.DayOfMonthMin, pattern.DayOfMonthMax, pattern.Category, pattern.Notes,
-		pattern.ConfidenceBoost, amountsJSON, pattern.ID,
+		amountsJSON, pattern.ID,
 	)
 
 	if err != nil {

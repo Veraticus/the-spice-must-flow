@@ -408,14 +408,6 @@ func (c *Classifier) SuggestCategoryRankings(ctx context.Context, transaction mo
 		return nil, fmt.Errorf("ranking classification failed: %w", err)
 	}
 
-	// Apply check pattern boosts if any patterns matched
-	if len(checkPatterns) > 0 {
-		rankings.ApplyCheckPatternBoosts(checkPatterns)
-		c.logger.Debug("applied check pattern boosts",
-			"transaction_id", transaction.ID,
-			"pattern_count", len(checkPatterns))
-	}
-
 	// Sort rankings by score
 	rankings.Sort()
 

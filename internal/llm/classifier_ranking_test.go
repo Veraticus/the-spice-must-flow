@@ -133,9 +133,8 @@ func TestClassifier_SuggestCategoryRankings(t *testing.T) {
 			},
 			checkPatterns: []model.CheckPattern{
 				{
-					PatternName:     "Monthly cleaning",
-					Category:        "Home Services",
-					ConfidenceBoost: 0.3,
+					PatternName: "Monthly cleaning",
+					Category:    "Home Services",
 				},
 			},
 			mockRankings: []CategoryRanking{
@@ -144,7 +143,7 @@ func TestClassifier_SuggestCategoryRankings(t *testing.T) {
 			},
 			wantErr:      false,
 			wantTopCat:   "Home Services",
-			wantTopScore: 0.80, // 0.50 + 0.30 boost
+			wantTopScore: 0.50, // No boost anymore
 			wantCount:    2,
 		},
 		{

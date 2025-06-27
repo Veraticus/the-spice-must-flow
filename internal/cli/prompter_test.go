@@ -632,10 +632,9 @@ func TestCLIPrompter_promptCategorySelection(t *testing.T) {
 	createTestCheckPatterns := func() []model.CheckPattern {
 		return []model.CheckPattern{
 			{
-				ID:              1,
-				PatternName:     "Monthly cleaning",
-				Category:        "Home Services",
-				ConfidenceBoost: 0.3,
+				ID:          1,
+				PatternName: "Monthly cleaning",
+				Category:    "Home Services",
 			},
 		}
 	}
@@ -823,10 +822,9 @@ func TestCLIPrompter_ConfirmClassification_WithRankings(t *testing.T) {
 
 	checkPatterns := []model.CheckPattern{
 		{
-			ID:              1,
-			PatternName:     "Office supplies check",
-			Category:        "Office Supplies",
-			ConfidenceBoost: 0.3,
+			ID:          1,
+			PatternName: "Office supplies check",
+			Category:    "Office Supplies",
 		},
 	}
 

@@ -116,9 +116,8 @@ func runChecksAdd(cmd *cobra.Command, _ []string) error {
 	}
 
 	pattern := model.CheckPattern{
-		PatternName:     patternName,
-		Category:        category,
-		ConfidenceBoost: 0.3, // Default confidence boost
+		PatternName: patternName,
+		Category:    category,
 	}
 
 	// Handle amount based on type

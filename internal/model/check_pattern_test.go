@@ -15,41 +15,37 @@ func TestCheckPattern_Validate(t *testing.T) {
 		{
 			name: "valid pattern with exact amount",
 			pattern: CheckPattern{
-				PatternName:     "Monthly rent",
-				AmountMin:       floatPtr(1500),
-				AmountMax:       floatPtr(1500),
-				Category:        "Housing",
-				ConfidenceBoost: 0.5,
+				PatternName: "Monthly rent",
+				AmountMin:   floatPtr(1500),
+				AmountMax:   floatPtr(1500),
+				Category:    "Housing",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid pattern with amount range",
 			pattern: CheckPattern{
-				PatternName:     "Utility bills",
-				AmountMin:       floatPtr(100),
-				AmountMax:       floatPtr(300),
-				Category:        "Utilities",
-				ConfidenceBoost: 0.3,
+				PatternName: "Utility bills",
+				AmountMin:   floatPtr(100),
+				AmountMax:   floatPtr(300),
+				Category:    "Utilities",
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid pattern with day of month range",
 			pattern: CheckPattern{
-				PatternName:     "First week payment",
-				DayOfMonthMin:   intPtr(1),
-				DayOfMonthMax:   intPtr(7),
-				Category:        "Services",
-				ConfidenceBoost: 0.2,
+				PatternName:   "First week payment",
+				DayOfMonthMin: intPtr(1),
+				DayOfMonthMax: intPtr(7),
+				Category:      "Services",
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing pattern name",
 			pattern: CheckPattern{
-				Category:        "Housing",
-				ConfidenceBoost: 0.5,
+				Category: "Housing",
 			},
 			wantErr: true,
 			errMsg:  "pattern name is required",
@@ -57,8 +53,7 @@ func TestCheckPattern_Validate(t *testing.T) {
 		{
 			name: "missing category",
 			pattern: CheckPattern{
-				PatternName:     "Test pattern",
-				ConfidenceBoost: 0.5,
+				PatternName: "Test pattern",
 			},
 			wantErr: true,
 			errMsg:  "category is required",
@@ -66,11 +61,10 @@ func TestCheckPattern_Validate(t *testing.T) {
 		{
 			name: "invalid amount range",
 			pattern: CheckPattern{
-				PatternName:     "Invalid range",
-				AmountMin:       floatPtr(500),
-				AmountMax:       floatPtr(100),
-				Category:        "Test",
-				ConfidenceBoost: 0.5,
+				PatternName: "Invalid range",
+				AmountMin:   floatPtr(500),
+				AmountMax:   floatPtr(100),
+				Category:    "Test",
 			},
 			wantErr: true,
 			errMsg:  "amount min must be less than or equal to amount max",
@@ -78,10 +72,9 @@ func TestCheckPattern_Validate(t *testing.T) {
 		{
 			name: "invalid day of month min",
 			pattern: CheckPattern{
-				PatternName:     "Invalid day",
-				DayOfMonthMin:   intPtr(0),
-				Category:        "Test",
-				ConfidenceBoost: 0.5,
+				PatternName:   "Invalid day",
+				DayOfMonthMin: intPtr(0),
+				Category:      "Test",
 			},
 			wantErr: true,
 			errMsg:  "day of month min must be between 1 and 31",
@@ -89,10 +82,9 @@ func TestCheckPattern_Validate(t *testing.T) {
 		{
 			name: "invalid day of month max",
 			pattern: CheckPattern{
-				PatternName:     "Invalid day",
-				DayOfMonthMax:   intPtr(32),
-				Category:        "Test",
-				ConfidenceBoost: 0.5,
+				PatternName:   "Invalid day",
+				DayOfMonthMax: intPtr(32),
+				Category:      "Test",
 			},
 			wantErr: true,
 			errMsg:  "day of month max must be between 1 and 31",
@@ -100,34 +92,13 @@ func TestCheckPattern_Validate(t *testing.T) {
 		{
 			name: "invalid day range",
 			pattern: CheckPattern{
-				PatternName:     "Invalid range",
-				DayOfMonthMin:   intPtr(15),
-				DayOfMonthMax:   intPtr(10),
-				Category:        "Test",
-				ConfidenceBoost: 0.5,
+				PatternName:   "Invalid range",
+				DayOfMonthMin: intPtr(15),
+				DayOfMonthMax: intPtr(10),
+				Category:      "Test",
 			},
 			wantErr: true,
 			errMsg:  "day of month min must be less than or equal to day of month max",
-		},
-		{
-			name: "negative confidence boost",
-			pattern: CheckPattern{
-				PatternName:     "Invalid confidence",
-				Category:        "Test",
-				ConfidenceBoost: -0.1,
-			},
-			wantErr: true,
-			errMsg:  "confidence boost must be between 0 and 1",
-		},
-		{
-			name: "confidence boost too high",
-			pattern: CheckPattern{
-				PatternName:     "Invalid confidence",
-				Category:        "Test",
-				ConfidenceBoost: 1.5,
-			},
-			wantErr: true,
-			errMsg:  "confidence boost must be between 0 and 1",
 		},
 	}
 

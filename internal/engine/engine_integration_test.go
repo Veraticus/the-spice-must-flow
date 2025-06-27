@@ -205,18 +205,16 @@ func TestCheckPatternIntegration(t *testing.T) {
 	// Create check patterns
 	patterns := []model.CheckPattern{
 		{
-			PatternName:     "Monthly cleaning",
-			AmountMin:       floatPtr(100.00),
-			AmountMax:       floatPtr(100.00),
-			Category:        "Home Services",
-			ConfidenceBoost: 0.3,
+			PatternName: "Monthly cleaning",
+			AmountMin:   floatPtr(100.00),
+			AmountMax:   floatPtr(100.00),
+			Category:    "Home Services",
 		},
 		{
-			PatternName:     "Rent payment",
-			AmountMin:       floatPtr(3000.00),
-			AmountMax:       floatPtr(3100.00),
-			Category:        "Rent",
-			ConfidenceBoost: 0.4,
+			PatternName: "Rent payment",
+			AmountMin:   floatPtr(3000.00),
+			AmountMax:   floatPtr(3100.00),
+			Category:    "Rent",
 		},
 	}
 

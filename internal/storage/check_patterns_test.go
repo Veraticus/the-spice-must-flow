@@ -20,14 +20,13 @@ func TestCheckPatternStorage(t *testing.T) {
 		dayMin := 1
 		dayMax := 7
 		return &model.CheckPattern{
-			PatternName:     name,
-			AmountMin:       &minAmount,
-			AmountMax:       &maxAmount,
-			DayOfMonthMin:   &dayMin,
-			DayOfMonthMax:   &dayMax,
-			Category:        category,
-			Notes:           "Test pattern",
-			ConfidenceBoost: 0.3,
+			PatternName:   name,
+			AmountMin:     &minAmount,
+			AmountMax:     &maxAmount,
+			DayOfMonthMin: &dayMin,
+			DayOfMonthMax: &dayMax,
+			Category:      category,
+			Notes:         "Test pattern",
 		}
 	}
 
@@ -123,31 +122,28 @@ func TestCheckPatternStorage(t *testing.T) {
 		// Create patterns with different criteria
 		exactAmount := 150.0
 		pattern1 := &model.CheckPattern{
-			PatternName:     "Exact Amount",
-			AmountMin:       &exactAmount,
-			AmountMax:       &exactAmount,
-			Category:        "Test",
-			ConfidenceBoost: 0.3,
+			PatternName: "Exact Amount",
+			AmountMin:   &exactAmount,
+			AmountMax:   &exactAmount,
+			Category:    "Test",
 		}
 
 		rangeMin := 100.0
 		rangeMax := 200.0
 		pattern2 := &model.CheckPattern{
-			PatternName:     "Amount Range",
-			AmountMin:       &rangeMin,
-			AmountMax:       &rangeMax,
-			Category:        "Test",
-			ConfidenceBoost: 0.3,
+			PatternName: "Amount Range",
+			AmountMin:   &rangeMin,
+			AmountMax:   &rangeMax,
+			Category:    "Test",
 		}
 
 		dayMin := 10
 		dayMax := 20
 		pattern3 := &model.CheckPattern{
-			PatternName:     "Day Range",
-			DayOfMonthMin:   &dayMin,
-			DayOfMonthMax:   &dayMax,
-			Category:        "Test",
-			ConfidenceBoost: 0.3,
+			PatternName:   "Day Range",
+			DayOfMonthMin: &dayMin,
+			DayOfMonthMax: &dayMax,
+			Category:      "Test",
 		}
 
 		for _, p := range []*model.CheckPattern{pattern1, pattern2, pattern3} {
