@@ -17,8 +17,8 @@ func TestResetCommand(t *testing.T) {
 	store, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Failed to close store: %v", err)
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
 		}
 	}()
 	require.NoError(t, store.Migrate(ctx))
@@ -147,8 +147,8 @@ func TestResetKeepVendors(t *testing.T) {
 	store, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Failed to close store: %v", err)
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
 		}
 	}()
 	require.NoError(t, store.Migrate(ctx))
@@ -211,8 +211,8 @@ func TestResetNoClassifications(t *testing.T) {
 	store, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Failed to close store: %v", err)
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
 		}
 	}()
 	require.NoError(t, store.Migrate(ctx))
@@ -231,8 +231,8 @@ func TestGetClassificationCount(t *testing.T) {
 	store, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Failed to close store: %v", err)
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
 		}
 	}()
 	require.NoError(t, store.Migrate(ctx))
@@ -279,8 +279,8 @@ func TestClearFunctions(t *testing.T) {
 	store, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := store.Close(); err != nil {
-			t.Logf("Failed to close store: %v", err)
+		if closeErr := store.Close(); closeErr != nil {
+			t.Logf("Failed to close store: %v", closeErr)
 		}
 	}()
 	require.NoError(t, store.Migrate(ctx))
@@ -324,8 +324,8 @@ func TestClearFunctions(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify cleared
-		count, err := getClassificationCount(ctx, store)
-		require.NoError(t, err)
+		count, getErr := getClassificationCount(ctx, store)
+		require.NoError(t, getErr)
 		assert.Equal(t, 0, count)
 	})
 

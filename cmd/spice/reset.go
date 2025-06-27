@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
@@ -48,29 +50,41 @@ func runReset(_ *cobra.Command, _ []string) error {
 	}
 
 	if classificationCount == 0 {
-		fmt.Println("No classifications found. Nothing to reset.")
+		if _, err := fmt.Fprintf(os.Stdout, "No classifications found. Nothing to reset.\n"); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 		return nil
 	}
 
 	// Confirm with user unless --force is used
 	if !resetForce {
-		fmt.Printf("This will delete %d transaction classifications.\n", classificationCount)
+		if _, err := fmt.Fprintf(os.Stdout, "This will delete %d transaction classifications.\n", classificationCount); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 		if !resetKeepVendor {
 			vendorCount, _ := getVendorCount(ctx, store)
 			if vendorCount > 0 {
-				fmt.Printf("This will also delete %d vendor rules.\n", vendorCount)
+				if _, err := fmt.Fprintf(os.Stdout, "This will also delete %d vendor rules.\n", vendorCount); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
 			} else if vendorCount == -1 {
-				fmt.Println("This will also delete all vendor rules.")
+				if _, err := fmt.Fprintf(os.Stdout, "This will also delete all vendor rules.\n"); err != nil {
+					slog.Error("failed to write output", "error", err)
+				}
 			}
 		}
-		fmt.Print("\nAre you sure you want to continue? [y/N]: ")
+		if _, err := fmt.Fprintf(os.Stdout, "\nAre you sure you want to continue? [y/N]: "); err != nil {
+			slog.Error("failed to write output", "error", err)
+		}
 
 		var response string
 		if _, err := fmt.Scanln(&response); err != nil {
 			return fmt.Errorf("failed to read input: %w", err)
 		}
 		if response != "y" && response != "Y" {
-			fmt.Println("Reset canceled.")
+			if _, err := fmt.Fprintf(os.Stdout, "Reset canceled.\n"); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 			return nil
 		}
 	}
@@ -88,15 +102,20 @@ func runReset(_ *cobra.Command, _ []string) error {
 	}
 
 	// Print summary
-	fmt.Printf("✅ Successfully reset %d classifications", classificationCount)
+	if _, err := fmt.Fprintf(os.Stdout, "✅ Successfully reset %d classifications", classificationCount); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 	if !resetKeepVendor {
 		vendorCount, _ := getVendorCount(ctx, store)
 		if vendorCount > 0 {
-			fmt.Printf(" and deleted vendor rules")
+			if _, err := fmt.Fprintf(os.Stdout, " and deleted vendor rules"); err != nil {
+				slog.Error("failed to write output", "error", err)
+			}
 		}
 	}
-	fmt.Println()
-	fmt.Println("\nTransactions are now ready to be re-classified. Run 'spice classify' to start.")
+	if _, err := fmt.Fprintf(os.Stdout, "\n\nTransactions are now ready to be re-classified. Run 'spice classify' to start.\n"); err != nil {
+		slog.Error("failed to write output", "error", err)
+	}
 
 	return nil
 }

@@ -813,23 +813,70 @@ func (p *Prompter) customCategoryForAll(ctx context.Context, pending []model.Pen
 		return nil, err
 	}
 
+	// Check if this is a new category with description
+	var categoryName string
+	var categoryDescription string
+	var isNewCategory bool
+
+	if strings.Contains(category, "|DESC|") {
+		parts := strings.Split(category, "|DESC|")
+		categoryName = parts[0]
+		if len(parts) > 1 {
+			categoryDescription = parts[1]
+		}
+		isNewCategory = true
+	} else {
+		categoryName = category
+		// Check if this category already exists
+		categoryExists := false
+		for _, cat := range allCategories {
+			if cat.Name == categoryName {
+				categoryExists = true
+				break
+			}
+		}
+		isNewCategory = !categoryExists
+
+		// Additional debug logging
+		if isNewCategory {
+			slog.Debug("Category not found in existing categories",
+				"category", categoryName,
+				"existingCategoriesCount", len(allCategories))
+		}
+	}
+
 	classifications := make([]model.Classification, len(pending))
 
 	for i, pc := range pending {
 		classifications[i] = model.Classification{
 			Transaction:  pc.Transaction,
-			Category:     category,
+			Category:     categoryName,
 			Status:       model.StatusUserModified,
 			Confidence:   1.0,
 			ClassifiedAt: time.Now(),
 		}
-		p.trackCategorization(pc.Transaction.MerchantName, category)
+		// Store metadata to indicate this is a new category that needs creation
+		if isNewCategory && i == 0 {
+			// Use notes field to pass the new category info
+			// This is a temporary way to signal the engine about the new category
+			if categoryDescription != "" {
+				classifications[i].Notes = fmt.Sprintf("NEW_CATEGORY|%s", categoryDescription)
+			} else {
+				classifications[i].Notes = "NEW_CATEGORY|"
+			}
+			slog.Debug("Setting new category signal",
+				"category", categoryName,
+				"description", categoryDescription,
+				"notes", classifications[i].Notes,
+				"isNewCategory", isNewCategory)
+		}
+		p.trackCategorization(pc.Transaction.MerchantName, categoryName)
 	}
 
 	p.incrementBatchStats(len(pending), true, true)
 	p.updateProgressBy(len(pending)) // Update progress by batch size
 	if _, err := fmt.Fprintln(p.writer, FormatSuccess(fmt.Sprintf("✓ Classified %d transactions as %s",
-		len(pending), category))); err != nil {
+		len(pending), categoryName))); err != nil {
 		slog.Warn("Failed to write custom category success", "error", err)
 	}
 

@@ -178,7 +178,7 @@ func (c *alwaysNewCategoryClassifier) SuggestCategoryRankings(_ context.Context,
 	return rankings, nil
 }
 
-func (c *alwaysNewCategoryClassifier) BatchSuggestCategories(ctx context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
+func (c *alwaysNewCategoryClassifier) BatchSuggestCategories(_ context.Context, transactions []model.Transaction, categories []string) ([]service.LLMSuggestion, error) {
 	// For this test, we need to return suggestions for each transaction
 	suggestions := make([]service.LLMSuggestion, 0, len(transactions))
 

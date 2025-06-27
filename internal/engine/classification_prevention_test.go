@@ -20,8 +20,8 @@ func TestClassificationPreventsReclassification(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := db.Close(); err != nil {
-			t.Logf("Failed to close db: %v", err)
+		if closeErr := db.Close(); closeErr != nil {
+			t.Logf("Failed to close db: %v", closeErr)
 		}
 	}()
 	require.NoError(t, db.Migrate(ctx))
@@ -143,8 +143,8 @@ func TestClassificationWithEngine(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := db.Close(); err != nil {
-			t.Logf("Failed to close db: %v", err)
+		if closeErr := db.Close(); closeErr != nil {
+			t.Logf("Failed to close db: %v", closeErr)
 		}
 	}()
 	require.NoError(t, db.Migrate(ctx))
@@ -253,8 +253,8 @@ func TestResetEnablesReclassification(t *testing.T) {
 	db, err := storage.NewSQLiteStorage(":memory:")
 	require.NoError(t, err)
 	defer func() {
-		if err := db.Close(); err != nil {
-			t.Logf("Failed to close db: %v", err)
+		if closeErr := db.Close(); closeErr != nil {
+			t.Logf("Failed to close db: %v", closeErr)
 		}
 	}()
 	require.NoError(t, db.Migrate(ctx))

@@ -178,7 +178,7 @@ func (m *MockClassifier) GenerateCategoryDescription(_ context.Context, category
 }
 
 // SuggestCategoryRankings provides deterministic category rankings for testing.
-func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction model.Transaction, categories []model.Category, checkPatterns []model.CheckPattern) (model.CategoryRankings, error) {
+func (m *MockClassifier) SuggestCategoryRankings(_ context.Context, transaction model.Transaction, categories []model.Category, _ []model.CheckPattern) (model.CategoryRankings, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -578,22 +579,49 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 		if len(classifications) > 0 {
 			classification := classifications[0] // Use the first classification as template
 
-			// If this is a new category that was accepted, create it
-			if result.Suggestion != nil && result.Suggestion.IsNew && classification.Category != "" {
+			// Debug logging to understand the flow
+			slog.Debug("Processing classification",
+				"category", classification.Category,
+				"notes", classification.Notes,
+				"status", classification.Status)
+
+			// Variable to track if we need to create a new category
+			needsNewCategory := false
+			categoryDescription := ""
+
+			// Check for new category signal in notes field
+			if strings.HasPrefix(classification.Notes, "NEW_CATEGORY|") {
+				needsNewCategory = true
+				// Extract description if provided
+				parts := strings.Split(classification.Notes, "|")
+				if len(parts) > 1 {
+					categoryDescription = parts[1]
+				}
+			} else if result.Suggestion != nil && result.Suggestion.IsNew && classification.Category != "" {
+				// Original logic for AI-suggested new categories
+				needsNewCategory = true
+				categoryDescription = result.Suggestion.Description
+			}
+
+			// If we need to create a new category, do it BEFORE saving any classifications
+			if needsNewCategory {
 				// Check if category exists first
 				_, err := e.storage.GetCategoryByName(ctx, classification.Category)
-				if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
-					// Create the new category with the provided description
-					_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, result.Suggestion.Description, model.CategoryTypeExpense)
+				switch {
+				case err != nil && errors.Is(err, storage.ErrCategoryNotFound):
+					// Create the new category
+					_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, categoryDescription, model.CategoryTypeExpense)
 					if createErr != nil {
 						slog.Error("Failed to create new category",
 							"category", classification.Category,
+							"description", categoryDescription,
 							"error", createErr)
+						// Skip this entire merchant group if we can't create the category
 						continue
 					}
-					slog.Info("Created new category from user confirmation",
+					slog.Info("Created new category",
 						"category", classification.Category,
-						"description", result.Suggestion.Description)
+						"description", categoryDescription)
 
 					// Refresh the category list after creating a new category
 					updatedCategories, refreshErr := e.storage.GetCategories(ctx)
@@ -603,6 +631,16 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 					} else {
 						currentCategories = updatedCategories
 					}
+				case err != nil:
+					slog.Error("Error checking category existence",
+						"category", classification.Category,
+						"error", err)
+					// Skip this merchant group if we can't check category existence
+					continue
+				default:
+					// Category already exists
+					slog.Debug("Category already exists",
+						"category", classification.Category)
 				}
 			}
 
@@ -615,7 +653,7 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 					Status:       classification.Status,
 					Confidence:   classification.Confidence,
 					ClassifiedAt: time.Now(),
-					Notes:        classification.Notes,
+					Notes:        "", // Clear notes - we don't want to store the NEW_CATEGORY signal
 				}
 
 				if err := e.storage.SaveClassification(ctx, &txnClassification); err != nil {
