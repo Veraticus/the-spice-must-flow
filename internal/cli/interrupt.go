@@ -63,11 +63,6 @@ func (h *InterruptHandler) HandleInterrupts(ctx context.Context, showProgress bo
 // showInterruptMessage displays a friendly interrupt message.
 func (h *InterruptHandler) showInterruptMessage() {
 	msg := "\n\n" + FormatWarning("Classification interrupted!")
-
-	if h.showProgress {
-		msg += "\n" + FormatInfo("Progress has been saved. Resume with: spice classify --resume")
-	}
-
 	msg += "\n" + FormatInfo("See you later! 🌶️") + "\n"
 
 	if _, err := fmt.Fprint(h.writer, msg); err != nil {

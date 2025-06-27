@@ -139,6 +139,17 @@ func (t *sqliteTransaction) GetVendor(ctx context.Context, merchantName string) 
 	return t.storage.getVendorTx(ctx, t.tx, merchantName)
 }
 
+func (t *sqliteTransaction) FindVendorMatch(ctx context.Context, merchantName string) (*model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateString(merchantName, "merchantName"); err != nil {
+		return nil, err
+	}
+	// Transaction version uses the main storage method since it handles both exact and regex matching
+	return t.storage.FindVendorMatch(ctx, merchantName)
+}
+
 func (t *sqliteTransaction) SaveVendor(ctx context.Context, vendor *model.Vendor) error {
 	if err := validateContext(ctx); err != nil {
 		return err
@@ -147,6 +158,16 @@ func (t *sqliteTransaction) SaveVendor(ctx context.Context, vendor *model.Vendor
 		return err
 	}
 	return t.storage.saveVendorTx(ctx, t.tx, vendor)
+}
+
+func (t *sqliteTransaction) DeleteVendor(ctx context.Context, merchantName string) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if err := validateString(merchantName, "merchantName"); err != nil {
+		return err
+	}
+	return t.storage.deleteVendorTx(ctx, t.tx, merchantName)
 }
 
 func (t *sqliteTransaction) GetAllVendors(ctx context.Context) ([]model.Vendor, error) {
@@ -254,7 +275,63 @@ func (t *sqliteTransaction) BeginTx(_ context.Context) (service.Transaction, err
 	return nil, fmt.Errorf("nested transactions not supported")
 }
 
+func (t *sqliteTransaction) ClearAllClassifications(ctx context.Context) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	// Since we're already in a transaction, directly execute the delete
+	// Delete all classifications
+	_, err := t.tx.ExecContext(ctx, "DELETE FROM classifications")
+	if err != nil {
+		return fmt.Errorf("failed to clear classifications: %w", err)
+	}
+
+	// Also clear classification history for consistency
+	_, err = t.tx.ExecContext(ctx, "DELETE FROM classification_history")
+	if err != nil {
+		return fmt.Errorf("failed to clear classification history: %w", err)
+	}
+
+	return nil
+}
+
 func (t *sqliteTransaction) Close() error {
 	// Transactions should be committed or rolled back, not closed
 	return fmt.Errorf("transactions must be committed or rolled back, not closed")
+}
+
+func (t *sqliteTransaction) GetVendorsBySource(ctx context.Context, source model.VendorSource) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	return t.storage.getVendorsBySourceTx(ctx, t.tx, source)
+}
+
+func (t *sqliteTransaction) DeleteVendorsBySource(ctx context.Context, source model.VendorSource) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	// Inline the delete logic for transaction support
+	result, err := t.tx.ExecContext(ctx, `
+		DELETE FROM vendors WHERE source = ?
+	`, source)
+	if err != nil {
+		return fmt.Errorf("failed to delete vendors by source: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// Clear cache since we've deleted vendors
+	t.storage.cacheMutex.Lock()
+	t.storage.vendorCache = make(map[string]*model.Vendor)
+	t.storage.cacheMutex.Unlock()
+
+	if rowsAffected == 0 {
+		return nil // Not an error if no vendors were deleted
+	}
+
+	return nil
 }

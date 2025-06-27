@@ -112,12 +112,14 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 			vendor = &model.Vendor{
 				Name:     classification.Transaction.MerchantName,
 				Category: classification.Category,
+				Source:   model.SourceAuto,
 				UseCount: 1,
 			}
 		} else {
 			// Update existing vendor
 			vendor.Category = classification.Category
 			vendor.UseCount++
+			// Preserve existing source - don't change it
 		}
 
 		if err := txWrapper.SaveVendor(ctx, vendor); err != nil {
@@ -207,4 +209,31 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 	}
 
 	return classifications, rows.Err()
+}
+
+// ClearAllClassifications deletes all classification records.
+func (s *SQLiteStorage) ClearAllClassifications(ctx context.Context) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Delete all classifications
+	_, err = tx.ExecContext(ctx, "DELETE FROM classifications")
+	if err != nil {
+		return fmt.Errorf("failed to clear classifications: %w", err)
+	}
+
+	// Also clear classification history for consistency
+	_, err = tx.ExecContext(ctx, "DELETE FROM classification_history")
+	if err != nil {
+		return fmt.Errorf("failed to clear classification history: %w", err)
+	}
+
+	return tx.Commit()
 }

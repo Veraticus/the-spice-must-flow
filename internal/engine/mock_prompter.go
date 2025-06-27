@@ -169,6 +169,7 @@ func (m *MockPrompter) BatchConfirmClassifications(ctx context.Context, pending 
 				Error:           nil,
 			}
 			m.batchConfirmCalls = append(m.batchConfirmCalls, call)
+			// Don't increment newVendorRules for high variance merchants
 			return classifications, nil
 		}
 	}

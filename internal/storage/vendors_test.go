@@ -436,3 +436,519 @@ func TestSQLiteStorage_DeleteVendorRaceCondition(t *testing.T) {
 func makeTestTime() time.Time {
 	return time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 }
+
+// TestSQLiteStorage_VendorSource tests vendor source tracking functionality.
+func TestSQLiteStorage_VendorSource(t *testing.T) {
+	store, cleanup := createTestStorageWithCategories(t, "TestCategory")
+	defer cleanup()
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		vendor      *model.Vendor
+		wantSource  model.VendorSource
+		description string
+	}{
+		{
+			name: "auto_vendor_default",
+			vendor: &model.Vendor{
+				Name:     "AutoVendor",
+				Category: "TestCategory",
+				UseCount: 0,
+			},
+			wantSource:  model.SourceAuto,
+			description: "Vendor without source should default to AUTO",
+		},
+		{
+			name: "manual_vendor",
+			vendor: &model.Vendor{
+				Name:     "ManualVendor",
+				Category: "TestCategory",
+				Source:   model.SourceManual,
+				UseCount: 0,
+			},
+			wantSource:  model.SourceManual,
+			description: "Vendor with MANUAL source should preserve it",
+		},
+		{
+			name: "auto_confirmed_vendor",
+			vendor: &model.Vendor{
+				Name:     "ConfirmedVendor",
+				Category: "TestCategory",
+				Source:   model.SourceAutoConfirmed,
+				UseCount: 10,
+			},
+			wantSource:  model.SourceAutoConfirmed,
+			description: "Vendor with AUTO_CONFIRMED source should preserve it",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save vendor
+			if err := store.SaveVendor(ctx, tt.vendor); err != nil {
+				t.Fatalf("Failed to save vendor: %v", err)
+			}
+
+			// Retrieve vendor
+			retrieved, err := store.GetVendor(ctx, tt.vendor.Name)
+			if err != nil {
+				t.Fatalf("Failed to get vendor: %v", err)
+			}
+
+			// Check source
+			if retrieved.Source != tt.wantSource {
+				t.Errorf("%s: got source %q, want %q", tt.description, retrieved.Source, tt.wantSource)
+			}
+		})
+	}
+}
+
+// TestSQLiteStorage_GetVendorsBySource tests filtering vendors by source.
+func TestSQLiteStorage_GetVendorsBySource(t *testing.T) {
+	store, cleanup := createTestStorageWithCategories(t, "TestCategory")
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create vendors with different sources
+	vendors := []*model.Vendor{
+		{Name: "Auto1", Category: "TestCategory", Source: model.SourceAuto, UseCount: 1},
+		{Name: "Auto2", Category: "TestCategory", Source: model.SourceAuto, UseCount: 2},
+		{Name: "Manual1", Category: "TestCategory", Source: model.SourceManual, UseCount: 3},
+		{Name: "Manual2", Category: "TestCategory", Source: model.SourceManual, UseCount: 4},
+		{Name: "Confirmed1", Category: "TestCategory", Source: model.SourceAutoConfirmed, UseCount: 5},
+	}
+
+	// Save all vendors
+	for _, v := range vendors {
+		if err := store.SaveVendor(ctx, v); err != nil {
+			t.Fatalf("Failed to save vendor %s: %v", v.Name, err)
+		}
+	}
+
+	// Test filtering by source
+	tests := []struct {
+		source    model.VendorSource
+		wantNames []string
+		wantCount int
+	}{
+		{
+			source:    model.SourceAuto,
+			wantCount: 2,
+			wantNames: []string{"Auto1", "Auto2"},
+		},
+		{
+			source:    model.SourceManual,
+			wantCount: 2,
+			wantNames: []string{"Manual1", "Manual2"},
+		},
+		{
+			source:    model.SourceAutoConfirmed,
+			wantCount: 1,
+			wantNames: []string{"Confirmed1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.source), func(t *testing.T) {
+			filtered, err := store.GetVendorsBySource(ctx, tt.source)
+			if err != nil {
+				t.Fatalf("Failed to get vendors by source: %v", err)
+			}
+
+			if len(filtered) != tt.wantCount {
+				t.Errorf("Got %d vendors, want %d", len(filtered), tt.wantCount)
+			}
+
+			// Verify vendor names
+			gotNames := make(map[string]bool)
+			for _, v := range filtered {
+				gotNames[v.Name] = true
+			}
+
+			for _, wantName := range tt.wantNames {
+				if !gotNames[wantName] {
+					t.Errorf("Expected vendor %s not found in results", wantName)
+				}
+			}
+		})
+	}
+}
+
+// TestSQLiteStorage_DeleteVendorsBySource tests deleting vendors by source.
+func TestSQLiteStorage_DeleteVendorsBySource(t *testing.T) {
+	store, cleanup := createTestStorageWithCategories(t, "TestCategory")
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create vendors with different sources
+	vendors := []*model.Vendor{
+		{Name: "AutoToDelete1", Category: "TestCategory", Source: model.SourceAuto, UseCount: 1},
+		{Name: "AutoToDelete2", Category: "TestCategory", Source: model.SourceAuto, UseCount: 2},
+		{Name: "ManualToKeep", Category: "TestCategory", Source: model.SourceManual, UseCount: 3},
+		{Name: "ConfirmedToKeep", Category: "TestCategory", Source: model.SourceAutoConfirmed, UseCount: 4},
+	}
+
+	// Save all vendors
+	for _, v := range vendors {
+		if err := store.SaveVendor(ctx, v); err != nil {
+			t.Fatalf("Failed to save vendor %s: %v", v.Name, err)
+		}
+	}
+
+	// Delete all AUTO vendors
+	if err := store.DeleteVendorsBySource(ctx, model.SourceAuto); err != nil {
+		t.Fatalf("Failed to delete vendors by source: %v", err)
+	}
+
+	// Verify AUTO vendors are deleted
+	autoVendors, err := store.GetVendorsBySource(ctx, model.SourceAuto)
+	if err != nil {
+		t.Fatalf("Failed to get AUTO vendors: %v", err)
+	}
+	if len(autoVendors) != 0 {
+		t.Errorf("Expected 0 AUTO vendors after deletion, got %d", len(autoVendors))
+	}
+
+	// Verify other vendors still exist
+	allVendors, err := store.GetAllVendors(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get all vendors: %v", err)
+	}
+	if len(allVendors) != 2 {
+		t.Errorf("Expected 2 vendors remaining, got %d", len(allVendors))
+	}
+
+	// Verify specific vendors still exist
+	for _, name := range []string{"ManualToKeep", "ConfirmedToKeep"} {
+		vendor, err := store.GetVendor(ctx, name)
+		if err != nil {
+			t.Errorf("Vendor %s should still exist: %v", name, err)
+		}
+		if vendor == nil {
+			t.Errorf("Vendor %s not found after delete by source", name)
+		}
+	}
+
+	// Verify cache is cleared
+	if cached := store.getCachedVendor("AutoToDelete1"); cached != nil {
+		t.Error("Deleted vendor still in cache")
+	}
+}
+
+// TestSQLiteStorage_VendorSourceFromClassification tests vendor source when created from classification.
+func TestSQLiteStorage_VendorSourceFromClassification(t *testing.T) {
+	store, cleanup := createTestStorageWithCategories(t, "TestCategory")
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create and save transaction
+	txn := model.Transaction{
+		ID:           "test-txn-1",
+		MerchantName: "NewMerchant",
+		Name:         "NEW MERCHANT PURCHASE",
+		Amount:       25.00,
+		Date:         makeTestTime(),
+		AccountID:    "acc1",
+	}
+	txn.Hash = txn.GenerateHash()
+
+	if err := store.SaveTransactions(ctx, []model.Transaction{txn}); err != nil {
+		t.Fatalf("Failed to save transaction: %v", err)
+	}
+
+	// Classify transaction (should create vendor with AUTO source)
+	classification := &model.Classification{
+		Transaction: txn,
+		Category:    "TestCategory",
+		Status:      model.StatusUserModified,
+		Confidence:  0.95,
+	}
+
+	if err := store.SaveClassification(ctx, classification); err != nil {
+		t.Fatalf("Failed to save classification: %v", err)
+	}
+
+	// Check vendor was created with AUTO source
+	vendor, err := store.GetVendor(ctx, "NewMerchant")
+	if err != nil {
+		t.Fatalf("Failed to get vendor: %v", err)
+	}
+	if vendor == nil {
+		t.Fatal("Vendor not created from classification")
+	}
+	if vendor.Source != model.SourceAuto {
+		t.Errorf("Vendor source = %q, want %q", vendor.Source, model.SourceAuto)
+	}
+	if vendor.UseCount != 1 {
+		t.Errorf("Vendor use count = %d, want 1", vendor.UseCount)
+	}
+}
+
+func TestFindVendorMatch_ExactMatch(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := createTestStorage(t)
+	defer cleanup()
+
+	// Create a test category
+	_, err := store.CreateCategory(ctx, "TestCategory", "Test category")
+	if err != nil {
+		t.Fatalf("Failed to create category: %v", err)
+	}
+
+	// Create an exact match vendor
+	vendor := &model.Vendor{
+		Name:     "EXACT MERCHANT NAME",
+		Category: "TestCategory",
+		Source:   model.SourceManual,
+		IsRegex:  false,
+	}
+	err = store.SaveVendor(ctx, vendor)
+	if err != nil {
+		t.Fatalf("Failed to save vendor: %v", err)
+	}
+
+	// Test exact match
+	match, err := store.FindVendorMatch(ctx, "EXACT MERCHANT NAME")
+	if err != nil {
+		t.Fatalf("Failed to find vendor match: %v", err)
+	}
+	if match == nil {
+		t.Fatal("Expected vendor match, got nil")
+	}
+	if match.Name != "EXACT MERCHANT NAME" {
+		t.Errorf("Expected vendor name %q, got %q", "EXACT MERCHANT NAME", match.Name)
+	}
+	if match.Category != "TestCategory" {
+		t.Errorf("Expected category %q, got %q", "TestCategory", match.Category)
+	}
+	if match.IsRegex {
+		t.Error("Expected IsRegex to be false")
+	}
+}
+
+func TestFindVendorMatch_RegexMatch(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := createTestStorage(t)
+	defer cleanup()
+
+	// Create a test category
+	_, err := store.CreateCategory(ctx, "PayrollCategory", "Payroll income")
+	if err != nil {
+		t.Fatalf("Failed to create category: %v", err)
+	}
+
+	// Create a regex vendor
+	vendor := &model.Vendor{
+		Name:     "PAYROLL.*COMPANY",
+		Category: "PayrollCategory",
+		Source:   model.SourceManual,
+		IsRegex:  true,
+	}
+	err = store.SaveVendor(ctx, vendor)
+	if err != nil {
+		t.Fatalf("Failed to save vendor: %v", err)
+	}
+
+	// Test regex match
+	testCases := []struct {
+		merchantName string
+		shouldMatch  bool
+	}{
+		{"PAYROLL FROM COMPANY", true},
+		{"PAYROLL 12345 COMPANY", true},
+		{"PAYROLL COMPANY", true},
+		{"COMPANY PAYROLL", false},
+		{"SOMETHING ELSE", false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.merchantName, func(t *testing.T) {
+			match, err := store.FindVendorMatch(ctx, tc.merchantName)
+			if tc.shouldMatch {
+				if err != nil {
+					t.Fatalf("Failed to find vendor match: %v", err)
+				}
+				if match == nil {
+					t.Fatal("Expected vendor match, got nil")
+				}
+				if match.Name != "PAYROLL.*COMPANY" {
+					t.Errorf("Expected vendor name %q, got %q", "PAYROLL.*COMPANY", match.Name)
+				}
+				if match.Category != "PayrollCategory" {
+					t.Errorf("Expected category %q, got %q", "PayrollCategory", match.Category)
+				}
+				if !match.IsRegex {
+					t.Error("Expected IsRegex to be true")
+				}
+			} else {
+				if err != sql.ErrNoRows {
+					t.Errorf("Expected sql.ErrNoRows, got %v", err)
+				}
+				if match != nil {
+					t.Errorf("Expected no match, got %v", match)
+				}
+			}
+		})
+	}
+}
+
+func TestFindVendorMatch_RegexPriority(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := createTestStorage(t)
+	defer cleanup()
+
+	// Create test categories
+	_, err := store.CreateCategory(ctx, "HighPriority", "High priority category")
+	if err != nil {
+		t.Fatalf("Failed to create category: %v", err)
+	}
+	_, err = store.CreateCategory(ctx, "LowPriority", "Low priority category")
+	if err != nil {
+		t.Fatalf("Failed to create category: %v", err)
+	}
+
+	// Create two regex vendors with different use counts
+	vendor1 := &model.Vendor{
+		Name:     "AMAZON.*",
+		Category: "HighPriority",
+		Source:   model.SourceManual,
+		IsRegex:  true,
+		UseCount: 100,
+	}
+	err = store.SaveVendor(ctx, vendor1)
+	if err != nil {
+		t.Fatalf("Failed to save vendor1: %v", err)
+	}
+
+	vendor2 := &model.Vendor{
+		Name:     ".*MARKETPLACE.*",
+		Category: "LowPriority",
+		Source:   model.SourceManual,
+		IsRegex:  true,
+		UseCount: 10,
+	}
+	err = store.SaveVendor(ctx, vendor2)
+	if err != nil {
+		t.Fatalf("Failed to save vendor2: %v", err)
+	}
+
+	// Test that higher use count regex is returned first
+	match, err := store.FindVendorMatch(ctx, "AMAZON MARKETPLACE")
+	if err != nil {
+		t.Fatalf("Failed to find vendor match: %v", err)
+	}
+	if match == nil {
+		t.Fatal("Expected vendor match, got nil")
+	}
+	if match.Name != "AMAZON.*" {
+		t.Errorf("Expected vendor name %q, got %q", "AMAZON.*", match.Name)
+	}
+	if match.Category != "HighPriority" {
+		t.Errorf("Expected category %q, got %q", "HighPriority", match.Category)
+	}
+}
+
+func TestFindVendorMatch_InvalidRegex(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := createTestStorage(t)
+	defer cleanup()
+
+	// Create a test category
+	_, err := store.CreateCategory(ctx, "TestCategory", "Test category")
+	if err != nil {
+		t.Fatalf("Failed to create category: %v", err)
+	}
+
+	// Create a vendor with invalid regex
+	vendor := &model.Vendor{
+		Name:     "[invalid(regex",
+		Category: "TestCategory",
+		Source:   model.SourceManual,
+		IsRegex:  true,
+	}
+	err = store.SaveVendor(ctx, vendor)
+	if err != nil {
+		t.Fatalf("Failed to save vendor: %v", err)
+	}
+
+	// Test that invalid regex is skipped
+	match, err := store.FindVendorMatch(ctx, "anything")
+	if err != sql.ErrNoRows {
+		t.Errorf("Expected sql.ErrNoRows, got %v", err)
+	}
+	if match != nil {
+		t.Errorf("Expected no match, got %v", match)
+	}
+}
+
+func TestVendorCRUD_WithRegex(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := createTestStorage(t)
+	defer cleanup()
+
+	// Create a test category
+	_, err := store.CreateCategory(ctx, "TestCategory", "Test category")
+	if err != nil {
+		t.Fatalf("Failed to create category: %v", err)
+	}
+
+	// Create a regex vendor
+	vendor := &model.Vendor{
+		Name:     "TEST.*PATTERN",
+		Category: "TestCategory",
+		Source:   model.SourceManual,
+		IsRegex:  true,
+	}
+	err = store.SaveVendor(ctx, vendor)
+	if err != nil {
+		t.Fatalf("Failed to save vendor: %v", err)
+	}
+
+	// Retrieve and verify
+	retrieved, err := store.GetVendor(ctx, "TEST.*PATTERN")
+	if err != nil {
+		t.Fatalf("Failed to get vendor: %v", err)
+	}
+	if retrieved.Name != "TEST.*PATTERN" {
+		t.Errorf("Expected vendor name %q, got %q", "TEST.*PATTERN", retrieved.Name)
+	}
+	if retrieved.Category != "TestCategory" {
+		t.Errorf("Expected category %q, got %q", "TestCategory", retrieved.Category)
+	}
+	if !retrieved.IsRegex {
+		t.Error("Expected IsRegex to be true")
+	}
+
+	// Update the vendor
+	retrieved.Category = "TestCategory"
+	retrieved.IsRegex = false
+	err = store.SaveVendor(ctx, retrieved)
+	if err != nil {
+		t.Fatalf("Failed to update vendor: %v", err)
+	}
+
+	// Verify update
+	updated, err := store.GetVendor(ctx, "TEST.*PATTERN")
+	if err != nil {
+		t.Fatalf("Failed to get updated vendor: %v", err)
+	}
+	if updated.IsRegex {
+		t.Error("Expected IsRegex to be false after update")
+	}
+
+	// List all vendors
+	vendors, err := store.GetAllVendors(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get all vendors: %v", err)
+	}
+	if len(vendors) != 1 {
+		t.Errorf("Expected 1 vendor, got %d", len(vendors))
+	}
+	if vendors[0].Name != "TEST.*PATTERN" {
+		t.Errorf("Expected vendor name %q, got %q", "TEST.*PATTERN", vendors[0].Name)
+	}
+	if vendors[0].IsRegex {
+		t.Error("Expected IsRegex to be false in list")
+	}
+}

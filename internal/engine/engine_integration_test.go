@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAutoClassificationThreshold tests the 85% confidence threshold for auto-classification.
+// TestAutoClassificationThreshold tests the 95% confidence threshold for auto-classification.
 func TestAutoClassificationThreshold(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -34,13 +34,13 @@ func TestAutoClassificationThreshold(t *testing.T) {
 				Amount:       125.67,
 				AccountID:    "acc1",
 			},
-			mockConfidence:     0.95, // Above 85% threshold
+			mockConfidence:     0.95, // At 95% threshold
 			isNewCategory:      false,
 			expectAutoClassify: true,
 			expectVendorRule:   true,
 		},
 		{
-			name: "exactly at threshold - auto-classify",
+			name: "exactly at old threshold - manual review",
 			setupTransaction: model.Transaction{
 				ID:           "2",
 				Hash:         "hash2",
@@ -50,10 +50,10 @@ func TestAutoClassificationThreshold(t *testing.T) {
 				Amount:       45.00,
 				AccountID:    "acc1",
 			},
-			mockConfidence:     0.85, // Exactly at threshold
+			mockConfidence:     0.85, // Below 95% threshold
 			isNewCategory:      false,
-			expectAutoClassify: true,
-			expectVendorRule:   true,
+			expectAutoClassify: false,
+			expectVendorRule:   false, // No vendor rule for auto-accepted manual review
 		},
 		{
 			name: "below threshold - manual review",
@@ -66,10 +66,10 @@ func TestAutoClassificationThreshold(t *testing.T) {
 				Amount:       25.00,
 				AccountID:    "acc1",
 			},
-			mockConfidence:     0.75, // Below 85% threshold
+			mockConfidence:     0.75, // Below 95% threshold
 			isNewCategory:      false,
 			expectAutoClassify: false,
-			expectVendorRule:   true, // Still creates vendor rule after manual review
+			expectVendorRule:   false, // No vendor rule created for auto-accepted manual review
 		},
 		{
 			name: "high confidence new category - manual review",
@@ -85,7 +85,7 @@ func TestAutoClassificationThreshold(t *testing.T) {
 			mockConfidence:     0.90, // High confidence but...
 			isNewCategory:      true, // ...it's a new category
 			expectAutoClassify: false,
-			expectVendorRule:   true,
+			expectVendorRule:   false, // No vendor rule for auto-accepted manual review
 		},
 		{
 			name: "very low confidence - manual review",
@@ -101,7 +101,7 @@ func TestAutoClassificationThreshold(t *testing.T) {
 			mockConfidence:     0.55,
 			isNewCategory:      false,
 			expectAutoClassify: false,
-			expectVendorRule:   true,
+			expectVendorRule:   false, // No vendor rule for auto-accepted manual review
 		},
 	}
 
@@ -506,8 +506,19 @@ func (c *configuredClassifier) SuggestCategoryRankings(_ context.Context, _ mode
 	return rankings, nil
 }
 
-func (c *configuredClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
-	return make(map[string]model.CategoryRankings), nil
+func (c *configuredClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.MerchantBatchRequest, categories []model.Category) (map[string]model.CategoryRankings, error) {
+	results := make(map[string]model.CategoryRankings)
+
+	for _, req := range requests {
+		// Use the same logic as SuggestCategoryRankings
+		rankings, err := c.SuggestCategoryRankings(context.Background(), req.SampleTransaction, categories, nil)
+		if err != nil {
+			return nil, err
+		}
+		results[req.MerchantID] = rankings
+	}
+
+	return results, nil
 }
 
 type trackingPrompter struct {

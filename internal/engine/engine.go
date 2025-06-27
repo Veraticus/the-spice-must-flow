@@ -124,8 +124,9 @@ func (e *ClassificationEngine) sortMerchantsByVolume(groups map[string][]model.T
 }
 
 // getVendor retrieves a vendor from storage (which has its own cache).
+// It checks both exact matches and regex patterns.
 func (e *ClassificationEngine) getVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
-	return e.storage.GetVendor(ctx, merchantName)
+	return e.storage.FindVendorMatch(ctx, merchantName)
 }
 
 // filterCategoriesByDirection filters categories based on transaction direction.

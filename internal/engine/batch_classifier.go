@@ -38,6 +38,7 @@ type BatchResult struct {
 	Suggestion   *model.CategoryRanking
 	Merchant     string
 	Transactions []model.Transaction
+	UsedPatterns []model.CheckPattern
 	AutoAccepted bool
 }
 
@@ -191,7 +192,7 @@ func (e *ClassificationEngine) batchWorker(
 	categories []model.Category,
 	opts BatchClassificationOptions,
 ) {
-	_ = workerID // workerID is kept for future debugging/logging purposes
+	// workerID is used for debugging/logging purposes
 	batch := make([]string, 0, opts.BatchSize)
 
 	for merchant := range workChan {
@@ -205,6 +206,10 @@ func (e *ClassificationEngine) batchWorker(
 
 		// Process batch when full or channel empty
 		if len(batch) >= opts.BatchSize || len(workChan) == 0 {
+			slog.Debug("worker processing batch",
+				"worker_id", workerID,
+				"batch_size", len(batch),
+				"merchants", batch)
 			results := e.processMerchantBatch(ctx, batch, merchantGroups, categories, opts)
 			for _, result := range results {
 				resultsChan <- result
@@ -215,6 +220,10 @@ func (e *ClassificationEngine) batchWorker(
 
 	// Process any remaining merchants
 	if len(batch) > 0 {
+		slog.Debug("worker processing final batch",
+			"worker_id", workerID,
+			"batch_size", len(batch),
+			"merchants", batch)
 		results := e.processMerchantBatch(ctx, batch, merchantGroups, categories, opts)
 		for _, result := range results {
 			resultsChan <- result
@@ -228,7 +237,7 @@ func (e *ClassificationEngine) processMerchantBatch(
 	merchants []string,
 	merchantGroups map[string][]model.Transaction,
 	categories []model.Category,
-	_ BatchClassificationOptions,
+	opts BatchClassificationOptions,
 ) []BatchResult {
 	results := make([]BatchResult, len(merchants))
 	needsLLM := make([]llm.MerchantBatchRequest, 0, len(merchants))
@@ -297,8 +306,7 @@ func (e *ClassificationEngine) processMerchantBatch(
 	filteredCategories := e.filterCategoriesByDirection(categories, allTxns)
 
 	// Process LLM requests in batches
-	// Using a fixed batch size of 5 merchants per LLM call for optimal performance
-	llmBatchSize := 5
+	llmBatchSize := opts.BatchSize
 	for start := 0; start < len(needsLLM); start += llmBatchSize {
 		end := start + llmBatchSize
 		if end > len(needsLLM) {
@@ -335,11 +343,26 @@ func (e *ClassificationEngine) processMerchantBatch(
 
 			// Apply check pattern boosts if applicable
 			txns := merchantGroups[merchantID]
+			var usedPatterns []model.CheckPattern
 			if len(txns) > 0 && txns[0].Type == "CHECK" {
 				checkPatterns, _ := e.storage.GetMatchingCheckPatterns(ctx, txns[0])
 				if len(checkPatterns) > 0 {
+					// Apply boosts
 					rankings.ApplyCheckPatternBoosts(checkPatterns)
 					rankings.Sort()
+
+					// Check if any pattern's category is now the top after boosting
+					newTopCategory := ""
+					if top := rankings.Top(); top != nil {
+						newTopCategory = top.Category
+					}
+
+					// Track patterns that match the final chosen category
+					for _, pattern := range checkPatterns {
+						if pattern.Category == newTopCategory {
+							usedPatterns = append(usedPatterns, pattern)
+						}
+					}
 				}
 			}
 
@@ -354,6 +377,7 @@ func (e *ClassificationEngine) processMerchantBatch(
 			results[idx].Merchant = merchantID
 			results[idx].Transactions = txns
 			results[idx].Suggestion = top
+			results[idx].UsedPatterns = usedPatterns
 
 			// Log the classification result for this merchant
 			slog.Info("merchant classified",
@@ -394,11 +418,19 @@ func (e *ClassificationEngine) saveAutoAcceptedBatch(ctx context.Context, result
 		}
 
 		// Apply classifications to all transactions in the group
+		isVendorRule := result.Suggestion.Score == 1.0
 		for _, txn := range result.Transactions {
+			// Determine status based on confidence score
+			status := model.StatusClassifiedByAI
+			if isVendorRule {
+				// Score of 1.0 indicates vendor rule
+				status = model.StatusClassifiedByRule
+			}
+
 			classification := model.Classification{
 				Transaction:  txn,
 				Category:     result.Suggestion.Category,
-				Status:       model.StatusClassifiedByAI,
+				Status:       status,
 				Confidence:   result.Suggestion.Score,
 				ClassifiedAt: time.Now(),
 			}
@@ -412,8 +444,29 @@ func (e *ClassificationEngine) saveAutoAcceptedBatch(ctx context.Context, result
 			}
 		}
 
-		// Save vendor rule if suggested
-		if result.Suggestion.Score >= 0.85 {
+		// Increment use counts for check patterns that were used
+		for _, pattern := range result.UsedPatterns {
+			if err := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); err != nil {
+				slog.Warn("Failed to increment check pattern use count",
+					"pattern_id", pattern.ID,
+					"pattern_name", pattern.PatternName,
+					"error", err)
+			}
+		}
+
+		// Update vendor use count if this was a vendor rule
+		if isVendorRule {
+			// Get existing vendor to update use count
+			vendor, err := e.storage.GetVendor(ctx, result.Merchant)
+			if err == nil && vendor != nil {
+				vendor.UseCount += len(result.Transactions)
+				vendor.LastUpdated = time.Now()
+				if err := e.storage.SaveVendor(ctx, vendor); err != nil {
+					slog.Warn("Failed to update vendor use count", "error", err)
+				}
+			}
+		} else if result.Suggestion.Score >= 0.85 {
+			// Save new vendor rule if high confidence
 			vendor := &model.Vendor{
 				Name:        result.Merchant,
 				Category:    result.Suggestion.Category,
@@ -435,7 +488,6 @@ func (e *ClassificationEngine) saveAutoAcceptedBatch(ctx context.Context, result
 
 // handleBatchReview handles the interactive review of uncertain classifications.
 func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsReview []BatchResult, categories []model.Category) error {
-	_ = categories // categories kept for future use when implementing category selection UI
 	// Sort by confidence (lowest first, so most uncertain are reviewed first)
 	sort.Slice(needsReview, func(i, j int) bool {
 		scoreI := float64(0)
@@ -449,91 +501,150 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 		return scoreI < scoreJ
 	})
 
-	// Build list of pending classifications
-	pendingClassifications := make([]model.PendingClassification, 0, len(needsReview))
-	merchantToPending := make(map[string]int) // Map merchant to index in pendingClassifications
+	// Keep track of the current category list
+	currentCategories := categories
 
+	// Process each merchant group separately
 	for _, result := range needsReview {
 		if len(result.Transactions) == 0 {
 			continue
 		}
 
-		// Create pending classification with first transaction as representative
-		pending := model.PendingClassification{
-			Transaction:  result.Transactions[0],
-			SimilarCount: len(result.Transactions) - 1,
+		// Create pending classifications for all transactions in this merchant group
+		pendingClassifications := make([]model.PendingClassification, 0, len(result.Transactions))
+
+		// Get check patterns if this is a check transaction
+		var checkPatterns []model.CheckPattern
+		if result.Transactions[0].Type == "CHECK" {
+			checkPatterns, _ = e.storage.GetMatchingCheckPatterns(ctx, result.Transactions[0])
 		}
 
-		// Add suggestion if available
+		// Get category rankings for display
+		var categoryRankings model.CategoryRankings
 		if result.Suggestion != nil {
-			pending.SuggestedCategory = result.Suggestion.Category
-			pending.Confidence = result.Suggestion.Score
-			pending.IsNewCategory = result.Suggestion.IsNew
-			pending.CategoryDescription = result.Suggestion.Description
-		}
-
-		merchantToPending[result.Merchant] = len(pendingClassifications)
-		pendingClassifications = append(pendingClassifications, pending)
-	}
-
-	// Get batch confirmation from user
-	classifications, err := e.prompter.BatchConfirmClassifications(ctx, pendingClassifications)
-	if err != nil {
-		return fmt.Errorf("batch confirmation failed: %w", err)
-	}
-
-	// Process each confirmed classification
-	for _, result := range needsReview {
-		if len(result.Transactions) == 0 {
-			continue
-		}
-
-		// Find the corresponding classification
-		pendingIdx, found := merchantToPending[result.Merchant]
-		if !found || pendingIdx >= len(classifications) {
-			continue
-		}
-
-		classification := classifications[pendingIdx]
-		pending := pendingClassifications[pendingIdx]
-
-		// If this is a new category that was accepted, create it
-		if pending.IsNewCategory && classification.Category != "" {
-			// Check if category exists first
-			_, err := e.storage.GetCategoryByName(ctx, classification.Category)
-			if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
-				// Create the new category with the provided description
-				_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, pending.CategoryDescription, model.CategoryTypeExpense)
-				if createErr != nil {
-					slog.Error("Failed to create new category",
-						"category", classification.Category,
-						"error", createErr)
-					continue
-				}
-				slog.Info("Created new category from user confirmation",
-					"category", classification.Category,
-					"description", pending.CategoryDescription)
+			// Build a simple rankings list from the suggestion
+			categoryRankings = model.CategoryRankings{
+				{
+					Category:    result.Suggestion.Category,
+					Score:       result.Suggestion.Score,
+					IsNew:       result.Suggestion.IsNew,
+					Description: result.Suggestion.Description,
+				},
 			}
 		}
 
-		// Apply classification to all transactions in the group
+		// Create a pending classification for each transaction
 		for _, txn := range result.Transactions {
-			// Create new classification for each transaction
-			txnClassification := model.Classification{
-				Transaction:  txn,
-				Category:     classification.Category,
-				Status:       classification.Status,
-				Confidence:   classification.Confidence,
-				ClassifiedAt: time.Now(),
-				Notes:        classification.Notes,
+			pending := model.PendingClassification{
+				Transaction:      txn,
+				SimilarCount:     len(result.Transactions) - 1,
+				CategoryRankings: categoryRankings,
+				AllCategories:    currentCategories,
+				CheckPatterns:    checkPatterns,
 			}
 
-			if err := e.storage.SaveClassification(ctx, &txnClassification); err != nil {
-				slog.Error("Failed to save classification",
-					"transaction_id", txn.ID,
-					"error", err)
+			// Add suggestion if available
+			if result.Suggestion != nil {
+				pending.SuggestedCategory = result.Suggestion.Category
+				pending.Confidence = result.Suggestion.Score
+				pending.IsNewCategory = result.Suggestion.IsNew
+				pending.CategoryDescription = result.Suggestion.Description
 			}
 
+			pendingClassifications = append(pendingClassifications, pending)
+		}
+
+		// Get batch confirmation from user for this merchant group
+		classifications, err := e.prompter.BatchConfirmClassifications(ctx, pendingClassifications)
+		if err != nil {
+			// Check if this is a context cancellation (user interrupt)
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+			// Log the error but try to continue with the next merchant
+			slog.Error("Batch confirmation failed for merchant",
+				"merchant", result.Merchant,
+				"error", err,
+				"transaction_count", len(result.Transactions))
+			// Skip this merchant and continue with the next one
+			continue
+		}
+
+		// Process confirmed classifications
+		if len(classifications) > 0 {
+			classification := classifications[0] // Use the first classification as template
+
+			// If this is a new category that was accepted, create it
+			if result.Suggestion != nil && result.Suggestion.IsNew && classification.Category != "" {
+				// Check if category exists first
+				_, err := e.storage.GetCategoryByName(ctx, classification.Category)
+				if err != nil && errors.Is(err, storage.ErrCategoryNotFound) {
+					// Create the new category with the provided description
+					_, createErr := e.storage.CreateCategoryWithType(ctx, classification.Category, result.Suggestion.Description, model.CategoryTypeExpense)
+					if createErr != nil {
+						slog.Error("Failed to create new category",
+							"category", classification.Category,
+							"error", createErr)
+						continue
+					}
+					slog.Info("Created new category from user confirmation",
+						"category", classification.Category,
+						"description", result.Suggestion.Description)
+
+					// Refresh the category list after creating a new category
+					updatedCategories, refreshErr := e.storage.GetCategories(ctx)
+					if refreshErr != nil {
+						slog.Warn("Failed to refresh categories after creation",
+							"error", refreshErr)
+					} else {
+						currentCategories = updatedCategories
+					}
+				}
+			}
+
+			// Apply classification to all transactions in the group
+			for _, txn := range result.Transactions {
+				// Create new classification for each transaction
+				txnClassification := model.Classification{
+					Transaction:  txn,
+					Category:     classification.Category,
+					Status:       classification.Status,
+					Confidence:   classification.Confidence,
+					ClassifiedAt: time.Now(),
+					Notes:        classification.Notes,
+				}
+
+				if err := e.storage.SaveClassification(ctx, &txnClassification); err != nil {
+					slog.Error("Failed to save classification",
+						"transaction_id", txn.ID,
+						"error", err)
+				}
+			}
+
+			// Increment use counts for check patterns that were used if the classification matches
+			for _, pattern := range result.UsedPatterns {
+				if pattern.Category == classification.Category {
+					if err := e.storage.IncrementCheckPatternUseCount(ctx, pattern.ID); err != nil {
+						slog.Warn("Failed to increment check pattern use count",
+							"pattern_id", pattern.ID,
+							"pattern_name", pattern.PatternName,
+							"error", err)
+					}
+				}
+			}
+
+			// Create vendor rule if user modified a high-confidence suggestion
+			if classification.Status == model.StatusUserModified && result.Suggestion != nil && result.Suggestion.Score >= 0.85 {
+				vendor := &model.Vendor{
+					Name:        result.Merchant,
+					Category:    classification.Category,
+					UseCount:    len(result.Transactions),
+					LastUpdated: time.Now(),
+				}
+				if err := e.storage.SaveVendor(ctx, vendor); err != nil {
+					slog.Warn("Failed to save vendor rule", "error", err)
+				}
+			}
 		}
 	}
 

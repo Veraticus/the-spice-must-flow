@@ -32,15 +32,16 @@ func TestCategoryFilteringIssue(t *testing.T) {
 	initialCategories := []struct {
 		name        string
 		description string
+		catType     model.CategoryType
 	}{
-		{"Groceries", "Food and household supplies"},
-		{"Entertainment", "Movies, games, and fun activities"},
-		{"Transportation", "Gas, public transit, and vehicle expenses"},
-		{"Other Income", "Miscellaneous income"},
+		{"Groceries", "Food and household supplies", model.CategoryTypeExpense},
+		{"Entertainment", "Movies, games, and fun activities", model.CategoryTypeExpense},
+		{"Transportation", "Gas, public transit, and vehicle expenses", model.CategoryTypeExpense},
+		{"Other Income", "Miscellaneous income", model.CategoryTypeIncome},
 	}
 
 	for _, cat := range initialCategories {
-		created, createErr := db.CreateCategory(ctx, cat.name, cat.description)
+		created, createErr := db.CreateCategoryWithType(ctx, cat.name, cat.description, cat.catType)
 		require.NoError(t, createErr)
 		t.Logf("Created category: %s (type: %s)", created.Name, created.Type)
 	}
@@ -81,9 +82,10 @@ func TestCategoryFilteringIssue(t *testing.T) {
 		t.Logf("  - %s (type: %s)", cat.Name, cat.Type)
 	}
 
-	// With all expense categories and a negative amount transaction,
-	// no categories should be filtered out (expense categories are shown for negative amounts)
-	assert.False(t, classifier.allCategoriesFiltered, "Categories should not be filtered out for negative amounts with expense categories")
+	// With a negative amount transaction (income), only income categories should be shown
+	// We created 3 expense categories and 1 income category, so only 1 should be shown
+	assert.Equal(t, 1, len(classifier.categoriesReceived), "Should only receive income categories for negative amount")
+	assert.Equal(t, "Other Income", classifier.categoriesReceived[0].Name, "Should receive the income category")
 }
 
 // debuggingClassifier logs what categories it receives.
@@ -128,12 +130,40 @@ func (c *debuggingClassifier) BatchSuggestCategories(_ context.Context, _ []mode
 	return nil, nil
 }
 
-func (c *debuggingClassifier) GenerateCategoryDescription(_ context.Context, _ string) (string, float64, error) {
-	return "Test description", 0.95, nil
+func (c *debuggingClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.MerchantBatchRequest, categories []model.Category) (map[string]model.CategoryRankings, error) {
+	c.categoriesReceived = categories
+
+	// Check if we got very few categories (likely due to filtering)
+	if len(categories) <= 1 {
+		c.allCategoriesFiltered = true
+	}
+
+	// Check if our target category exists
+	hasTarget := false
+	for _, cat := range categories {
+		if cat.Name == c.targetCategory {
+			hasTarget = true
+			break
+		}
+	}
+
+	results := make(map[string]model.CategoryRankings)
+	for _, req := range requests {
+		results[req.MerchantID] = model.CategoryRankings{
+			{
+				Category:    c.targetCategory,
+				Score:       0.8,
+				IsNew:       !hasTarget,
+				Description: "Personal transfers",
+			},
+		}
+	}
+
+	return results, nil
 }
 
-func (c *debuggingClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
-	return make(map[string]model.CategoryRankings), nil
+func (c *debuggingClassifier) GenerateCategoryDescription(_ context.Context, _ string) (string, float64, error) {
+	return "Test description", 0.95, nil
 }
 
 // simpleAcceptPrompter accepts all suggestions.

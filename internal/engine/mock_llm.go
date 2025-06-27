@@ -294,6 +294,15 @@ func (m *MockClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Record calls for each merchant in the batch
+	for _, req := range requests {
+		call := MockLLMCall{
+			Transaction: req.SampleTransaction,
+			Error:       nil,
+		}
+		m.calls = append(m.calls, call)
+	}
+
 	results := make(map[string]model.CategoryRankings)
 
 	// Process each merchant request
@@ -312,6 +321,8 @@ func (m *MockClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.
 			switch {
 			case strings.Contains(merchantLower, "starbucks") && strings.Contains(catLower, "coffee"):
 				score = 0.95
+			case strings.Contains(merchantLower, "whole foods") && strings.Contains(catLower, "groceries"):
+				score = 0.95
 			case strings.Contains(merchantLower, "walmart") && strings.Contains(catLower, "groceries"):
 				score = 0.90
 			case strings.Contains(merchantLower, "target") && strings.Contains(catLower, "department"):
@@ -321,6 +332,12 @@ func (m *MockClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.
 			case strings.Contains(merchantLower, "check") && req.SampleTransaction.Type == "CHECK":
 				// For check transactions, give base scores similar to SuggestCategoryRankings
 				switch {
+				case strings.Contains(catLower, "utilities"):
+					score = 0.50
+				case strings.Contains(catLower, "home") && strings.Contains(catLower, "services"):
+					score = 0.45
+				case strings.Contains(catLower, "insurance"):
+					score = 0.40
 				case strings.Contains(catLower, "rent"):
 					score = 0.55
 				case strings.Contains(catLower, "other"):
@@ -329,8 +346,15 @@ func (m *MockClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.
 					score = 0.10
 				}
 			default:
-				// Give a low score to other categories
-				score = 0.10
+				// Base score on partial matches, similar to SuggestCategoryRankings
+				switch {
+				case strings.Contains(catLower, "shopping"):
+					score = 0.30
+				case strings.Contains(catLower, "misc") || strings.Contains(catLower, "other"):
+					score = 0.20
+				default:
+					score = 0.10
+				}
 			}
 
 			rankings = append(rankings, model.CategoryRanking{

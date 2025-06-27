@@ -29,9 +29,10 @@ func (s *SQLiteStorage) GetVendor(ctx context.Context, merchantName string) (*mo
 
 func (s *SQLiteStorage) getVendorTx(ctx context.Context, q queryable, merchantName string) (*model.Vendor, error) {
 	var vendor model.Vendor
+	var source string
 
 	err := q.QueryRowContext(ctx, `
-		SELECT name, category, last_updated, use_count
+		SELECT name, category, last_updated, use_count, source, is_regex
 		FROM vendors
 		WHERE name = ?
 	`, merchantName).Scan(
@@ -39,6 +40,8 @@ func (s *SQLiteStorage) getVendorTx(ctx context.Context, q queryable, merchantNa
 		&vendor.Category,
 		&vendor.LastUpdated,
 		&vendor.UseCount,
+		&source,
+		&vendor.IsRegex,
 	)
 
 	if err == sql.ErrNoRows {
@@ -47,6 +50,9 @@ func (s *SQLiteStorage) getVendorTx(ctx context.Context, q queryable, merchantNa
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vendor: %w", err)
 	}
+
+	// Convert source string to VendorSource type
+	vendor.Source = model.VendorSource(source)
 
 	// Update cache
 	s.cacheVendor(&vendor)
@@ -81,6 +87,11 @@ func (s *SQLiteStorage) saveVendorTx(ctx context.Context, tx *sql.Tx, vendor *mo
 		vendor.LastUpdated = time.Now()
 	}
 
+	// Set default source if not set
+	if vendor.Source == "" {
+		vendor.Source = model.SourceAuto
+	}
+
 	// Validate category exists
 	var categoryExists bool
 	err := tx.QueryRowContext(ctx, `
@@ -96,13 +107,15 @@ func (s *SQLiteStorage) saveVendorTx(ctx context.Context, tx *sql.Tx, vendor *mo
 	}
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO vendors (name, category, last_updated, use_count)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO vendors (name, category, last_updated, use_count, source, is_regex)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			category = excluded.category,
 			last_updated = excluded.last_updated,
-			use_count = excluded.use_count
-	`, vendor.Name, vendor.Category, vendor.LastUpdated, vendor.UseCount)
+			use_count = excluded.use_count,
+			source = excluded.source,
+			is_regex = excluded.is_regex
+	`, vendor.Name, vendor.Category, vendor.LastUpdated, vendor.UseCount, vendor.Source, vendor.IsRegex)
 
 	if err != nil {
 		return fmt.Errorf("failed to save vendor: %w", err)
@@ -124,7 +137,7 @@ func (s *SQLiteStorage) GetAllVendors(ctx context.Context) ([]model.Vendor, erro
 
 func (s *SQLiteStorage) getAllVendorsTx(ctx context.Context, q queryable) ([]model.Vendor, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT name, category, last_updated, use_count
+		SELECT name, category, last_updated, use_count, source, is_regex
 		FROM vendors
 		ORDER BY name
 	`)
@@ -136,15 +149,19 @@ func (s *SQLiteStorage) getAllVendorsTx(ctx context.Context, q queryable) ([]mod
 	var vendors []model.Vendor
 	for rows.Next() {
 		var vendor model.Vendor
+		var source string
 		err := rows.Scan(
 			&vendor.Name,
 			&vendor.Category,
 			&vendor.LastUpdated,
 			&vendor.UseCount,
+			&source,
+			&vendor.IsRegex,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan vendor: %w", err)
 		}
+		vendor.Source = model.VendorSource(source)
 		vendors = append(vendors, vendor)
 	}
 
@@ -161,6 +178,33 @@ func (s *SQLiteStorage) DeleteVendor(ctx context.Context, merchantName string) e
 	}
 
 	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM vendors WHERE name = ?
+	`, merchantName)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete vendor: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return common.ErrNotFound
+	}
+
+	// Remove from cache with proper locking
+	s.cacheMutex.Lock()
+	delete(s.vendorCache, merchantName)
+	s.cacheMutex.Unlock()
+
+	return nil
+}
+
+// deleteVendorTx deletes a vendor in a transaction.
+func (s *SQLiteStorage) deleteVendorTx(ctx context.Context, tx *sql.Tx, merchantName string) error {
+	result, err := tx.ExecContext(ctx, `
 		DELETE FROM vendors WHERE name = ?
 	`, merchantName)
 
@@ -255,7 +299,7 @@ func (s *SQLiteStorage) GetVendorsByCategory(ctx context.Context, categoryName s
 
 func (s *SQLiteStorage) getVendorsByCategoryTx(ctx context.Context, q queryable, categoryName string) ([]model.Vendor, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT name, category, last_updated, use_count
+		SELECT name, category, last_updated, use_count, source, is_regex
 		FROM vendors
 		WHERE category = ?
 		ORDER BY name
@@ -268,15 +312,19 @@ func (s *SQLiteStorage) getVendorsByCategoryTx(ctx context.Context, q queryable,
 	var vendors []model.Vendor
 	for rows.Next() {
 		var vendor model.Vendor
+		var source string
 		err := rows.Scan(
 			&vendor.Name,
 			&vendor.Category,
 			&vendor.LastUpdated,
 			&vendor.UseCount,
+			&source,
+			&vendor.IsRegex,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan vendor: %w", err)
 		}
+		vendor.Source = model.VendorSource(source)
 		vendors = append(vendors, vendor)
 	}
 
@@ -381,4 +429,157 @@ func (s *SQLiteStorage) UpdateVendorCategoriesByID(ctx context.Context, fromCate
 	}
 
 	return s.UpdateVendorCategories(ctx, fromCategory, toCategory)
+}
+
+// GetVendorsBySource retrieves all vendors with a specific source.
+func (s *SQLiteStorage) GetVendorsBySource(ctx context.Context, source model.VendorSource) ([]model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	return s.getVendorsBySourceTx(ctx, s.db, source)
+}
+
+func (s *SQLiteStorage) getVendorsBySourceTx(ctx context.Context, q queryable, source model.VendorSource) ([]model.Vendor, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT name, category, last_updated, use_count, source, is_regex
+		FROM vendors
+		WHERE source = ?
+		ORDER BY name
+	`, source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query vendors by source: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var vendors []model.Vendor
+	for rows.Next() {
+		var vendor model.Vendor
+		var sourceStr string
+		err := rows.Scan(
+			&vendor.Name,
+			&vendor.Category,
+			&vendor.LastUpdated,
+			&vendor.UseCount,
+			&sourceStr,
+			&vendor.IsRegex,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan vendor: %w", err)
+		}
+		vendor.Source = model.VendorSource(sourceStr)
+		vendors = append(vendors, vendor)
+	}
+
+	return vendors, rows.Err()
+}
+
+// DeleteVendorsBySource deletes all vendors with a specific source.
+func (s *SQLiteStorage) DeleteVendorsBySource(ctx context.Context, source model.VendorSource) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(ctx, `
+		DELETE FROM vendors WHERE source = ?
+	`, source)
+	if err != nil {
+		return fmt.Errorf("failed to delete vendors by source: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	// Clear cache since we've deleted vendors
+	s.cacheMutex.Lock()
+	s.vendorCache = make(map[string]*model.Vendor)
+	s.cacheMutex.Unlock()
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return nil // Not an error if no vendors were deleted
+	}
+
+	return nil
+}
+
+// FindVendorMatch looks for a vendor that matches the given merchant name.
+// It first checks for an exact match, then checks regex vendors.
+func (s *SQLiteStorage) FindVendorMatch(ctx context.Context, merchantName string) (*model.Vendor, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateString(merchantName, "merchantName"); err != nil {
+		return nil, err
+	}
+
+	// First try exact match (for performance)
+	vendor, err := s.GetVendor(ctx, merchantName)
+	if err == nil && vendor != nil && !vendor.IsRegex {
+		return vendor, nil
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	// If no exact match, check regex vendors
+	return s.findRegexVendorMatch(ctx, merchantName)
+}
+
+func (s *SQLiteStorage) findRegexVendorMatch(ctx context.Context, merchantName string) (*model.Vendor, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT name, category, last_updated, use_count, source, is_regex
+		FROM vendors
+		WHERE is_regex = TRUE
+		ORDER BY use_count DESC, name
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query regex vendors: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var vendor model.Vendor
+		var source string
+		err := rows.Scan(
+			&vendor.Name,
+			&vendor.Category,
+			&vendor.LastUpdated,
+			&vendor.UseCount,
+			&source,
+			&vendor.IsRegex,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan vendor: %w", err)
+		}
+		vendor.Source = model.VendorSource(source)
+
+		// Try to match the regex pattern
+		matched, err := common.MatchRegex(vendor.Name, merchantName)
+		if err != nil {
+			// Invalid regex, skip this vendor
+			continue
+		}
+		if matched {
+			// Cache the match for future use
+			s.cacheVendor(&vendor)
+			return &vendor, nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating regex vendors: %w", err)
+	}
+
+	return nil, sql.ErrNoRows
 }

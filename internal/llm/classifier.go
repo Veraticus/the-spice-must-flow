@@ -470,7 +470,7 @@ func (c *Classifier) buildPromptWithRanking(txn model.Transaction, categories []
 		categoryList += fmt.Sprintf("- %s: %s\n", cat.Name, cat.Description)
 	}
 
-	return fmt.Sprintf(`You are a financial transaction classifier. Your task is to rank ALL provided categories by how likely this transaction belongs to each one.
+	return fmt.Sprintf(`You are a SKEPTICAL financial transaction classifier. Your task is to rank ALL provided categories by how likely this transaction belongs to each one.
 
 Transaction Details:
 %s
@@ -484,9 +484,18 @@ CRITICAL INSTRUCTIONS:
 2. Use the EXACT category names as shown above (case-sensitive, no modifications)
 3. Each category should appear EXACTLY ONCE in the rankings
 4. Assign a likelihood score from 0.0 to 1.0 for each category
-5. The scores should reflect relative likelihood (they don't need to sum to 1.0)
-6. DO NOT create variations of existing category names
-7. If none of the existing categories fit well (all scores < 0.3), you may suggest ONE new category
+5. BE SKEPTICAL: Only assign high scores (>0.85) when you're very confident
+6. Consider multiple interpretations - don't jump to conclusions
+7. Look for the MOST SPECIFIC category that fits, not just any category that could work
+8. If a merchant could fit multiple categories, distribute scores appropriately
+9. If none of the existing categories fit well (all scores < 0.3), you may suggest ONE new category
+
+SCORING GUIDELINES:
+- 0.90-1.00: Nearly certain this is the correct category
+- 0.70-0.89: Good fit but some uncertainty
+- 0.50-0.69: Moderate fit, could belong here
+- 0.30-0.49: Weak fit, unlikely but possible
+- 0.00-0.29: Very unlikely to belong here
 
 Respond with a JSON object in this exact format:
 {
@@ -510,7 +519,8 @@ Respond with a JSON object in this exact format:
 IMPORTANT: 
 - Each category from the list above MUST appear exactly once in rankings
 - Use the exact category names - do not modify them
-- "newCategory" field is optional - only include if suggesting a genuinely new category`,
+- "newCategory" field is optional - only include if suggesting a genuinely new category
+- Be conservative with high scores - it's better to be uncertain than wrong`,
 		transactionDetails,
 		checkHints,
 		categoryList)
@@ -627,7 +637,7 @@ func (c *Classifier) buildBatchPrompt(requests []MerchantBatchRequest, categorie
 `, i+1, req.MerchantID, req.MerchantName, txn.Name, txn.Amount, req.TransactionCount, txn.Type)
 	}
 
-	return fmt.Sprintf(`You are a financial transaction classifier. Your task is to classify MULTIPLE merchants based on their transaction patterns.
+	return fmt.Sprintf(`You are a SKEPTICAL financial transaction classifier. Your task is to classify MULTIPLE merchants based on their transaction patterns.
 
 Categories (USE THESE EXACT NAMES):
 %s
@@ -639,9 +649,23 @@ CRITICAL INSTRUCTIONS:
 1. Classify ALL merchants listed above
 2. For each merchant, provide the top 3-5 most likely categories with scores
 3. Use the EXACT category names as shown above (case-sensitive)
-4. Assign likelihood scores from 0.0 to 1.0
-5. Each merchant MUST have a unique merchantId matching the ID provided
-6. If a merchant clearly doesn't fit any category (all scores < 0.3), you may suggest ONE new category
+4. BE SKEPTICAL: Only assign high scores (>0.85) when you're very confident
+5. Consider multiple interpretations - don't jump to conclusions
+6. Look for the MOST SPECIFIC category that fits, not just any category that could work
+7. Each merchant MUST have a unique merchantId matching the ID provided
+8. If a merchant clearly doesn't fit any category (all scores < 0.3), you may suggest ONE new category
+
+SCORING GUIDELINES:
+- 0.90-1.00: Nearly certain this is the correct category
+- 0.70-0.89: Good fit but some uncertainty
+- 0.50-0.69: Moderate fit, could belong here
+- 0.30-0.49: Weak fit, unlikely but possible
+- 0.00-0.29: Very unlikely to belong here
+
+EXAMPLE SKEPTICAL REASONING:
+- "Amazon" could be Shopping, Digital Infrastructure, Entertainment, Groceries, etc. Don't assume!
+- "Starbucks" could be Dining Out, Business Meetings, or Groceries (they sell packaged goods)
+- Look at transaction amounts and patterns for clues
 
 Respond with a JSON object in this exact format:
 {
@@ -649,21 +673,24 @@ Respond with a JSON object in this exact format:
     {
       "merchantId": "merchant-id-here",
       "rankings": [
-        {"category": "EXACT_CATEGORY_NAME", "score": 0.95, "isNew": false},
-        {"category": "ANOTHER_CATEGORY", "score": 0.05, "isNew": false}
+        {"category": "EXACT_CATEGORY_NAME", "score": 0.75, "isNew": false},
+        {"category": "ANOTHER_CATEGORY", "score": 0.45, "isNew": false}
       ]
     },
     {
       "merchantId": "another-merchant-id",
       "rankings": [
-        {"category": "CATEGORY_NAME", "score": 0.90, "isNew": false},
+        {"category": "CATEGORY_NAME", "score": 0.80, "isNew": false},
         {"category": "New Category Name", "score": 0.85, "isNew": true, "description": "One sentence description"}
       ]
     }
   ]
 }
 
-IMPORTANT: Include ALL merchants in your response. Each merchantId must match exactly.`,
+IMPORTANT: 
+- Include ALL merchants in your response. Each merchantId must match exactly
+- Be conservative with high scores - it's better to be uncertain than wrong
+- Consider that merchants can serve multiple purposes`,
 		categoryList,
 		merchantDetails)
 }

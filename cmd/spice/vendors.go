@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -21,17 +22,19 @@ func vendorsCmd() *cobra.Command {
 	// Subcommands
 	cmd.AddCommand(vendorsListCmd())
 	cmd.AddCommand(vendorsSearchCmd())
+	cmd.AddCommand(vendorsCreateCmd())
 	cmd.AddCommand(vendorsEditCmd())
 	cmd.AddCommand(vendorsDeleteCmd())
+	cmd.AddCommand(vendorsDeleteAllCmd())
 
 	return cmd
 }
 
 func vendorsListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List all vendor rules",
-		Long:  `List all vendor categorization rules with their usage statistics.`,
+		Short: "List vendor rules",
+		Long:  `List vendor categorization rules with their usage statistics and source.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
@@ -42,8 +45,29 @@ func vendorsListCmd() *cobra.Command {
 			}
 			defer cleanup()
 
-			// Fetch all vendors
-			vendors, err := db.GetAllVendors(ctx)
+			// Get source filter
+			sourceFilter, _ := cmd.Flags().GetString("source")
+
+			// Fetch vendors based on filter
+			var vendors []model.Vendor
+			if sourceFilter != "" && sourceFilter != "all" {
+				// Map filter to VendorSource
+				var source model.VendorSource
+				switch sourceFilter {
+				case "manual":
+					source = model.SourceManual
+				case "auto":
+					source = model.SourceAuto
+				case "confirmed":
+					source = model.SourceAutoConfirmed
+				default:
+					return fmt.Errorf("invalid source filter: %s (valid options: manual, auto, confirmed, all)", sourceFilter)
+				}
+				vendors, err = db.GetVendorsBySource(ctx, source)
+			} else {
+				vendors, err = db.GetAllVendors(ctx)
+			}
+
 			if err != nil {
 				return fmt.Errorf("failed to get vendors: %w", err)
 			}
@@ -55,13 +79,19 @@ func vendorsListCmd() *cobra.Command {
 
 			// Display vendors in a table
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "MERCHANT\tCATEGORY\tUSE COUNT\tLAST UPDATED")
-			_, _ = fmt.Fprintln(w, "────────\t────────\t─────────\t────────────")
+			_, _ = fmt.Fprintln(w, "MERCHANT\tCATEGORY\tSOURCE\tTYPE\tUSE COUNT\tLAST UPDATED")
+			_, _ = fmt.Fprintln(w, "────────\t────────\t──────\t────\t─────────\t────────────")
 
 			for _, vendor := range vendors {
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
+				vendorType := "exact"
+				if vendor.IsRegex {
+					vendorType = "regex"
+				}
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
 					vendor.Name,
 					vendor.Category,
+					vendor.Source,
+					vendorType,
 					vendor.UseCount,
 					vendor.LastUpdated.Format("2006-01-02"))
 			}
@@ -69,6 +99,9 @@ func vendorsListCmd() *cobra.Command {
 			return w.Flush()
 		},
 	}
+
+	cmd.Flags().StringP("source", "s", "", "Filter by source (manual|auto|confirmed|all)")
+	return cmd
 }
 
 func vendorsSearchCmd() *cobra.Command {
@@ -103,14 +136,20 @@ func vendorsSearchCmd() *cobra.Command {
 					if !found {
 						// Print header on first match
 						slog.Info(fmt.Sprintf("Vendors matching '%s':", query))
-						_, _ = fmt.Fprintln(w, "MERCHANT\tCATEGORY\tUSE COUNT\tLAST UPDATED")
-						_, _ = fmt.Fprintln(w, "────────\t────────\t─────────\t────────────")
+						_, _ = fmt.Fprintln(w, "MERCHANT\tCATEGORY\tSOURCE\tTYPE\tUSE COUNT\tLAST UPDATED")
+						_, _ = fmt.Fprintln(w, "────────\t────────\t──────\t────\t─────────\t────────────")
 						found = true
 					}
 
-					_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n",
+					vendorType := "exact"
+					if vendor.IsRegex {
+						vendorType = "regex"
+					}
+					_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
 						vendor.Name,
 						vendor.Category,
+						vendor.Source,
+						vendorType,
 						vendor.UseCount,
 						vendor.LastUpdated.Format("2006-01-02"))
 				}
@@ -124,6 +163,74 @@ func vendorsSearchCmd() *cobra.Command {
 			return w.Flush()
 		},
 	}
+}
+
+func vendorsCreateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "create <merchant>",
+		Short: "Create a vendor rule",
+		Long:  `Create a new vendor categorization rule manually.`,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			merchant := args[0]
+
+			// Get category from flag
+			category, _ := cmd.Flags().GetString("category")
+			if category == "" {
+				return fmt.Errorf("category is required (use --category flag)")
+			}
+
+			// Get regex flag
+			isRegex, _ := cmd.Flags().GetBool("regex")
+
+			// Get database connection
+			db, cleanup, err := getDatabase()
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			// Check if vendor already exists
+			existing, _ := db.GetVendor(ctx, merchant)
+			if existing != nil {
+				return fmt.Errorf("vendor rule for '%s' already exists with category '%s'", merchant, existing.Category)
+			}
+
+			// Create new vendor with manual source
+			vendor := &model.Vendor{
+				Name:        merchant,
+				Category:    category,
+				Source:      model.SourceManual,
+				UseCount:    0,
+				LastUpdated: time.Now(),
+				IsRegex:     isRegex,
+			}
+
+			if err := db.SaveVendor(ctx, vendor); err != nil {
+				return fmt.Errorf("failed to create vendor: %w", err)
+			}
+
+			ruleType := "exact match"
+			if isRegex {
+				ruleType = "regex"
+			}
+			slog.Info("✓ Vendor rule created successfully",
+				"merchant", merchant,
+				"category", category,
+				"source", "MANUAL",
+				"type", ruleType)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringP("category", "c", "", "Category for the vendor (required)")
+	cmd.Flags().BoolP("regex", "r", false, "Treat the merchant name as a regular expression pattern")
+	if err := cmd.MarkFlagRequired("category"); err != nil {
+		slog.Error("failed to mark flag as required", "error", err)
+	}
+	return cmd
 }
 
 func vendorsEditCmd() *cobra.Command {
@@ -170,6 +277,10 @@ func vendorsEditCmd() *cobra.Command {
 			// Update vendor
 			vendor.Category = newCategory
 			vendor.LastUpdated = time.Now()
+			// If vendor was auto-created, mark it as confirmed since user edited it
+			if vendor.Source == model.SourceAuto {
+				vendor.Source = model.SourceAutoConfirmed
+			}
 
 			if err := db.SaveVendor(ctx, vendor); err != nil {
 				return fmt.Errorf("failed to update vendor: %w", err)
@@ -247,5 +358,84 @@ func vendorsDeleteCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
+	return cmd
+}
+
+func vendorsDeleteAllCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "delete-all",
+		Short: "Delete multiple vendor rules",
+		Long:  `Delete vendor rules based on source filter.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+
+			// Get source filter
+			sourceFilter, _ := cmd.Flags().GetString("source")
+			if sourceFilter == "" {
+				return fmt.Errorf("source filter is required (use --source flag)")
+			}
+
+			// Map filter to VendorSource
+			var source model.VendorSource
+			var sourceLabel string
+			switch sourceFilter {
+			case "manual":
+				source = model.SourceManual
+				sourceLabel = "manually created"
+			case "auto":
+				source = model.SourceAuto
+				sourceLabel = "auto-created"
+			default:
+				return fmt.Errorf("invalid source filter: %s (valid options: manual, auto)", sourceFilter)
+			}
+
+			// Get database connection
+			db, cleanup, err := getDatabase()
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			// Get vendors to be deleted
+			vendors, err := db.GetVendorsBySource(ctx, source)
+			if err != nil {
+				return fmt.Errorf("failed to get vendors: %w", err)
+			}
+
+			if len(vendors) == 0 {
+				slog.Info(fmt.Sprintf("No %s vendor rules found", sourceLabel))
+				return nil
+			}
+
+			// Show summary
+			slog.Info(fmt.Sprintf("About to delete %d %s vendor rules", len(vendors), sourceLabel))
+
+			// Get confirmation unless --force flag is set
+			force, _ := cmd.Flags().GetBool("force")
+			if !force {
+				slog.Info(fmt.Sprintf("Are you sure you want to delete all %s vendor rules? (y/N): ", sourceLabel))
+				var response string
+				_, _ = fmt.Scanln(&response)
+				if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+					slog.Info("Deletion canceled")
+					return nil
+				}
+			}
+
+			// Delete vendors
+			if err := db.DeleteVendorsBySource(ctx, source); err != nil {
+				return fmt.Errorf("failed to delete vendors: %w", err)
+			}
+
+			slog.Info(fmt.Sprintf("✓ Successfully deleted %d %s vendor rules", len(vendors), sourceLabel))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringP("source", "s", "", "Source of vendors to delete (manual|auto)")
+	cmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
+	if err := cmd.MarkFlagRequired("source"); err != nil {
+		slog.Error("failed to mark flag as required", "error", err)
+	}
 	return cmd
 }

@@ -73,8 +73,7 @@ func TestHandleInterrupts(t *testing.T) {
 	assert.True(t, handler.WasInterrupted())
 	outputStr := output.String()
 	assert.Contains(t, outputStr, "Classification interrupted!")
-	assert.Contains(t, outputStr, "Progress has been saved")
-	assert.Contains(t, outputStr, "Resume with: spice classify --resume")
+	assert.Contains(t, outputStr, "See you later! 🌶️")
 }
 
 func TestHandleInterrupts_NoProgress(t *testing.T) {
@@ -104,7 +103,7 @@ func TestHandleInterrupts_NoProgress(t *testing.T) {
 	assert.True(t, handler.WasInterrupted())
 	outputStr := output.String()
 	assert.Contains(t, outputStr, "Classification interrupted!")
-	assert.NotContains(t, outputStr, "Progress has been saved")
+	// Progress saving was removed
 }
 
 func TestMultipleInterrupts(t *testing.T) {
@@ -150,8 +149,6 @@ func TestShowInterruptMessage(t *testing.T) {
 			showProgress: true,
 			expected: []string{
 				"Classification interrupted!",
-				"Progress has been saved",
-				"Resume with: spice classify --resume",
 				"See you later!",
 			},
 			notExpected: []string{},
@@ -164,8 +161,7 @@ func TestShowInterruptMessage(t *testing.T) {
 				"See you later!",
 			},
 			notExpected: []string{
-				"Progress has been saved",
-				"Resume with",
+				// No specific excludes needed
 			},
 		},
 	}

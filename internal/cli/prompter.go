@@ -151,35 +151,36 @@ func (p *Prompter) BatchConfirmClassifications(ctx context.Context, pending []mo
 
 	content := p.formatBatchSummary(pending, pattern)
 	if _, err := fmt.Fprintln(p.writer, RenderBox("Batch Review", content)); err != nil {
-		return nil, fmt.Errorf("failed to write batch review box: %w", err)
+		// Log write errors but continue - don't fail the entire batch due to display issues
+		slog.Warn("Failed to write batch review box", "error", err, "merchant", merchantName)
 	}
 
 	if _, err := fmt.Fprintln(p.writer, FormatPrompt("Options:")); err != nil {
-		return nil, fmt.Errorf("failed to write options prompt: %w", err)
+		slog.Warn("Failed to write options prompt", "error", err)
 	}
 
 	if pending[0].IsNewCategory {
 		if _, err := fmt.Fprintf(p.writer, "  [A] Create and use new category '%s' for all %d transactions\n",
 			pending[0].SuggestedCategory, len(pending)); err != nil {
-			return nil, fmt.Errorf("failed to write new category accept option: %w", err)
+			slog.Warn("Failed to write new category accept option", "error", err)
 		}
 	} else {
 		if _, err := fmt.Fprintf(p.writer, "  [A] Accept for all %d transactions\n", len(pending)); err != nil {
-			return nil, fmt.Errorf("failed to write batch accept option: %w", err)
+			slog.Warn("Failed to write batch accept option", "error", err)
 		}
 	}
 
 	if _, err := fmt.Fprintln(p.writer, "  [E] Select category for all"); err != nil {
-		return nil, fmt.Errorf("failed to write select category option: %w", err)
+		slog.Warn("Failed to write select category option", "error", err)
 	}
 	if _, err := fmt.Fprintln(p.writer, "  [R] Review each transaction individually"); err != nil {
-		return nil, fmt.Errorf("failed to write review option: %w", err)
+		slog.Warn("Failed to write review option", "error", err)
 	}
 	if _, err := fmt.Fprintln(p.writer, "  [S] Skip all transactions"); err != nil {
-		return nil, fmt.Errorf("failed to write skip all option: %w", err)
+		slog.Warn("Failed to write skip all option", "error", err)
 	}
 	if _, err := fmt.Fprintln(p.writer); err != nil {
-		return nil, fmt.Errorf("failed to write newline: %w", err)
+		slog.Warn("Failed to write newline", "error", err)
 	}
 
 	var validChoices = []string{"a", "e", "r", "s"}

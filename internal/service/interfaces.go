@@ -28,15 +28,20 @@ type Storage interface {
 	// Vendor operations
 	GetVendor(ctx context.Context, merchantName string) (*model.Vendor, error)
 	SaveVendor(ctx context.Context, vendor *model.Vendor) error
+	DeleteVendor(ctx context.Context, merchantName string) error
 	GetAllVendors(ctx context.Context) ([]model.Vendor, error)
 	GetVendorsByCategory(ctx context.Context, categoryName string) ([]model.Vendor, error)
 	GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error)
+	GetVendorsBySource(ctx context.Context, source model.VendorSource) ([]model.Vendor, error)
+	DeleteVendorsBySource(ctx context.Context, source model.VendorSource) error
 	UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error
 	UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error
+	FindVendorMatch(ctx context.Context, merchantName string) (*model.Vendor, error)
 
 	// Classification operations
 	SaveClassification(ctx context.Context, classification *model.Classification) error
 	GetClassificationsByDateRange(ctx context.Context, start, end time.Time) ([]model.Classification, error)
+	ClearAllClassifications(ctx context.Context) error
 
 	// Category operations
 	GetCategories(ctx context.Context) ([]model.Category, error)

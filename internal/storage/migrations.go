@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 13
+const ExpectedSchemaVersion = 15
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -428,6 +428,54 @@ var migrations = []Migration{
 				slog.Info("Successfully converted all negative amounts to positive")
 			}
 
+			return nil
+		},
+	},
+	{
+		Version:     14,
+		Description: "Add source column to vendors for tracking creation origin",
+		Up: func(tx *sql.Tx) error {
+			// Add source column with default value 'AUTO'
+			if _, err := tx.Exec(`ALTER TABLE vendors ADD COLUMN source TEXT DEFAULT 'AUTO'`); err != nil {
+				return fmt.Errorf("failed to add source column: %w", err)
+			}
+
+			// Update existing vendors using heuristic: vendors with use_count > 10 are considered confirmed
+			result, err := tx.Exec(`UPDATE vendors SET source = 'AUTO_CONFIRMED' WHERE use_count > 10`)
+			if err != nil {
+				return fmt.Errorf("failed to update vendor sources: %w", err)
+			}
+
+			rowsAffected, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("failed to get rows affected: %w", err)
+			}
+
+			slog.Info("Updated vendor sources based on usage", "vendors_marked_confirmed", rowsAffected)
+
+			// Create index on source column for filtering
+			if _, err := tx.Exec(`CREATE INDEX idx_vendors_source ON vendors(source)`); err != nil {
+				return fmt.Errorf("failed to create source index: %w", err)
+			}
+
+			return nil
+		},
+	},
+	{
+		Version:     15,
+		Description: "Add regex support to vendors",
+		Up: func(tx *sql.Tx) error {
+			// Add is_regex column to track whether the vendor name is a regex pattern
+			if _, err := tx.Exec(`ALTER TABLE vendors ADD COLUMN is_regex BOOLEAN DEFAULT FALSE`); err != nil {
+				return fmt.Errorf("failed to add is_regex column: %w", err)
+			}
+
+			// Create index on is_regex for efficient filtering
+			if _, err := tx.Exec(`CREATE INDEX idx_vendors_is_regex ON vendors(is_regex)`); err != nil {
+				return fmt.Errorf("failed to create is_regex index: %w", err)
+			}
+
+			slog.Info("Added regex support to vendors table")
 			return nil
 		},
 	},

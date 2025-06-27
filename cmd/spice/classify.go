@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/cli"
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
+	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/spf13/cobra"
@@ -57,9 +59,13 @@ Examples:
 
 	// Batch configuration flags
 	cmd.Flags().Float64("auto-accept-threshold", 0.95, "Auto-accept classifications above this confidence (0.0-1.0)")
-	cmd.Flags().Int("batch-size", 20, "Number of merchants to process in each LLM batch")
+	cmd.Flags().Int("batch-size", 5, "Number of merchants to process in each LLM batch")
 	cmd.Flags().Int("parallel-workers", 5, "Number of parallel workers for batch processing")
 	cmd.Flags().Bool("auto-only", false, "Only auto-accept high confidence items, skip manual review")
+
+	// Reset flags
+	cmd.Flags().Bool("reset", false, "Clear all existing classifications before classifying")
+	cmd.Flags().String("reset-vendors", "", "Clear vendor rules when using --reset (auto|all)")
 
 	// Bind to viper (errors are rare and can be ignored in practice)
 	_ = viper.BindPFlag("classification.year", cmd.Flags().Lookup("year"))
@@ -69,6 +75,8 @@ Examples:
 	_ = viper.BindPFlag("classification.batch_size", cmd.Flags().Lookup("batch-size"))
 	_ = viper.BindPFlag("classification.parallel_workers", cmd.Flags().Lookup("parallel-workers"))
 	_ = viper.BindPFlag("classification.auto_only", cmd.Flags().Lookup("auto-only"))
+	_ = viper.BindPFlag("classification.reset", cmd.Flags().Lookup("reset"))
+	_ = viper.BindPFlag("classification.reset_vendors", cmd.Flags().Lookup("reset-vendors"))
 
 	return cmd
 }
@@ -77,13 +85,13 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	year := viper.GetInt("classification.year")
 	month := viper.GetString("classification.month")
-	resume := viper.GetBool("classification.resume")
 	dryRun := viper.GetBool("classification.dry_run")
-	batchMode := viper.GetBool("classification.batch")
 	autoAcceptThreshold := viper.GetFloat64("classification.auto_accept_threshold")
 	batchSize := viper.GetInt("classification.batch_size")
 	parallelWorkers := viper.GetInt("classification.parallel_workers")
 	autoOnly := viper.GetBool("classification.auto_only")
+	reset := viper.GetBool("classification.reset")
+	resetVendors := viper.GetString("classification.reset_vendors")
 
 	// Set up interrupt handling
 	interruptHandler := cli.NewInterruptHandler(nil)
@@ -115,6 +123,13 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 
 	slog.Info("Connected to database successfully")
 
+	// Handle reset if requested
+	if reset {
+		if resetErr := handleReset(ctx, db, resetVendors); resetErr != nil {
+			return fmt.Errorf("failed to reset classifications: %w", resetErr)
+		}
+	}
+
 	// Initialize components
 	var classifier engine.Classifier
 	var prompter engine.Prompter
@@ -141,89 +156,50 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 
 	// Determine date range
 	var fromDate *time.Time
-	if !resume {
-		if month != "" {
-			// Parse month
-			parsedMonth, parseErr := time.Parse("2006-01", month)
-			if parseErr != nil {
-				return fmt.Errorf("invalid month format (use YYYY-MM): %w", parseErr)
-			}
-			startDate := parsedMonth
-			fromDate = &startDate
-		} else if year != 0 {
-			// Use beginning of specified year
-			startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
-			fromDate = &startDate
+	if month != "" {
+		// Parse month
+		parsedMonth, parseErr := time.Parse("2006-01", month)
+		if parseErr != nil {
+			return fmt.Errorf("invalid month format (use YYYY-MM): %w", parseErr)
 		}
-		// If year is 0 and no month specified, fromDate remains nil (classify everything)
+		startDate := parsedMonth
+		fromDate = &startDate
+	} else if year != 0 {
+		// Use beginning of specified year
+		startDate := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
+		fromDate = &startDate
+	}
+	// If year is 0 and no month specified, fromDate remains nil (classify everything)
+
+	// Always use batch mode internally
+	opts := engine.BatchClassificationOptions{
+		AutoAcceptThreshold: autoAcceptThreshold,
+		BatchSize:           batchSize,
+		ParallelWorkers:     parallelWorkers,
+		SkipManualReview:    autoOnly,
 	}
 
-	// Run classification based on mode
-	if batchMode {
-		// Use batch mode for faster processing
-		opts := engine.BatchClassificationOptions{
-			AutoAcceptThreshold: autoAcceptThreshold,
-			BatchSize:           batchSize,
-			ParallelWorkers:     parallelWorkers,
-			SkipManualReview:    autoOnly,
+	slog.Info("Starting batch classification",
+		"auto_accept_threshold", fmt.Sprintf("%.0f%%", autoAcceptThreshold*100),
+		"batch_size", batchSize,
+		"parallel_workers", parallelWorkers)
+
+	summary, err := classificationEngine.ClassifyTransactionsBatch(ctx, fromDate, opts)
+	if err != nil {
+		if err == context.Canceled {
+			return nil
 		}
-
-		// Batch mode doesn't support resume
-		if resume {
-			slog.Warn("Resume is not supported in batch mode, processing all transactions")
-		}
-
-		slog.Info("Starting batch classification",
-			"auto_accept_threshold", fmt.Sprintf("%.0f%%", autoAcceptThreshold*100),
-			"batch_size", batchSize,
-			"parallel_workers", parallelWorkers)
-
-		summary, err := classificationEngine.ClassifyTransactionsBatch(ctx, fromDate, opts)
-		if err != nil {
-			if err == context.Canceled {
-				return nil
-			}
-			return fmt.Errorf("batch classification failed: %w", err)
-		}
-
-		// Show batch summary as JSON
-		slog.Info(summary.GetDisplay())
-
-	} else {
-		// Traditional sequential mode
-		// Get transaction count for progress tracking
-		txns, err := db.GetTransactionsToClassify(ctx, fromDate)
-		if err != nil {
-			return fmt.Errorf("failed to count transactions: %w", err)
-		}
-
-		// Set total for progress tracking
-		if cliPrompter, ok := prompter.(*cli.Prompter); ok {
-			cliPrompter.SetTotalTransactions(len(txns))
-		}
-
-		// Run classification
-		if err := classificationEngine.ClassifyTransactions(ctx, fromDate); err != nil {
-			if err == context.Canceled {
-				// The interrupt handler already printed the message
-				// Just return nil to exit cleanly
-				return nil
-			}
-			return fmt.Errorf("classification failed: %w", err)
-		}
-
-		// Show completion stats
-		if cliPrompter, ok := prompter.(*cli.Prompter); ok {
-			cliPrompter.ShowCompletion()
-		} else {
-			stats := prompter.GetCompletionStats()
-			showCompletionStats(stats)
-		}
+		return fmt.Errorf("batch classification failed: %w", err)
 	}
+
+	// Show batch summary as JSON
+	slog.Info(summary.GetDisplay())
 
 	return nil
 }
 
+// showCompletionStats displays completion statistics
+// nolint:unused // Kept for future use
 func showCompletionStats(stats service.CompletionStats) {
 	type completionJSON struct {
 		Duration          string  `json:"duration"`
@@ -272,4 +248,94 @@ func expandPath(path string) string {
 		}
 	}
 	return path
+}
+
+func handleReset(ctx context.Context, db service.Storage, resetVendors string) error {
+	// Get count of classifications that will be reset
+	start := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Now().Add(24 * time.Hour)
+
+	classifications, err := db.GetClassificationsByDateRange(ctx, start, end)
+	if err != nil {
+		return fmt.Errorf("failed to get classification count: %w", err)
+	}
+
+	var vendorCount int
+	var vendorLabel string
+	if resetVendors != "" {
+		if resetVendors != "auto" && resetVendors != "all" {
+			return fmt.Errorf("invalid --reset-vendors value: %s (valid options: auto, all)", resetVendors)
+		}
+
+		if resetVendors == "auto" {
+			vendors, vendorErr := db.GetVendorsBySource(ctx, model.SourceAuto)
+			if vendorErr != nil {
+				return fmt.Errorf("failed to get auto vendor count: %w", vendorErr)
+			}
+			vendorCount = len(vendors)
+			vendorLabel = "auto-created vendor rules"
+		} else { // all
+			vendors, vendorErr := db.GetAllVendors(ctx)
+			if vendorErr != nil {
+				return fmt.Errorf("failed to get vendor count: %w", vendorErr)
+			}
+			vendorCount = len(vendors)
+			vendorLabel = "all vendor rules"
+		}
+	}
+
+	// Show what will be reset
+	fmt.Printf("\n%s\n", cli.WarningStyle.Render("⚠️  Reset Classifications"))                                        //nolint:forbidigo // User-facing output
+	fmt.Printf("\nThis will remove:\n")                                                                               //nolint:forbidigo // User-facing output
+	fmt.Printf("  • %s transaction classifications\n", cli.BoldStyle.Render(fmt.Sprintf("%d", len(classifications)))) //nolint:forbidigo // User-facing output
+	if resetVendors != "" {
+		fmt.Printf("  • %s %s\n", cli.BoldStyle.Render(fmt.Sprintf("%d", vendorCount)), vendorLabel) //nolint:forbidigo // User-facing output
+	}
+	fmt.Printf("\n%s\n", cli.InfoStyle.Render("ℹ️  Your categories and transactions will remain unchanged.")) //nolint:forbidigo // User-facing output
+
+	// Confirm action
+	fmt.Printf("\nAre you sure you want to reset? (y/N): ") //nolint:forbidigo // User prompt
+	var response string
+	if _, scanErr := fmt.Scanln(&response); scanErr != nil {
+		response = "n"
+	}
+	if strings.ToLower(response) != "y" {
+		fmt.Println(cli.InfoStyle.Render("Reset canceled.")) //nolint:forbidigo // User-facing output
+		return nil
+	}
+
+	// Clear classifications
+	slog.Info("Clearing classifications...")
+
+	// Use the new ClearAllClassifications method
+	if err := db.ClearAllClassifications(ctx); err != nil {
+		return fmt.Errorf("failed to clear classifications: %w", err)
+	}
+
+	// Clear vendor rules if requested
+	if resetVendors != "" {
+		slog.Info("Clearing vendor rules...", "type", resetVendors)
+		if resetVendors == "auto" {
+			if err := db.DeleteVendorsBySource(ctx, model.SourceAuto); err != nil {
+				return fmt.Errorf("failed to delete auto vendor rules: %w", err)
+			}
+		} else { // all
+			vendors, vendorErr := db.GetAllVendors(ctx)
+			if vendorErr != nil {
+				return fmt.Errorf("failed to get vendors: %w", vendorErr)
+			}
+
+			for _, vendor := range vendors {
+				if err := db.DeleteVendor(ctx, vendor.Name); err != nil {
+					slog.Warn("Failed to delete vendor rule",
+						"vendor", vendor.Name,
+						"error", err)
+				}
+			}
+		}
+	}
+
+	fmt.Printf("\n%s\n\n", cli.SuccessStyle.Render("✓ Reset complete! Ready to reclassify.")) //nolint:forbidigo // User-facing output
+
+	return nil
 }

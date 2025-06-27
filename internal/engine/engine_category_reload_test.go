@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCategoryReloadAfterCreation tests that newly created categories are available
-// for subsequent transactions within the same classification session.
+// TestCategoryReloadAfterCreation tests that in batch mode, newly created categories
+// are not available to other merchants in the same batch due to snapshot consistency.
 func TestCategoryReloadAfterCreation(t *testing.T) {
 	// Setup
 	db, err := storage.NewSQLiteStorage(":memory:")
@@ -128,10 +128,10 @@ func TestCategoryReloadAfterCreation(t *testing.T) {
 		}
 	}
 
-	// One of them should have seen the new category as an existing option
-	// The order is non-deterministic due to map iteration, so we check that at least one saw it
-	assert.True(t, venmoCashoutHasNew || venmoPaymentHasNew,
-		"At least one merchant should have seen the new category as an existing option after it was created")
+	// In batch mode, all merchants are processed with the same category snapshot
+	// So neither merchant will see the newly created category as existing
+	assert.False(t, venmoCashoutHasNew || venmoPaymentHasNew,
+		"In batch mode, no merchant sees newly created categories until the next batch")
 }
 
 // categoryReloadTestClassifier is a test classifier that tracks what categories
@@ -202,8 +202,19 @@ func (c *categoryReloadTestClassifier) GenerateCategoryDescription(_ context.Con
 	return "Test description for " + categoryName, 0.95, nil
 }
 
-func (c *categoryReloadTestClassifier) SuggestCategoryBatch(_ context.Context, _ []llm.MerchantBatchRequest, _ []model.Category) (map[string]model.CategoryRankings, error) {
-	return make(map[string]model.CategoryRankings), nil
+func (c *categoryReloadTestClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.MerchantBatchRequest, categories []model.Category) (map[string]model.CategoryRankings, error) {
+	results := make(map[string]model.CategoryRankings)
+
+	for _, req := range requests {
+		// Use the same logic as SuggestCategoryRankings
+		rankings, err := c.SuggestCategoryRankings(context.Background(), req.SampleTransaction, categories, nil)
+		if err != nil {
+			return nil, err
+		}
+		results[req.MerchantID] = rankings
+	}
+
+	return results, nil
 }
 
 // categoryReloadTestPrompter is a test prompter that creates a new category
