@@ -25,6 +25,141 @@ func createTestStorageWithCategories(t *testing.T, categories ...string) (*SQLit
 	return store, cleanup
 }
 
+func TestSQLiteStorage_GetClassificationsByConfidence(t *testing.T) {
+	store, cleanup := createTestStorageWithCategories(t, "Food", "Shopping", "Entertainment")
+	defer cleanup()
+	ctx := context.Background()
+
+	// Create test transactions
+	transactions := []model.Transaction{
+		{
+			ID:           "low-conf-1",
+			Date:         time.Now(),
+			Name:         "LOW CONFIDENCE TX",
+			MerchantName: "Uncertain Merchant",
+			Amount:       10.00,
+			AccountID:    "acc1",
+		},
+		{
+			ID:           "medium-conf-1",
+			Date:         time.Now(),
+			Name:         "MEDIUM CONFIDENCE TX",
+			MerchantName: "Medium Merchant",
+			Amount:       20.00,
+			AccountID:    "acc1",
+		},
+		{
+			ID:           "high-conf-1",
+			Date:         time.Now(),
+			Name:         "HIGH CONFIDENCE TX",
+			MerchantName: "High Merchant",
+			Amount:       30.00,
+			AccountID:    "acc1",
+		},
+		{
+			ID:           "user-modified-1",
+			Date:         time.Now(),
+			Name:         "USER MODIFIED TX",
+			MerchantName: "User Merchant",
+			Amount:       40.00,
+			AccountID:    "acc1",
+		},
+	}
+
+	// Generate hashes and save
+	for i := range transactions {
+		transactions[i].Hash = transactions[i].GenerateHash()
+	}
+	if err := store.SaveTransactions(ctx, transactions); err != nil {
+		t.Fatalf("Failed to save transactions: %v", err)
+	}
+
+	// Create classifications with different confidence levels
+	classifications := []model.Classification{
+		{
+			Transaction:  transactions[0],
+			Category:     "Food",
+			Status:       model.StatusClassifiedByAI,
+			Confidence:   0.65, // Low confidence
+			ClassifiedAt: time.Now(),
+		},
+		{
+			Transaction:  transactions[1],
+			Category:     "Shopping",
+			Status:       model.StatusClassifiedByAI,
+			Confidence:   0.80, // Medium confidence
+			ClassifiedAt: time.Now(),
+		},
+		{
+			Transaction:  transactions[2],
+			Category:     "Entertainment",
+			Status:       model.StatusClassifiedByAI,
+			Confidence:   0.95, // High confidence
+			ClassifiedAt: time.Now(),
+		},
+		{
+			Transaction:  transactions[3],
+			Category:     "Food",
+			Status:       model.StatusUserModified,
+			Confidence:   1.0, // User modified
+			ClassifiedAt: time.Now(),
+		},
+	}
+
+	// Save classifications
+	for _, c := range classifications {
+		if err := store.SaveClassification(ctx, &c); err != nil {
+			t.Fatalf("Failed to save classification: %v", err)
+		}
+	}
+
+	// Test 1: Get classifications below 0.85 confidence (should get 2: 0.65 and 0.80)
+	results, err := store.GetClassificationsByConfidence(ctx, 0.85, false)
+	if err != nil {
+		t.Fatalf("Failed to get classifications by confidence: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("Expected 2 classifications below 0.85, got %d", len(results))
+	}
+
+	// Test 2: Get classifications below 0.85 confidence excluding user-modified
+	// (should still get 2 since user-modified has 1.0 confidence)
+	results, err = store.GetClassificationsByConfidence(ctx, 0.85, true)
+	if err != nil {
+		t.Fatalf("Failed to get classifications by confidence: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("Expected 2 classifications below 0.85 excluding user-modified, got %d", len(results))
+	}
+
+	// Test 3: Get classifications below 1.0 confidence excluding user-modified
+	// (should get 3: all AI classifications)
+	results, err = store.GetClassificationsByConfidence(ctx, 1.0, true)
+	if err != nil {
+		t.Fatalf("Failed to get classifications by confidence: %v", err)
+	}
+	if len(results) != 3 {
+		t.Errorf("Expected 3 AI classifications below 1.0, got %d", len(results))
+	}
+
+	// Test 4: Verify ordering (lowest confidence first)
+	if len(results) >= 2 {
+		if results[0].Confidence > results[1].Confidence {
+			t.Errorf("Results not ordered by confidence: %f > %f",
+				results[0].Confidence, results[1].Confidence)
+		}
+	}
+
+	// Test 5: Get classifications below 0.5 (should get none)
+	results, err = store.GetClassificationsByConfidence(ctx, 0.5, false)
+	if err != nil {
+		t.Fatalf("Failed to get classifications by confidence: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("Expected 0 classifications below 0.5, got %d", len(results))
+	}
+}
+
 func TestSQLiteStorage_ClassificationHistory(t *testing.T) {
 	store, cleanup := createTestStorageWithCategories(t,
 		"Initial Category",

@@ -912,6 +912,7 @@ func (p *Prompter) skipAllClassifications(pending []model.PendingClassification)
 	for i, pc := range pending {
 		classifications[i] = model.Classification{
 			Transaction:  pc.Transaction,
+			Category:     "", // Explicitly set empty category for unclassified status
 			Status:       model.StatusUnclassified,
 			ClassifiedAt: time.Now(),
 		}

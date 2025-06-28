@@ -197,6 +197,14 @@ func (t *sqliteTransaction) GetClassificationsByDateRange(ctx context.Context, s
 	return t.storage.getClassificationsByDateRangeTx(ctx, t.tx, start, end)
 }
 
+func (t *sqliteTransaction) GetClassificationsByConfidence(ctx context.Context, maxConfidence float64, excludeUserModified bool) ([]model.Classification, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	// The main storage method already handles tx-based queries
+	return t.storage.GetClassificationsByConfidence(ctx, maxConfidence, excludeUserModified)
+}
+
 func (t *sqliteTransaction) Migrate(_ context.Context) error {
 	// Migrations should not be run within a transaction
 	return fmt.Errorf("migrations cannot be run within a transaction")

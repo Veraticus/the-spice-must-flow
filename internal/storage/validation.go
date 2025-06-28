@@ -98,8 +98,15 @@ func validateClassification(classification *model.Classification) error {
 	if err := validateTransaction(&classification.Transaction); err != nil {
 		return fmt.Errorf("classification transaction: %w", err)
 	}
-	if strings.TrimSpace(classification.Category) == "" {
+
+	// Category is required for all statuses except UNCLASSIFIED
+	if classification.Status != model.StatusUnclassified && strings.TrimSpace(classification.Category) == "" {
 		return fmt.Errorf("%w: missing category", ErrInvalidClassification)
+	}
+
+	// For UNCLASSIFIED status, category should be empty
+	if classification.Status == model.StatusUnclassified && strings.TrimSpace(classification.Category) != "" {
+		return fmt.Errorf("%w: unclassified transactions should not have a category", ErrInvalidClassification)
 	}
 
 	// Validate status

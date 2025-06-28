@@ -41,6 +41,7 @@ type Storage interface {
 	// Classification operations
 	SaveClassification(ctx context.Context, classification *model.Classification) error
 	GetClassificationsByDateRange(ctx context.Context, start, end time.Time) ([]model.Classification, error)
+	GetClassificationsByConfidence(ctx context.Context, maxConfidence float64, excludeUserModified bool) ([]model.Classification, error)
 	ClearAllClassifications(ctx context.Context) error
 
 	// Category operations

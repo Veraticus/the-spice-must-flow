@@ -33,6 +33,15 @@ func DefaultBatchOptions() BatchClassificationOptions {
 	}
 }
 
+// RerankOptions configures re-ranking behavior for low confidence classifications.
+type RerankOptions struct {
+	ConfidenceThreshold float64 // Max confidence to consider for re-ranking
+	AutoAcceptThreshold float64 // Confidence threshold for auto-acceptance
+	BatchSize           int     // Number of merchants to process in each LLM batch
+	ParallelWorkers     int     // Number of parallel workers
+	SkipManualReview    bool    // Skip manual review of low-confidence items
+}
+
 // BatchResult contains the classification result for a merchant group.
 type BatchResult struct {
 	Error        error
@@ -53,6 +62,17 @@ type BatchClassificationSummary struct {
 	NeedsReviewTxns   int
 	FailedCount       int
 	ProcessingTime    time.Duration
+}
+
+// RerankSummary contains statistics about the rerank run.
+type RerankSummary struct {
+	TotalEvaluated     int           // Total transactions evaluated
+	ImprovedCount      int           // Transactions with improved confidence
+	UnchangedCount     int           // Transactions with same or lower confidence
+	AutoAcceptedCount  int           // Transactions auto-accepted after rerank
+	NeedsReviewCount   int           // Transactions needing manual review
+	AverageImprovement float64       // Average confidence improvement
+	ProcessingTime     time.Duration // Total processing time
 }
 
 // ClassifyTransactionsBatch performs batch classification with parallel processing.
@@ -134,6 +154,15 @@ func (e *ClassificationEngine) ClassifyTransactionsBatch(ctx context.Context, fr
 			"merchants_skipped", len(needsReview),
 			"transactions_skipped", summary.NeedsReviewTxns,
 			"reason", fmt.Sprintf("below %.0f%% confidence threshold", opts.AutoAcceptThreshold*100))
+
+		// Save low-confidence classifications to prevent re-evaluation
+		// This ensures we don't re-process these transactions on every run
+		if opts.SkipManualReview {
+			slog.Info("Saving low-confidence classifications to prevent re-evaluation")
+			if err := e.saveAutoAcceptedBatch(ctx, needsReview); err != nil {
+				slog.Error("Failed to save low-confidence classifications", "error", err)
+			}
+		}
 	}
 
 	return summary, nil
@@ -731,4 +760,174 @@ func (s *BatchClassificationSummary) GetDisplay() string {
 	}
 
 	return string(bytes)
+}
+
+// GetDisplay returns a JSON representation of the rerank summary.
+func (s *RerankSummary) GetDisplay() string {
+	if s.TotalEvaluated == 0 {
+		return `{"message":"No low confidence transactions to re-rank"}`
+	}
+
+	improvedPercent := float64(s.ImprovedCount) / float64(s.TotalEvaluated) * 100
+
+	type summaryJSON struct {
+		ProcessingTime    string  `json:"processing_time"`
+		Message           string  `json:"message"`
+		TotalEvaluated    int     `json:"total_evaluated"`
+		ImprovedCount     int     `json:"improved_count"`
+		ImprovedPercent   float64 `json:"improved_percent"`
+		UnchangedCount    int     `json:"unchanged_count"`
+		AutoAcceptedCount int     `json:"auto_accepted_count"`
+		NeedsReviewCount  int     `json:"needs_review_count"`
+		AvgImprovement    float64 `json:"average_improvement"`
+	}
+
+	data := summaryJSON{
+		TotalEvaluated:    s.TotalEvaluated,
+		ImprovedCount:     s.ImprovedCount,
+		ImprovedPercent:   improvedPercent,
+		UnchangedCount:    s.UnchangedCount,
+		AutoAcceptedCount: s.AutoAcceptedCount,
+		NeedsReviewCount:  s.NeedsReviewCount,
+		AvgImprovement:    s.AverageImprovement,
+		ProcessingTime:    s.ProcessingTime.Round(time.Second).String(),
+		Message:           fmt.Sprintf("Re-ranked %d transactions, improved %d (%.1f%%)", s.TotalEvaluated, s.ImprovedCount, improvedPercent),
+	}
+
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Sprintf(`{"error":"Failed to marshal summary: %v"}`, err)
+	}
+
+	return string(bytes)
+}
+
+// RerankLowConfidenceTransactions re-evaluates transactions with low confidence scores.
+func (e *ClassificationEngine) RerankLowConfidenceTransactions(ctx context.Context, opts RerankOptions) (*RerankSummary, error) {
+	startTime := time.Now()
+
+	// Get low confidence classifications
+	classifications, err := e.storage.GetClassificationsByConfidence(ctx, opts.ConfidenceThreshold, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get low confidence classifications: %w", err)
+	}
+
+	if len(classifications) == 0 {
+		return &RerankSummary{ProcessingTime: time.Since(startTime)}, nil
+	}
+
+	slog.Info("Found low confidence transactions to re-rank",
+		"count", len(classifications),
+		"confidence_threshold", fmt.Sprintf("%.0f%%", opts.ConfidenceThreshold*100))
+
+	// Extract transactions from classifications
+	transactions := make([]model.Transaction, len(classifications))
+	oldConfidences := make(map[string]float64)
+	for i, c := range classifications {
+		transactions[i] = c.Transaction
+		oldConfidences[c.Transaction.ID] = c.Confidence
+	}
+
+	// Group by merchant for batch processing
+	merchantGroups := e.groupByMerchant(transactions)
+	sortedMerchants := e.sortMerchantsByVolume(merchantGroups)
+
+	// Get categories
+	categories, err := e.storage.GetCategories(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get categories: %w", err)
+	}
+
+	// Process using batch classification logic
+	batchOpts := BatchClassificationOptions{
+		AutoAcceptThreshold: opts.AutoAcceptThreshold,
+		BatchSize:           opts.BatchSize,
+		ParallelWorkers:     opts.ParallelWorkers,
+		SkipManualReview:    opts.SkipManualReview,
+	}
+
+	results := e.processMerchantsParallel(ctx, sortedMerchants, merchantGroups, categories, batchOpts)
+
+	// Process results and calculate improvements
+	summary := &RerankSummary{
+		TotalEvaluated: len(transactions),
+		ProcessingTime: time.Since(startTime),
+	}
+
+	var totalImprovement float64
+	autoAccepted := make([]BatchResult, 0)
+	needsReview := make([]BatchResult, 0)
+	improvedMerchants := make(map[string]bool)
+
+	for _, result := range results {
+		if result.Error != nil {
+			slog.Warn("Failed to re-rank merchant", "merchant", result.Merchant, "error", result.Error)
+			continue
+		}
+
+		// Check if ANY transaction in this merchant group has improved
+		var maxOldConf float64
+
+		for _, txn := range result.Transactions {
+			oldConf := oldConfidences[txn.ID]
+			if oldConf > maxOldConf {
+				maxOldConf = oldConf
+			}
+		}
+
+		newConf := result.Suggestion.Score
+		if newConf > maxOldConf {
+			improvement := newConf - maxOldConf
+			totalImprovement += improvement
+
+			// Count improved transactions
+			for range result.Transactions {
+				summary.ImprovedCount++
+			}
+
+			// Only add to processing lists if improved
+			if result.AutoAccepted {
+				autoAccepted = append(autoAccepted, result)
+				summary.AutoAcceptedCount += len(result.Transactions)
+			} else {
+				needsReview = append(needsReview, result)
+				summary.NeedsReviewCount += len(result.Transactions)
+			}
+
+			improvedMerchants[result.Merchant] = true
+		} else {
+			// Count unchanged transactions
+			for range result.Transactions {
+				summary.UnchangedCount++
+			}
+		}
+	}
+
+	// Calculate average improvement
+	if summary.ImprovedCount > 0 {
+		summary.AverageImprovement = totalImprovement / float64(summary.ImprovedCount)
+	}
+
+	// Process auto-accepted improvements
+	if len(autoAccepted) > 0 {
+		slog.Info("Auto-accepting improved classifications", "count", len(autoAccepted))
+		if err := e.saveAutoAcceptedBatch(ctx, autoAccepted); err != nil {
+			slog.Error("Failed to save auto-accepted improvements", "error", err)
+		}
+	}
+
+	// Process manual review items if not skipping
+	if !opts.SkipManualReview && len(needsReview) > 0 {
+		slog.Info("Processing improved classifications for review", "count", len(needsReview))
+		// Get categories for manual review
+		categories, err := e.storage.GetCategories(ctx)
+		if err != nil {
+			return summary, fmt.Errorf("failed to get categories for review: %w", err)
+		}
+		if err := e.handleBatchReview(ctx, needsReview, categories); err != nil {
+			slog.Error("Failed to process manual review improvements", "error", err)
+		}
+	}
+
+	return summary, nil
 }

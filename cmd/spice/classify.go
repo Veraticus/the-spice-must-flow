@@ -38,6 +38,9 @@ Examples:
   # Only auto-accept high confidence items, skip manual review
   spice classify --auto-only
   
+  # Force manual review for all items (opposite of --auto-only)
+  spice classify --manual-review-all
+  
   # Custom auto-accept threshold (default: 95%)
   spice classify --auto-accept-threshold=0.90
   
@@ -48,7 +51,13 @@ Examples:
   spice classify --year 2024
   
   # Classify specific month
-  spice classify --month 2024-03`,
+  spice classify --month 2024-03
+  
+  # Re-classify low confidence transactions
+  spice classify --rerank 0.85
+  
+  # Re-classify with custom auto-accept threshold
+  spice classify --rerank 0.80 --auto-accept-threshold=0.90`,
 		RunE: runClassify,
 	}
 
@@ -62,10 +71,14 @@ Examples:
 	cmd.Flags().Int("batch-size", 5, "Number of merchants to process in each LLM batch")
 	cmd.Flags().Int("parallel-workers", 5, "Number of parallel workers for batch processing")
 	cmd.Flags().Bool("auto-only", false, "Only auto-accept high confidence items, skip manual review")
+	cmd.Flags().Bool("manual-review-all", false, "Force manual review for all items, even high confidence ones")
 
 	// Reset flags
 	cmd.Flags().Bool("reset", false, "Clear all existing classifications before classifying")
 	cmd.Flags().String("reset-vendors", "", "Clear vendor rules when using --reset (auto|all)")
+
+	// Rerank flags
+	cmd.Flags().Float64("rerank", 0, "Re-classify transactions with confidence below this threshold (0.0-1.0)")
 
 	// Bind to viper (errors are rare and can be ignored in practice)
 	_ = viper.BindPFlag("classification.year", cmd.Flags().Lookup("year"))
@@ -75,8 +88,10 @@ Examples:
 	_ = viper.BindPFlag("classification.batch_size", cmd.Flags().Lookup("batch-size"))
 	_ = viper.BindPFlag("classification.parallel_workers", cmd.Flags().Lookup("parallel-workers"))
 	_ = viper.BindPFlag("classification.auto_only", cmd.Flags().Lookup("auto-only"))
+	_ = viper.BindPFlag("classification.manual_review_all", cmd.Flags().Lookup("manual-review-all"))
 	_ = viper.BindPFlag("classification.reset", cmd.Flags().Lookup("reset"))
 	_ = viper.BindPFlag("classification.reset_vendors", cmd.Flags().Lookup("reset-vendors"))
+	_ = viper.BindPFlag("classification.rerank", cmd.Flags().Lookup("rerank"))
 
 	return cmd
 }
@@ -90,8 +105,20 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	batchSize := viper.GetInt("classification.batch_size")
 	parallelWorkers := viper.GetInt("classification.parallel_workers")
 	autoOnly := viper.GetBool("classification.auto_only")
+	manualReviewAll := viper.GetBool("classification.manual_review_all")
 	reset := viper.GetBool("classification.reset")
 	resetVendors := viper.GetString("classification.reset_vendors")
+	rerankThreshold := viper.GetFloat64("classification.rerank")
+
+	// Validate flag combinations
+	if autoOnly && manualReviewAll {
+		return fmt.Errorf("cannot use both --auto-only and --manual-review-all flags")
+	}
+
+	// If manual-review-all is set, effectively set auto-accept threshold to 2.0 (impossible)
+	if manualReviewAll {
+		autoAcceptThreshold = 2.0
+	}
 
 	// Set up interrupt handling
 	interruptHandler := cli.NewInterruptHandler(nil)
@@ -171,7 +198,39 @@ func runClassify(cmd *cobra.Command, _ []string) error {
 	}
 	// If year is 0 and no month specified, fromDate remains nil (classify everything)
 
-	// Always use batch mode internally
+	// Check if we're doing rerank instead of normal classification
+	if rerankThreshold > 0 {
+		if rerankThreshold >= 1.0 {
+			return fmt.Errorf("rerank threshold must be less than 1.0")
+		}
+
+		slog.Info("Starting re-classification of low confidence transactions",
+			"confidence_threshold", fmt.Sprintf("%.0f%%", rerankThreshold*100),
+			"auto_accept_threshold", fmt.Sprintf("%.0f%%", autoAcceptThreshold*100))
+
+		opts := engine.RerankOptions{
+			ConfidenceThreshold: rerankThreshold,
+			AutoAcceptThreshold: autoAcceptThreshold,
+			BatchSize:           batchSize,
+			ParallelWorkers:     parallelWorkers,
+			SkipManualReview:    autoOnly,
+		}
+
+		summary, rerankErr := classificationEngine.RerankLowConfidenceTransactions(ctx, opts)
+		if rerankErr != nil {
+			if rerankErr == context.Canceled {
+				return nil
+			}
+			return fmt.Errorf("rerank failed: %w", rerankErr)
+		}
+
+		// Show rerank summary
+		slog.Info(summary.GetDisplay())
+
+		return nil
+	}
+
+	// Normal classification flow
 	opts := engine.BatchClassificationOptions{
 		AutoAcceptThreshold: autoAcceptThreshold,
 		BatchSize:           batchSize,

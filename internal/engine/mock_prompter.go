@@ -14,17 +14,18 @@ import (
 // MockPrompter is a test implementation of the Prompter interface.
 // It auto-accepts suggestions for testing purposes.
 type MockPrompter struct {
-	startTime         time.Time
-	customResponses   map[string]string
-	rejectMerchants   map[string]bool
-	confirmCalls      []MockConfirmCall
-	batchConfirmCalls []MockBatchConfirmCall
-	totalTransactions int
-	autoClassified    int
-	userClassified    int
-	newVendorRules    int
-	mu                sync.Mutex
-	autoAccept        bool
+	startTime            time.Time
+	customResponses      map[string]string
+	rejectMerchants      map[string]bool
+	confirmCalls         []MockConfirmCall
+	batchConfirmCalls    []MockBatchConfirmCall
+	batchClassifications []model.Classification // For preset batch responses
+	totalTransactions    int
+	autoClassified       int
+	userClassified       int
+	newVendorRules       int
+	mu                   sync.Mutex
+	autoAccept           bool
 }
 
 // MockConfirmCall records details of a single confirmation request.
@@ -122,6 +123,37 @@ func (m *MockPrompter) BatchConfirmClassifications(ctx context.Context, pending 
 
 	if len(pending) == 0 {
 		return []model.Classification{}, nil
+	}
+
+	// If preset batch classifications are available, use them
+	if len(m.batchClassifications) > 0 {
+		// Ensure we're returning classifications for the right transactions
+		result := make([]model.Classification, 0, len(m.batchClassifications))
+		for _, c := range m.batchClassifications {
+			// Update transaction from pending to ensure we have the latest data
+			for _, p := range pending {
+				if strings.Contains(p.Transaction.ID, c.Transaction.ID) ||
+					p.Transaction.MerchantName == c.Transaction.MerchantName {
+					c.Transaction = p.Transaction
+					break
+				}
+			}
+			result = append(result, c)
+		}
+
+		// Record the call
+		call := MockBatchConfirmCall{
+			Pending:         pending,
+			Classifications: result,
+			Error:           nil,
+		}
+		m.batchConfirmCalls = append(m.batchConfirmCalls, call)
+		m.totalTransactions += len(result)
+
+		// Clear the preset responses after use
+		m.batchClassifications = nil
+
+		return result, nil
 	}
 
 	// For testing high-variance detection, check if this is an Amazon batch
@@ -302,9 +334,17 @@ func (m *MockPrompter) Reset() {
 	defer m.mu.Unlock()
 	m.confirmCalls = make([]MockConfirmCall, 0)
 	m.batchConfirmCalls = make([]MockBatchConfirmCall, 0)
+	m.batchClassifications = nil
 	m.totalTransactions = 0
 	m.autoClassified = 0
 	m.userClassified = 0
 	m.newVendorRules = 0
 	m.startTime = time.Now()
+}
+
+// SetBatchResponse sets preset classifications for batch confirmation calls.
+func (m *MockPrompter) SetBatchResponse(classifications []model.Classification) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.batchClassifications = classifications
 }

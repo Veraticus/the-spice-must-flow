@@ -14,8 +14,9 @@ import (
 // MockClassifier is a test implementation of the Classifier interface.
 // It returns deterministic suggestions based on merchant name for testing.
 type MockClassifier struct {
-	calls []MockLLMCall
-	mu    sync.Mutex
+	batchResponse map[string]model.CategoryRankings
+	calls         []MockLLMCall
+	mu            sync.Mutex
 }
 
 // MockLLMCall records details of a classification request.
@@ -169,6 +170,14 @@ func (m *MockClassifier) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = make([]MockLLMCall, 0)
+	m.batchResponse = nil
+}
+
+// SetBatchResponse sets a preset response for the next SuggestCategoryBatch call.
+func (m *MockClassifier) SetBatchResponse(response map[string]model.CategoryRankings) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.batchResponse = response
 }
 
 // GenerateCategoryDescription generates a mock description for testing.
@@ -296,6 +305,13 @@ func (m *MockClassifier) SuggestCategoryBatch(_ context.Context, requests []llm.
 			Error:       nil,
 		}
 		m.calls = append(m.calls, call)
+	}
+
+	// If preset batch response is available, use it
+	if m.batchResponse != nil {
+		response := m.batchResponse
+		m.batchResponse = nil // Clear after use
+		return response, nil
 	}
 
 	results := make(map[string]model.CategoryRankings)

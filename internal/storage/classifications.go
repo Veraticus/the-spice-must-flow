@@ -39,7 +39,7 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 		classification.ClassifiedAt = time.Now()
 	}
 
-	// Validate category exists (only if status is not unclassified)
+	// Validate category exists (only if status is not unclassified and category is provided)
 	if classification.Status != model.StatusUnclassified && classification.Category != "" {
 		var categoryExists bool
 		err := tx.QueryRowContext(ctx, `
@@ -96,8 +96,9 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 		return fmt.Errorf("failed to save classification history: %w", err)
 	}
 
-	// If this is a user-modified or rule-based classification, create/update vendor rule
-	if (classification.Status == model.StatusUserModified || classification.Status == model.StatusClassifiedByRule) && classification.Transaction.MerchantName != "" {
+	// If this is a user-modified or rule-based classification with a category, create/update vendor rule
+	if (classification.Status == model.StatusUserModified || classification.Status == model.StatusClassifiedByRule) &&
+		classification.Transaction.MerchantName != "" && classification.Category != "" {
 		// Create a transaction wrapper to use vendor methods
 		txWrapper := &sqliteTransaction{tx: tx, storage: s}
 
@@ -156,6 +157,89 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query classifications: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var classifications []model.Classification
+	for rows.Next() {
+		var c model.Classification
+		var statusStr string
+		var categories sql.NullString
+		var txType sql.NullString
+		var checkNum sql.NullString
+
+		err := rows.Scan(
+			&c.Transaction.ID,
+			&c.Transaction.Hash,
+			&c.Transaction.Date,
+			&c.Transaction.Name,
+			&c.Transaction.MerchantName,
+			&c.Transaction.Amount,
+			&categories,
+			&c.Transaction.AccountID,
+			&txType,
+			&checkNum,
+			&c.Category,
+			&statusStr,
+			&c.Confidence,
+			&c.ClassifiedAt,
+			&c.Notes,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan classification: %w", err)
+		}
+
+		c.Status = model.ClassificationStatus(statusStr)
+
+		// Parse categories JSON
+		if categories.Valid && categories.String != "" {
+			if err := json.Unmarshal([]byte(categories.String), &c.Transaction.Category); err != nil {
+				return nil, fmt.Errorf("failed to parse categories: %w", err)
+			}
+		}
+
+		// Set transaction type and check number
+		if txType.Valid {
+			c.Transaction.Type = txType.String
+		}
+		if checkNum.Valid {
+			c.Transaction.CheckNumber = checkNum.String
+		}
+
+		classifications = append(classifications, c)
+	}
+
+	return classifications, rows.Err()
+}
+
+// GetClassificationsByConfidence retrieves classifications below a confidence threshold.
+func (s *SQLiteStorage) GetClassificationsByConfidence(ctx context.Context, maxConfidence float64, excludeUserModified bool) ([]model.Classification, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT 
+			t.id, t.hash, t.date, t.name, t.merchant_name,
+			t.amount, t.categories, t.account_id,
+			t.transaction_type, t.check_number,
+			c.category, c.status, c.confidence, c.classified_at, c.notes
+		FROM classifications c
+		JOIN transactions t ON c.transaction_id = t.id
+		WHERE c.confidence < ?`
+
+	args := []interface{}{maxConfidence}
+
+	if excludeUserModified {
+		query += ` AND c.status != ?`
+		args = append(args, string(model.StatusUserModified))
+	}
+
+	query += ` ORDER BY c.confidence ASC, t.date DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query classifications by confidence: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
