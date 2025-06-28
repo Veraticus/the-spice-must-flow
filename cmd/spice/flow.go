@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/cli"
+	"github.com/Veraticus/the-spice-must-flow/internal/config"
 	"github.com/Veraticus/the-spice-must-flow/internal/model"
 	"github.com/Veraticus/the-spice-must-flow/internal/service"
 	"github.com/Veraticus/the-spice-must-flow/internal/sheets"
@@ -261,20 +262,14 @@ Top Categories:`, summary.TotalAmount, len(classifications), len(summary.ByCateg
 }
 
 func exportToSheets(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) error {
-	// Load Google Sheets config from environment
-	sheetsConfig := sheets.DefaultConfig()
-	if err := sheetsConfig.LoadFromEnv(); err != nil {
+	// Load Google Sheets config from viper (config.yaml) and environment
+	sheetsConfig, err := config.LoadSheetsConfig()
+	if err != nil {
 		return fmt.Errorf("failed to load Google Sheets config: %w", err)
 	}
 
-	// Override spreadsheet name if specified
-	reportName := viper.GetString("sheets.spreadsheet_name")
-	if reportName != "" {
-		sheetsConfig.SpreadsheetName = reportName
-	}
-
 	// Create sheets writer
-	writer, err := sheets.NewWriter(ctx, sheetsConfig, slog.Default())
+	writer, err := sheets.NewWriter(ctx, *sheetsConfig, slog.Default())
 	if err != nil {
 		return fmt.Errorf("failed to create sheets writer: %w", err)
 	}
