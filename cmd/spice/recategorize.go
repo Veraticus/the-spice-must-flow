@@ -154,10 +154,10 @@ Examples:
 					Status:       model.StatusUnclassified,
 					ClassifiedAt: time.Now(),
 				}
-				if err := store.SaveClassification(ctx, &classification); err != nil {
+				if saveErr := store.SaveClassification(ctx, &classification); saveErr != nil {
 					slog.Warn("Failed to clear classification",
 						"transaction_id", txn.ID,
-						"error", err)
+						"error", saveErr)
 				}
 			}
 

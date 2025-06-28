@@ -228,7 +228,7 @@ func (s *SQLiteStorage) GetClassificationsByConfidence(ctx context.Context, maxC
 		JOIN transactions t ON c.transaction_id = t.id
 		WHERE c.confidence < ?`
 
-	args := []interface{}{maxConfidence}
+	args := []any{maxConfidence}
 
 	if excludeUserModified {
 		query += ` AND c.status != ?`

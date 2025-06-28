@@ -709,6 +709,21 @@ func (e *ClassificationEngine) handleBatchReview(ctx context.Context, needsRevie
 				if len(parts) > 1 {
 					categoryDescription = parts[1]
 				}
+
+				// If description is empty, user chose to let AI generate it
+				if categoryDescription == "" {
+					generatedDesc, _, err := e.classifier.GenerateCategoryDescription(ctx, classification.Category)
+					if err != nil {
+						slog.Warn("Failed to generate category description, using empty description",
+							"category", classification.Category,
+							"error", err)
+					} else {
+						categoryDescription = generatedDesc
+						slog.Debug("Generated category description",
+							"category", classification.Category,
+							"description", categoryDescription)
+					}
+				}
 			} else if result.Suggestion != nil && result.Suggestion.IsNew && classification.Category != "" {
 				// Original logic for AI-suggested new categories
 				needsNewCategory = true

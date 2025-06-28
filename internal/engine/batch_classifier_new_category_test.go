@@ -131,10 +131,10 @@ func TestBatchClassifier_NewCategoryCreation(t *testing.T) {
 		assert.Contains(t, hobbiesCategory.Description, "User provided description")
 
 		// Verify transactions were classified
-		classifications, err := db.GetClassificationsByDateRange(ctx,
+		classifications, getErr := db.GetClassificationsByDateRange(ctx,
 			time.Now().Add(-48*time.Hour),
 			time.Now().Add(24*time.Hour))
-		require.NoError(t, err)
+		require.NoError(t, getErr)
 
 		classifiedCount := 0
 		for _, c := range classifications {
