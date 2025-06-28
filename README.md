@@ -516,6 +516,60 @@ Notes (optional): Cleaning service payment
   Matches checks for $100.00 or $200.00 → Home Services
 ```
 
+### 7. Recategorize Transactions
+
+Fix misclassified transactions or apply new vendor rules retroactively:
+
+```bash
+# Recategorize specific merchant transactions
+spice recategorize --merchant "AMAZON"
+
+# Recategorize all transactions in a category
+spice recategorize --category "Miscellaneous"
+
+# Recategorize by date range
+spice recategorize --from 2024-01-01 --to 2024-12-31
+
+# Combine filters
+spice recategorize --merchant "AUTOMATIC PAYMENT" --from 2024-01-01
+
+# Preview without making changes
+spice recategorize --category "Other" --dry-run
+
+# Skip confirmation prompt
+spice recategorize --merchant "STARBUCKS" --force
+```
+
+**How recategorization works:**
+1. Finds transactions matching your criteria
+2. Clears their existing classifications
+3. Re-runs AI classification on ONLY those transactions
+4. Applies current vendor rules and check patterns
+5. Lets you review and approve new suggestions
+
+**Common use cases:**
+- **After adding vendor rules**: Create a rule, then recategorize past transactions
+- **Fixing bulk mistakes**: When many transactions were wrongly categorized
+- **Category reorganization**: After splitting or merging categories
+- **Model improvements**: Apply better AI categorization to historical data
+
+Example workflow:
+```bash
+# Realize all "AUTOMATIC PAYMENT - THANK" should be Credit Card Payments
+$ spice vendors create "AUTOMATIC PAYMENT - THANK" "Credit Card Payments"
+$ spice recategorize --merchant "AUTOMATIC PAYMENT - THANK"
+
+🔄 Starting recategorization...
+🤖 Running AI classification...
+
+📊 Recategorization Summary:
+  Total transactions: 12
+  Auto-accepted: 12      # Now uses vendor rule
+  Manually reviewed: 0
+
+✓ Recategorization complete!
+```
+
 ### Additional Commands
 
 ```bash
@@ -540,6 +594,12 @@ spice checks add                      # Create pattern interactively
 spice checks edit <id>               # Edit existing pattern
 spice checks delete <id>             # Delete pattern
 spice checks test <amount>           # Test pattern matching
+
+# Recategorize transactions
+spice recategorize --merchant "AMAZON"   # Re-classify all Amazon transactions
+spice recategorize --category "Other"    # Re-classify all "Other" transactions
+spice recategorize --from 2024-01-01     # Re-classify transactions since date
+spice recategorize --dry-run             # Preview what would be recategorized
 
 # Database operations
 spice migrate                         # Run database migrations

@@ -144,49 +144,46 @@ Examples:
 			// Process transactions
 			fmt.Println(cli.InfoStyle.Render("\n🔄 Starting recategorization...")) //nolint:forbidigo // User-facing output
 
-			processed := 0
-			for i := 0; i < len(transactions); i += engineConfig.BatchSize {
-				end := i + engineConfig.BatchSize
-				if end > len(transactions) {
-					end = len(transactions)
+			// Clear existing classifications for all transactions
+			// We do this upfront to ensure they're treated as unclassified
+			for _, txn := range transactions {
+				// Mark as unclassified by setting empty category
+				classification := model.Classification{
+					Transaction:  txn,
+					Category:     "",
+					Status:       model.StatusUnclassified,
+					ClassifiedAt: time.Now(),
 				}
-
-				batch := transactions[i:end]
-
-				// Clear existing classifications for this batch
-				for _, txn := range batch {
-					// Delete existing classification by updating to null category
-					classification := model.Classification{
-						Transaction:  txn,
-						Category:     "",
-						Status:       model.StatusUnclassified,
-						ClassifiedAt: time.Now(),
-					}
-					if err := store.SaveClassification(ctx, &classification); err != nil {
-						slog.Warn("Failed to clear classification",
-							"transaction_id", txn.ID,
-							"error", err)
-					}
-				}
-
-				// Save transactions to mark them as unclassified
-				if err := store.SaveTransactions(ctx, batch); err != nil {
-					slog.Warn("Failed to update transactions for recategorization",
-						"batch_size", len(batch),
+				if err := store.SaveClassification(ctx, &classification); err != nil {
+					slog.Warn("Failed to clear classification",
+						"transaction_id", txn.ID,
 						"error", err)
-					continue
 				}
-
-				processed += len(batch)
-				fmt.Printf("\r  Progress: %d/%d transactions", processed, len(transactions)) //nolint:forbidigo // User-facing output
 			}
 
-			fmt.Println() //nolint:forbidigo // User-facing output
-
-			// Run classification engine
+			// Run classification engine on ONLY these specific transactions
 			fmt.Println(cli.InfoStyle.Render("\n🤖 Running AI classification...")) //nolint:forbidigo // User-facing output
-			if err := classificationEngine.ClassifyTransactions(ctx, nil); err != nil {
+
+			// Use batch classification options
+			batchOpts := engine.BatchClassificationOptions{
+				AutoAcceptThreshold: 0.95, // High threshold for auto-acceptance in recategorization
+				BatchSize:           batchSize,
+				ParallelWorkers:     2,
+				SkipManualReview:    false, // Always allow manual review for recategorization
+			}
+
+			summary, err := classificationEngine.ClassifySpecificTransactions(ctx, transactions, batchOpts)
+			if err != nil {
 				return fmt.Errorf("classification failed: %w", err)
+			}
+
+			// Show summary
+			fmt.Printf("\n📊 Recategorization Summary:\n")                       //nolint:forbidigo // User-facing output
+			fmt.Printf("  Total transactions: %d\n", summary.TotalTransactions) //nolint:forbidigo // User-facing output
+			fmt.Printf("  Auto-accepted: %d\n", summary.AutoAcceptedTxns)       //nolint:forbidigo // User-facing output
+			fmt.Printf("  Manually reviewed: %d\n", summary.NeedsReviewTxns)    //nolint:forbidigo // User-facing output
+			if summary.FailedCount > 0 {
+				fmt.Printf("  Failed: %d\n", summary.FailedCount) //nolint:forbidigo // User-facing output
 			}
 
 			fmt.Println(cli.SuccessStyle.Render("\n✓ Recategorization complete!")) //nolint:forbidigo // User-facing output

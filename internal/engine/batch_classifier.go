@@ -168,6 +168,89 @@ func (e *ClassificationEngine) ClassifyTransactionsBatch(ctx context.Context, fr
 	return summary, nil
 }
 
+// ClassifySpecificTransactions performs batch classification on a specific set of transactions.
+// Unlike ClassifyTransactionsBatch, this method does not fetch unclassified transactions
+// but instead processes the exact transactions provided. This is useful for recategorization.
+func (e *ClassificationEngine) ClassifySpecificTransactions(ctx context.Context, transactions []model.Transaction, opts BatchClassificationOptions) (*BatchClassificationSummary, error) {
+	startTime := time.Now()
+
+	if len(transactions) == 0 {
+		slog.Info("No transactions to classify")
+		return &BatchClassificationSummary{}, nil
+	}
+
+	// Group by merchant
+	merchantGroups := e.groupByMerchant(transactions)
+	sortedMerchants := e.sortMerchantsByVolume(merchantGroups)
+
+	slog.Info("Starting specific transaction classification",
+		"total_transactions", len(transactions),
+		"unique_merchants", len(merchantGroups),
+		"auto_accept_threshold", fmt.Sprintf("%.0f%%", opts.AutoAcceptThreshold*100))
+
+	// Get categories upfront
+	categories, err := e.storage.GetCategories(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get categories: %w", err)
+	}
+
+	// Process all merchants in parallel
+	results := e.processMerchantsParallel(ctx, sortedMerchants, merchantGroups, categories, opts)
+
+	// Build summary and separate results
+	summary := &BatchClassificationSummary{
+		TotalMerchants:    len(merchantGroups),
+		TotalTransactions: len(transactions),
+		ProcessingTime:    time.Since(startTime),
+	}
+
+	var autoAccepted []BatchResult
+	var needsReview []BatchResult
+
+	for _, result := range results {
+		if result.Error != nil {
+			summary.FailedCount++
+			slog.Warn("Failed to classify merchant",
+				"merchant", result.Merchant,
+				"error", result.Error)
+			continue
+		}
+
+		if result.Suggestion != nil && result.Suggestion.Score >= opts.AutoAcceptThreshold && !result.Suggestion.IsNew {
+			result.AutoAccepted = true
+			autoAccepted = append(autoAccepted, result)
+			summary.AutoAcceptedCount++
+			summary.AutoAcceptedTxns += len(result.Transactions)
+		} else {
+			needsReview = append(needsReview, result)
+			summary.NeedsReviewCount++
+			summary.NeedsReviewTxns += len(result.Transactions)
+		}
+	}
+
+	// Auto-save high confidence classifications
+	if err := e.saveAutoAcceptedBatch(ctx, autoAccepted); err != nil {
+		slog.Error("Failed to save some auto-accepted classifications", "error", err)
+	}
+
+	// Handle manual review for remaining items (unless skipped)
+	if len(needsReview) > 0 && !opts.SkipManualReview {
+		if err := e.handleBatchReview(ctx, needsReview, categories); err != nil {
+			return summary, fmt.Errorf("batch review failed: %w", err)
+		}
+	} else if len(needsReview) > 0 {
+		slog.Info("Skipping manual review",
+			"merchants_skipped", len(needsReview),
+			"transactions_skipped", summary.NeedsReviewTxns,
+			"reason", fmt.Sprintf("below %.0f%% confidence threshold", opts.AutoAcceptThreshold*100))
+
+		// For recategorization, we might not want to auto-save low confidence results
+		// Let the user decide via the SkipManualReview flag
+	}
+
+	return summary, nil
+}
+
 // processMerchantsParallel processes merchants in parallel batches.
 func (e *ClassificationEngine) processMerchantsParallel(
 	ctx context.Context,
