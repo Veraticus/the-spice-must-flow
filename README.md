@@ -424,7 +424,7 @@ spice classify --batch --from 2024-01-01 --to 2024-12-31
 
 ### 5. Export to Google Sheets
 
-Export your categorized transactions:
+Export your categorized transactions to a comprehensive financial report:
 
 ```bash
 # Export current month
@@ -435,7 +435,34 @@ spice export --month 2024-01
 
 # Export custom date range
 spice export --from 2024-01-01 --to 2024-03-31
+
+# Export full year (validates data coverage)
+spice export --year 2024
 ```
+
+**Export Format:**
+
+The Google Sheets export creates a multi-tab financial report optimized for tax preparation:
+
+1. **Expenses Tab**: All expense transactions with date, amount, vendor, category, and business percentage
+2. **Income Tab**: All income transactions with source and category information
+3. **Vendor Summary**: Vendor-to-category mappings with total spending per vendor
+4. **Category Summary**: Category totals with business percentages and month-by-month breakdowns
+5. **Business Expenses**: Pre-calculated business deductions for Schedule C tax filing
+6. **Monthly Flow**: Cash flow analysis showing income vs expenses by month
+
+**Key Features:**
+- Automatic separation of income and expenses
+- Business expense calculations for tax deductions
+- Month-by-month trend analysis
+- Data validation ensures all transactions are categorized
+- Warning system for data gaps (30+ days without transactions)
+- Professional formatting with currency display, bold headers, and frozen rows
+
+**Export Requirements:**
+- All transactions in the date range must be categorized
+- The system validates data completeness before export
+- Large datasets are exported in batches for reliability
 
 ### 6. Database Checkpoints
 

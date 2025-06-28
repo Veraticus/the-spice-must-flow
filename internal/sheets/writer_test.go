@@ -201,7 +201,7 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	}
 }
 
-func TestWriter_prepareReportData(t *testing.T) {
+func TestWriter_aggregateData(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	writer := &Writer{
 		config: DefaultConfig(),
@@ -217,10 +217,11 @@ func TestWriter_prepareReportData(t *testing.T) {
 				MerchantName: "Grocery Store",
 				Amount:       50.00,
 			},
-			Category:   "Groceries",
-			Status:     model.StatusClassifiedByAI,
-			Confidence: 0.95,
-			Notes:      "Weekly shopping",
+			Category:        "Groceries",
+			Status:          model.StatusClassifiedByAI,
+			Confidence:      0.95,
+			Notes:           "Weekly shopping",
+			BusinessPercent: 0,
 		},
 		{
 			Transaction: model.Transaction{
@@ -229,10 +230,24 @@ func TestWriter_prepareReportData(t *testing.T) {
 				MerchantName: "Gas Station",
 				Amount:       40.00,
 			},
-			Category:   "Transportation",
-			Status:     model.StatusUserModified,
-			Confidence: 1.0,
-			Notes:      "",
+			Category:        "Transportation",
+			Status:          model.StatusUserModified,
+			Confidence:      1.0,
+			Notes:           "Business trip",
+			BusinessPercent: 50,
+		},
+		{
+			Transaction: model.Transaction{
+				ID:           "3",
+				Date:         time.Date(2024, 1, 25, 0, 0, 0, 0, time.UTC),
+				MerchantName: "Salary Deposit",
+				Amount:       1000.00,
+			},
+			Category:        "Income",
+			Status:          model.StatusClassifiedByRule,
+			Confidence:      1.0,
+			Notes:           "",
+			BusinessPercent: 0,
 		},
 	}
 
@@ -241,7 +256,7 @@ func TestWriter_prepareReportData(t *testing.T) {
 			Start: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			End:   time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
 		},
-		TotalAmount: 90.00,
+		TotalAmount: 1090.00,
 		ByCategory: map[string]service.CategorySummary{
 			"Groceries": {
 				Count:  1,
@@ -251,59 +266,53 @@ func TestWriter_prepareReportData(t *testing.T) {
 				Count:  1,
 				Amount: 40.00,
 			},
+			"Income": {
+				Count:  1,
+				Amount: 1000.00,
+			},
 		},
 		ClassifiedBy: map[model.ClassificationStatus]int{
-			model.StatusClassifiedByAI: 1,
-			model.StatusUserModified:   1,
+			model.StatusClassifiedByAI:   1,
+			model.StatusUserModified:     1,
+			model.StatusClassifiedByRule: 1,
 		},
 	}
 
-	values := writer.prepareReportData(classifications, summary)
-
-	// Verify structure
-	assert.Greater(t, len(values), 15, "should have header, summary, categories, and transactions")
-
-	// Check header
-	assert.Equal(t, "Finance Report", values[0][0])
-	assert.Contains(t, values[0][1], "Jan 1, 2024")
-	assert.Contains(t, values[0][1], "Jan 31, 2024")
-
-	// Check summary section
-	summaryStart := -1
-	for i, row := range values {
-		if len(row) > 0 && row[0] == "Summary" {
-			summaryStart = i
-			break
-		}
+	// Create category types map for the test
+	categoryTypes := map[string]model.CategoryType{
+		"Groceries":      model.CategoryTypeExpense,
+		"Transportation": model.CategoryTypeExpense,
+		"Income":         model.CategoryTypeIncome,
 	}
-	require.NotEqual(t, -1, summaryStart, "should have summary section")
 
-	// Check category breakdown
-	categoryStart := -1
-	for i, row := range values {
-		if len(row) > 0 && row[0] == "Category Breakdown" {
-			categoryStart = i
-			break
-		}
-	}
-	require.NotEqual(t, -1, categoryStart, "should have category breakdown")
+	tabData, err := writer.aggregateData(classifications, summary, categoryTypes)
+	require.NoError(t, err)
 
-	// Check transaction details
-	detailsStart := -1
-	for i, row := range values {
-		if len(row) > 0 && row[0] == "Transaction Details" {
-			detailsStart = i
-			break
-		}
-	}
-	require.NotEqual(t, -1, detailsStart, "should have transaction details")
+	// Verify income and expense separation
+	assert.Len(t, tabData.Income, 1, "should have 1 income transaction")
+	assert.Len(t, tabData.Expenses, 2, "should have 2 expense transactions")
 
-	// Verify transaction data (should be sorted by date, newest first)
-	transactionRow := values[detailsStart+2]             // First transaction after header
-	assert.Equal(t, "2024-01-20", transactionRow[0])     // Date
-	assert.Equal(t, "Gas Station", transactionRow[1])    // Merchant
-	assert.Equal(t, 40.00, transactionRow[2])            // Amount
-	assert.Equal(t, "Transportation", transactionRow[3]) // Category
+	// Verify business expenses
+	assert.Len(t, tabData.BusinessExpenses, 1, "should have 1 business expense")
+	assert.Equal(t, 50, tabData.BusinessExpenses[0].BusinessPct)
+	assert.Equal(t, "20", tabData.BusinessExpenses[0].DeductibleAmount.String())
+
+	// Verify vendor summary
+	assert.Len(t, tabData.VendorSummary, 3, "should have 3 vendors")
+
+	// Verify category summary
+	assert.Len(t, tabData.CategorySummary, 3, "should have 3 categories")
+
+	// Verify monthly flow
+	assert.Len(t, tabData.MonthlyFlow, 1, "should have 1 month")
+	assert.Equal(t, "1000", tabData.MonthlyFlow[0].TotalIncome.String())
+	assert.Equal(t, "90", tabData.MonthlyFlow[0].TotalExpenses.String())
+	assert.Equal(t, "910", tabData.MonthlyFlow[0].NetFlow.String())
+
+	// Verify totals
+	assert.Equal(t, "1000", tabData.TotalIncome.String())
+	assert.Equal(t, "90", tabData.TotalExpenses.String())
+	assert.Equal(t, "20", tabData.TotalDeductible.String())
 }
 
 func TestDefaultConfig(t *testing.T) {
@@ -343,4 +352,299 @@ func TestWriter_WriteWithMockService(t *testing.T) {
 	// if the Writer was refactored to accept an interface instead of
 	// the concrete sheets.Service type
 	t.Skip("Requires refactoring to support service interface")
+}
+
+// Formatting tests
+
+func TestFormatCurrencyColumn(t *testing.T) {
+	req := formatCurrencyColumn(123, 1, 0, 100)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.RepeatCell)
+	assert.Equal(t, int64(123), req.RepeatCell.Range.SheetId)
+	assert.Equal(t, int64(0), req.RepeatCell.Range.StartRowIndex)
+	assert.Equal(t, int64(100), req.RepeatCell.Range.EndRowIndex)
+	assert.Equal(t, int64(1), req.RepeatCell.Range.StartColumnIndex)
+	assert.Equal(t, int64(2), req.RepeatCell.Range.EndColumnIndex)
+	assert.Equal(t, "CURRENCY", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type)
+	assert.Equal(t, "$#,##0.00", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Pattern)
+	assert.Equal(t, "userEnteredFormat.numberFormat", req.RepeatCell.Fields)
+}
+
+func TestFormatPercentageColumn(t *testing.T) {
+	req := formatPercentageColumn(456, 3, 1, 50)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.RepeatCell)
+	assert.Equal(t, int64(456), req.RepeatCell.Range.SheetId)
+	assert.Equal(t, int64(1), req.RepeatCell.Range.StartRowIndex)
+	assert.Equal(t, int64(50), req.RepeatCell.Range.EndRowIndex)
+	assert.Equal(t, int64(3), req.RepeatCell.Range.StartColumnIndex)
+	assert.Equal(t, int64(4), req.RepeatCell.Range.EndColumnIndex)
+	assert.Equal(t, "PERCENT", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type)
+	assert.Equal(t, "0%", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Pattern)
+}
+
+func TestFormatDateColumn(t *testing.T) {
+	req := formatDateColumn(789, 0, 1, 200)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.RepeatCell)
+	assert.Equal(t, int64(789), req.RepeatCell.Range.SheetId)
+	assert.Equal(t, int64(1), req.RepeatCell.Range.StartRowIndex)
+	assert.Equal(t, int64(200), req.RepeatCell.Range.EndRowIndex)
+	assert.Equal(t, int64(0), req.RepeatCell.Range.StartColumnIndex)
+	assert.Equal(t, int64(1), req.RepeatCell.Range.EndColumnIndex)
+	assert.Equal(t, "DATE", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type)
+	assert.Equal(t, "yyyy-mm-dd", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Pattern)
+}
+
+func TestFormatHeaderRow(t *testing.T) {
+	req := formatHeaderRow(111, 0, 0, 5)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.RepeatCell)
+	assert.Equal(t, int64(111), req.RepeatCell.Range.SheetId)
+	assert.Equal(t, int64(0), req.RepeatCell.Range.StartRowIndex)
+	assert.Equal(t, int64(1), req.RepeatCell.Range.EndRowIndex)
+	assert.Equal(t, int64(0), req.RepeatCell.Range.StartColumnIndex)
+	assert.Equal(t, int64(5), req.RepeatCell.Range.EndColumnIndex)
+	assert.True(t, req.RepeatCell.Cell.UserEnteredFormat.TextFormat.Bold)
+	assert.Equal(t, "userEnteredFormat.textFormat.bold", req.RepeatCell.Fields)
+}
+
+func TestFreezeRows(t *testing.T) {
+	req := freezeRows(222, 2)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.UpdateSheetProperties)
+	assert.Equal(t, int64(222), req.UpdateSheetProperties.Properties.SheetId)
+	assert.Equal(t, int64(2), req.UpdateSheetProperties.Properties.GridProperties.FrozenRowCount)
+	assert.Equal(t, "gridProperties.frozenRowCount", req.UpdateSheetProperties.Fields)
+}
+
+func TestAddBorders(t *testing.T) {
+	req := addBorders(333, 0, 10, 0, 5)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.UpdateBorders)
+	assert.Equal(t, int64(333), req.UpdateBorders.Range.SheetId)
+	assert.Equal(t, int64(0), req.UpdateBorders.Range.StartRowIndex)
+	assert.Equal(t, int64(10), req.UpdateBorders.Range.EndRowIndex)
+	assert.Equal(t, int64(0), req.UpdateBorders.Range.StartColumnIndex)
+	assert.Equal(t, int64(5), req.UpdateBorders.Range.EndColumnIndex)
+
+	// Check border style
+	assert.Equal(t, "SOLID", req.UpdateBorders.Top.Style)
+	assert.Equal(t, "SOLID", req.UpdateBorders.Bottom.Style)
+	assert.Equal(t, "SOLID", req.UpdateBorders.Left.Style)
+	assert.Equal(t, "SOLID", req.UpdateBorders.Right.Style)
+}
+
+func TestAutoResizeColumns(t *testing.T) {
+	req := autoResizeColumns(444, 2, 8)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.AutoResizeDimensions)
+	assert.Equal(t, int64(444), req.AutoResizeDimensions.Dimensions.SheetId)
+	assert.Equal(t, "COLUMNS", req.AutoResizeDimensions.Dimensions.Dimension)
+	assert.Equal(t, int64(2), req.AutoResizeDimensions.Dimensions.StartIndex)
+	assert.Equal(t, int64(8), req.AutoResizeDimensions.Dimensions.EndIndex)
+}
+
+func TestFormatNumberColumn(t *testing.T) {
+	req := formatNumberColumn(555, 4, 1, 100)
+
+	assert.NotNil(t, req)
+	assert.NotNil(t, req.RepeatCell)
+	assert.Equal(t, int64(555), req.RepeatCell.Range.SheetId)
+	assert.Equal(t, int64(1), req.RepeatCell.Range.StartRowIndex)
+	assert.Equal(t, int64(100), req.RepeatCell.Range.EndRowIndex)
+	assert.Equal(t, int64(4), req.RepeatCell.Range.StartColumnIndex)
+	assert.Equal(t, int64(5), req.RepeatCell.Range.EndColumnIndex)
+	assert.Equal(t, "NUMBER", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type)
+	assert.Equal(t, "#,##0", req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Pattern)
+}
+
+func TestWriter_formatExpensesTab(t *testing.T) {
+	writer := &Writer{
+		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		config: DefaultConfig(),
+	}
+
+	requests := writer.formatExpensesTab(100)
+
+	// Should have: header row, freeze, date column, currency column, percentage column, auto-resize, borders
+	assert.Len(t, requests, 7)
+
+	// Verify each request type
+	foundHeader := false
+	foundFreeze := false
+	foundDate := false
+	foundCurrency := false
+	foundPercentage := false
+	foundAutoResize := false
+	foundBorders := false
+
+	for _, req := range requests {
+		if req.RepeatCell != nil && req.RepeatCell.Cell.UserEnteredFormat != nil {
+			if req.RepeatCell.Cell.UserEnteredFormat.TextFormat != nil && req.RepeatCell.Cell.UserEnteredFormat.TextFormat.Bold {
+				foundHeader = true
+			}
+			if req.RepeatCell.Cell.UserEnteredFormat.NumberFormat != nil {
+				switch req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type {
+				case "DATE":
+					foundDate = true
+				case "CURRENCY":
+					foundCurrency = true
+				case "PERCENT":
+					foundPercentage = true
+				}
+			}
+		}
+		if req.UpdateSheetProperties != nil {
+			foundFreeze = true
+		}
+		if req.AutoResizeDimensions != nil {
+			foundAutoResize = true
+		}
+		if req.UpdateBorders != nil {
+			foundBorders = true
+		}
+	}
+
+	assert.True(t, foundHeader, "should have header formatting")
+	assert.True(t, foundFreeze, "should have freeze rows")
+	assert.True(t, foundDate, "should have date formatting")
+	assert.True(t, foundCurrency, "should have currency formatting")
+	assert.True(t, foundPercentage, "should have percentage formatting")
+	assert.True(t, foundAutoResize, "should have auto-resize")
+	assert.True(t, foundBorders, "should have borders")
+}
+
+func TestWriter_formatIncomeTab(t *testing.T) {
+	writer := &Writer{
+		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		config: DefaultConfig(),
+	}
+
+	requests := writer.formatIncomeTab(200)
+
+	// Should have: header row, freeze, date column, currency column, auto-resize, borders
+	assert.Len(t, requests, 6)
+
+	// Verify it doesn't have percentage formatting (income tab doesn't have business %)
+	hasPercentage := false
+	for _, req := range requests {
+		if req.RepeatCell != nil && req.RepeatCell.Cell.UserEnteredFormat != nil &&
+			req.RepeatCell.Cell.UserEnteredFormat.NumberFormat != nil &&
+			req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type == "PERCENT" {
+			hasPercentage = true
+		}
+	}
+	assert.False(t, hasPercentage, "Income tab should not have percentage formatting")
+}
+
+func TestWriter_formatVendorSummaryTab(t *testing.T) {
+	writer := &Writer{
+		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		config: DefaultConfig(),
+	}
+
+	requests := writer.formatVendorSummaryTab(300)
+
+	// Should have: header row, freeze, currency column, number column, auto-resize, borders
+	assert.Len(t, requests, 6)
+
+	// Verify it has number formatting
+	hasNumber := false
+	for _, req := range requests {
+		if req.RepeatCell != nil && req.RepeatCell.Cell.UserEnteredFormat != nil &&
+			req.RepeatCell.Cell.UserEnteredFormat.NumberFormat != nil &&
+			req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type == "NUMBER" {
+			hasNumber = true
+		}
+	}
+	assert.True(t, hasNumber, "Vendor Summary tab should have number formatting")
+}
+
+func TestWriter_formatCategorySummaryTab(t *testing.T) {
+	writer := &Writer{
+		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		config: DefaultConfig(),
+	}
+
+	requests := writer.formatCategorySummaryTab(400)
+
+	// Should have multiple requests including conditional formatting
+	assert.True(t, len(requests) > 10, "Category Summary tab should have many formatting requests")
+
+	// Verify it has conditional formatting
+	hasConditional := false
+	for _, req := range requests {
+		if req.AddConditionalFormatRule != nil {
+			hasConditional = true
+			// Verify the conditional rule is properly structured
+			assert.NotNil(t, req.AddConditionalFormatRule.Rule)
+			assert.NotNil(t, req.AddConditionalFormatRule.Rule.BooleanRule)
+			assert.Equal(t, "CUSTOM_FORMULA", req.AddConditionalFormatRule.Rule.BooleanRule.Condition.Type)
+		}
+	}
+	assert.True(t, hasConditional, "Category Summary tab should have conditional formatting")
+}
+
+func TestWriter_formatBusinessExpensesTab(t *testing.T) {
+	writer := &Writer{
+		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		config: DefaultConfig(),
+	}
+
+	requests := writer.formatBusinessExpensesTab(500)
+
+	// Should have: header row, freeze, date column, 2 currency columns, percentage column, auto-resize, borders
+	assert.Len(t, requests, 8)
+
+	// Count currency columns (should be 2)
+	currencyCount := 0
+	for _, req := range requests {
+		if req.RepeatCell != nil && req.RepeatCell.Cell.UserEnteredFormat != nil &&
+			req.RepeatCell.Cell.UserEnteredFormat.NumberFormat != nil &&
+			req.RepeatCell.Cell.UserEnteredFormat.NumberFormat.Type == "CURRENCY" {
+			currencyCount++
+		}
+	}
+	assert.Equal(t, 2, currencyCount, "Business Expenses tab should have 2 currency columns")
+}
+
+func TestWriter_formatMonthlyFlowTab(t *testing.T) {
+	writer := &Writer{
+		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		config: DefaultConfig(),
+	}
+
+	requests := writer.formatMonthlyFlowTab(600)
+
+	// Should have multiple requests including conditional formatting for Net Flow
+	assert.True(t, len(requests) >= 7, "Monthly Flow tab should have at least 7 formatting requests")
+
+	// Verify it has 2 conditional formatting rules (red for negative, green for positive)
+	conditionalCount := 0
+	for _, req := range requests {
+		if req.AddConditionalFormatRule != nil {
+			conditionalCount++
+			rule := req.AddConditionalFormatRule.Rule
+			assert.NotNil(t, rule)
+			assert.NotNil(t, rule.BooleanRule)
+
+			// Check that it targets the Net Flow column (column 3)
+			assert.Equal(t, int64(3), rule.Ranges[0].StartColumnIndex)
+			assert.Equal(t, int64(4), rule.Ranges[0].EndColumnIndex)
+		}
+	}
+	assert.Equal(t, 2, conditionalCount, "Monthly Flow tab should have 2 conditional formatting rules")
+}
+
+func TestWriter_applyFormattingToAllTabs_Integration(t *testing.T) {
+	// This is an integration test that would require mocking the Google Sheets API
+	t.Skip("Requires mocking Google Sheets API for full integration test")
 }

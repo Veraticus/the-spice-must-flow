@@ -796,7 +796,111 @@ checkpoint:
 
 ---
 
-## **9. Implementation Details**
+## **9. Google Sheets Export Format**
+
+### **Overview**
+
+The Google Sheets export creates a comprehensive financial report optimized for tax preparation and financial analysis. The multi-tab structure separates income and expenses, provides vendor and category summaries, and calculates business expense deductions.
+
+### **Tab Structure**
+
+#### **Tab 1: Expenses**
+All expense transactions excluding income, with columns:
+- Date (YYYY-MM-DD format)
+- Amount (always positive)
+- Vendor
+- Category
+- Business % (0-100)
+- Notes
+
+Sorted by date descending (newest first).
+
+#### **Tab 2: Income**
+All income transactions, with columns:
+- Date
+- Amount
+- Source (vendor/payer)
+- Category
+- Notes
+
+#### **Tab 3: Vendor Summary**
+Aggregated vendor data showing:
+- Vendor Name
+- Associated Category
+- Total Amount
+- Transaction Count
+
+Sorted by total amount descending.
+
+#### **Tab 4: Category Summary**
+Category-level analysis including:
+- Category Name
+- Type (Income/Expense)
+- Total Amount
+- Transaction Count
+- Business % (for expense categories)
+- Month-by-month breakdown (Jan-Dec columns)
+
+Separate sections for Income and Expense categories.
+
+#### **Tab 5: Business Expenses**
+Tax-focused view showing only business-related expenses:
+- Date
+- Vendor
+- Category
+- Original Amount
+- Business %
+- Deductible Amount (Amount × Business%)
+- Notes
+
+Grouped by category with subtotals and grand total for Schedule C.
+
+#### **Tab 6: Monthly Flow**
+Cash flow analysis with:
+- Month
+- Total Income
+- Total Expenses
+- Net Flow (Income - Expenses)
+- Running Balance
+
+Includes yearly totals and averages.
+
+### **Data Validation**
+
+Before export, the system ensures:
+1. **No unclassified transactions**: All transactions in the date range must be categorized
+2. **Data continuity**: Warns about gaps of 30+ days without transactions
+3. **Amount integrity**: All amounts stored as positive values (direction indicated by category type)
+
+### **Formatting Applied**
+
+- **Currency**: All amounts formatted as $#,##0.00
+- **Headers**: Bold section headers and column titles
+- **Frozen rows**: Header rows frozen for scrolling
+- **Column sizing**: Auto-sized for optimal readability
+- **Conditional formatting**: Negative values in Monthly Flow highlighted
+- **Borders**: Section separators for visual clarity
+
+### **Implementation Details**
+
+The export process:
+1. Validates transaction completeness
+2. Aggregates data by vendor and category
+3. Calculates business expense deductions
+4. Generates month-by-month breakdowns
+5. Writes to sheets in batches (1000 rows) to avoid API limits
+6. Applies formatting in a single batch operation
+
+### **API Considerations**
+
+- **Batch operations**: Minimize API calls by batching writes
+- **Retry logic**: Exponential backoff for transient failures
+- **Clear before write**: Removes existing data to prevent duplicates
+- **Progress feedback**: Updates user on export progress
+
+---
+
+## **10. Implementation Details**
 
 ### **Retry Logic Implementation**
 

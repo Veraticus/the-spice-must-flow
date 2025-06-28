@@ -10,7 +10,7 @@ import (
 
 // MockWriter is a mock implementation of ReportWriter for testing.
 type MockWriter struct {
-	WriteFunc           func(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary) error
+	WriteFunc           func(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) error
 	LastSummary         *service.ReportSummary
 	WriteCalls          []WriteCall
 	LastClassifications []model.Classification
@@ -33,7 +33,7 @@ func NewMockWriter() *MockWriter {
 }
 
 // Write implements the ReportWriter interface.
-func (m *MockWriter) Write(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary) error {
+func (m *MockWriter) Write(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -43,7 +43,7 @@ func (m *MockWriter) Write(ctx context.Context, classifications []model.Classifi
 
 	var err error
 	if m.WriteFunc != nil {
-		err = m.WriteFunc(ctx, classifications, summary)
+		err = m.WriteFunc(ctx, classifications, summary, categoryTypes)
 	}
 
 	m.WriteCalls = append(m.WriteCalls, WriteCall{
@@ -91,7 +91,7 @@ func (m *MockWriter) SetWriteError(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.WriteFunc = func(_ context.Context, _ []model.Classification, _ *service.ReportSummary) error {
+	m.WriteFunc = func(_ context.Context, _ []model.Classification, _ *service.ReportSummary, _ map[string]model.CategoryType) error {
 		return err
 	}
 }

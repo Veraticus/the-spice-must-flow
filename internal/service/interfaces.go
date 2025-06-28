@@ -120,3 +120,5 @@ type RetryOptions struct {
 	MaxDelay     time.Duration
 	Multiplier   float64
 }
+
+// ReportWriter defines the contract for output generation.

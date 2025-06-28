@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 16
+const ExpectedSchemaVersion = 17
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -552,6 +552,21 @@ var migrations = []Migration{
 			}
 
 			slog.Info("Removed confidence boost from check patterns")
+			return nil
+		},
+	},
+	{
+		Version:     17,
+		Description: "Add business_percent to classifications",
+		Up: func(tx *sql.Tx) error {
+			if _, err := tx.Exec(`
+				ALTER TABLE classifications 
+				ADD COLUMN business_percent REAL DEFAULT 0
+			`); err != nil {
+				return fmt.Errorf("failed to add business_percent column: %w", err)
+			}
+
+			slog.Info("Added business_percent column to classifications table")
 			return nil
 		},
 	},

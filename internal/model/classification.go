@@ -16,12 +16,13 @@ const (
 
 // Classification represents a transaction after processing.
 type Classification struct {
-	ClassifiedAt time.Time
-	Category     string
-	Status       ClassificationStatus
-	Notes        string
-	Transaction  Transaction
-	Confidence   float64
+	ClassifiedAt    time.Time
+	Category        string
+	Status          ClassificationStatus
+	Notes           string
+	Transaction     Transaction
+	Confidence      float64
+	BusinessPercent float64 // 0-100, percentage that's business-deductible
 }
 
 // PendingClassification represents a transaction awaiting user confirmation.

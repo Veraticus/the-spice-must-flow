@@ -82,6 +82,18 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to retrieve classifications: %w", err)
 	}
 
+	// Fetch all categories to determine their types
+	categories, err := storageService.GetCategories(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve categories: %w", err)
+	}
+
+	// Build category type map
+	categoryTypes := make(map[string]model.CategoryType)
+	for _, cat := range categories {
+		categoryTypes[cat.Name] = cat.Type
+	}
+
 	// Check data coverage and classification status if exporting
 	if export {
 		// Get unclassified transactions to check completeness
@@ -141,7 +153,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 
 	// Handle export to Google Sheets
 	if export {
-		if err := exportToSheets(ctx, classifications, summary); err != nil {
+		if err := exportToSheets(ctx, classifications, summary, categoryTypes); err != nil {
 			return fmt.Errorf("failed to export to Google Sheets: %w", err)
 		}
 		slog.Info(cli.FormatSuccess("Successfully exported to Google Sheets!"))
@@ -248,7 +260,7 @@ Top Categories:`, summary.TotalAmount, len(classifications), len(summary.ByCateg
 	return content
 }
 
-func exportToSheets(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary) error {
+func exportToSheets(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) error {
 	// Load Google Sheets config from environment
 	sheetsConfig := sheets.DefaultConfig()
 	if err := sheetsConfig.LoadFromEnv(); err != nil {
@@ -268,7 +280,7 @@ func exportToSheets(ctx context.Context, classifications []model.Classification,
 	}
 
 	// Write the report
-	if err := writer.Write(ctx, classifications, summary); err != nil {
+	if err := writer.Write(ctx, classifications, summary, categoryTypes); err != nil {
 		return fmt.Errorf("failed to write report: %w", err)
 	}
 

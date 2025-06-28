@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/plaid/plaid-go/v20 v20.1.0
 	github.com/schollz/progressbar/v3 v3.18.0
+	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0

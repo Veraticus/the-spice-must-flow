@@ -59,14 +59,15 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO classifications (
 			transaction_id, category, status, confidence, 
-			classified_at, notes
-		) VALUES (?, ?, ?, ?, ?, ?)
+			classified_at, notes, business_percent
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(transaction_id) DO UPDATE SET
 			category = excluded.category,
 			status = excluded.status,
 			confidence = excluded.confidence,
 			classified_at = excluded.classified_at,
-			notes = excluded.notes
+			notes = excluded.notes,
+			business_percent = excluded.business_percent
 	`,
 		classification.Transaction.ID,
 		classification.Category,
@@ -74,6 +75,7 @@ func (s *SQLiteStorage) saveClassificationTx(ctx context.Context, tx *sql.Tx, cl
 		classification.Confidence,
 		classification.ClassifiedAt,
 		classification.Notes,
+		classification.BusinessPercent,
 	)
 
 	if err != nil {
@@ -148,7 +150,8 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 			t.id, t.hash, t.date, t.name, t.merchant_name,
 			t.amount, t.categories, t.account_id,
 			t.transaction_type, t.check_number,
-			c.category, c.status, c.confidence, c.classified_at, c.notes
+			c.category, c.status, c.confidence, c.classified_at, c.notes,
+			c.business_percent
 		FROM classifications c
 		JOIN transactions t ON c.transaction_id = t.id
 		WHERE t.date >= ? AND t.date <= ?
@@ -184,6 +187,7 @@ func (s *SQLiteStorage) getClassificationsByDateRangeTx(ctx context.Context, q q
 			&c.Confidence,
 			&c.ClassifiedAt,
 			&c.Notes,
+			&c.BusinessPercent,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan classification: %w", err)
@@ -223,7 +227,8 @@ func (s *SQLiteStorage) GetClassificationsByConfidence(ctx context.Context, maxC
 			t.id, t.hash, t.date, t.name, t.merchant_name,
 			t.amount, t.categories, t.account_id,
 			t.transaction_type, t.check_number,
-			c.category, c.status, c.confidence, c.classified_at, c.notes
+			c.category, c.status, c.confidence, c.classified_at, c.notes,
+			c.business_percent
 		FROM classifications c
 		JOIN transactions t ON c.transaction_id = t.id
 		WHERE c.confidence < ?`
@@ -267,6 +272,7 @@ func (s *SQLiteStorage) GetClassificationsByConfidence(ctx context.Context, maxC
 			&c.Confidence,
 			&c.ClassifiedAt,
 			&c.Notes,
+			&c.BusinessPercent,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan classification: %w", err)
