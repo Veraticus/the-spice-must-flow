@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 17
+const ExpectedSchemaVersion = 19
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -567,6 +567,228 @@ var migrations = []Migration{
 			}
 
 			slog.Info("Added business_percent column to classifications table")
+			return nil
+		},
+	},
+	{
+		Version:     18,
+		Description: "Add pattern rules for intelligent categorization",
+		Up: func(tx *sql.Tx) error {
+			// Create pattern_rules table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS pattern_rules (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL,
+					description TEXT,
+					merchant_pattern TEXT,
+					is_regex BOOLEAN DEFAULT FALSE,
+					amount_condition TEXT CHECK(amount_condition IN ('lt', 'le', 'eq', 'ge', 'gt', 'range', 'any')),
+					amount_value REAL,
+					amount_min REAL,
+					amount_max REAL,
+					direction TEXT CHECK(direction IN ('income', 'expense', 'transfer') OR direction IS NULL),
+					default_category TEXT NOT NULL,
+					confidence REAL DEFAULT 0.8 CHECK(confidence >= 0 AND confidence <= 1),
+					priority INTEGER DEFAULT 0,
+					is_active BOOLEAN DEFAULT TRUE,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					use_count INTEGER DEFAULT 0
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create pattern_rules table: %w", err)
+			}
+
+			// Create indexes for pattern_rules
+			indexes := []string{
+				`CREATE INDEX idx_pattern_rules_merchant ON pattern_rules(merchant_pattern)`,
+				`CREATE INDEX idx_pattern_rules_category ON pattern_rules(default_category)`,
+				`CREATE INDEX idx_pattern_rules_active ON pattern_rules(is_active)`,
+				`CREATE INDEX idx_pattern_rules_priority ON pattern_rules(priority DESC)`,
+			}
+
+			for _, index := range indexes {
+				if _, err := tx.Exec(index); err != nil {
+					return fmt.Errorf("failed to create index: %w", err)
+				}
+			}
+
+			// Create trigger to update updated_at timestamp
+			if _, err := tx.Exec(`
+				CREATE TRIGGER update_pattern_rules_timestamp 
+				AFTER UPDATE ON pattern_rules
+				FOR EACH ROW
+				BEGIN
+					UPDATE pattern_rules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+				END
+			`); err != nil {
+				return fmt.Errorf("failed to create updated_at trigger: %w", err)
+			}
+
+			slog.Info("Created pattern_rules table for intelligent categorization")
+			return nil
+		},
+	},
+	{
+		Version:     19,
+		Description: "Add AI analysis session and report tables",
+		Up: func(tx *sql.Tx) error {
+			// Create analysis_sessions table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS analysis_sessions (
+					id TEXT PRIMARY KEY,
+					started_at DATETIME NOT NULL,
+					last_attempt DATETIME NOT NULL,
+					completed_at DATETIME,
+					status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'validating', 'completed', 'failed')),
+					attempts INTEGER DEFAULT 0,
+					error TEXT,
+					report_id TEXT,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_sessions table: %w", err)
+			}
+
+			// Create analysis_reports table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS analysis_reports (
+					id TEXT PRIMARY KEY,
+					session_id TEXT NOT NULL,
+					generated_at DATETIME NOT NULL,
+					period_start DATETIME NOT NULL,
+					period_end DATETIME NOT NULL,
+					coherence_score REAL NOT NULL CHECK(coherence_score >= 0 AND coherence_score <= 1),
+					insights TEXT, -- JSON array
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (session_id) REFERENCES analysis_sessions(id)
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_reports table: %w", err)
+			}
+
+			// Create analysis_issues table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS analysis_issues (
+					id TEXT PRIMARY KEY,
+					report_id TEXT NOT NULL,
+					type TEXT NOT NULL CHECK(type IN ('miscategorized', 'inconsistent', 'missing_pattern', 'duplicate_pattern', 'ambiguous_vendor')),
+					severity TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+					description TEXT NOT NULL,
+					current_category TEXT,
+					suggested_category TEXT,
+					transaction_ids TEXT NOT NULL, -- JSON array
+					affected_count INTEGER NOT NULL,
+					confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (report_id) REFERENCES analysis_reports(id)
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_issues table: %w", err)
+			}
+
+			// Create analysis_fixes table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS analysis_fixes (
+					id TEXT PRIMARY KEY,
+					issue_id TEXT NOT NULL,
+					type TEXT NOT NULL,
+					description TEXT NOT NULL,
+					data TEXT NOT NULL, -- JSON object
+					applied BOOLEAN DEFAULT FALSE,
+					applied_at DATETIME,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (issue_id) REFERENCES analysis_issues(id)
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_fixes table: %w", err)
+			}
+
+			// Create analysis_suggested_patterns table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS analysis_suggested_patterns (
+					id TEXT PRIMARY KEY,
+					report_id TEXT NOT NULL,
+					name TEXT NOT NULL,
+					description TEXT NOT NULL,
+					impact TEXT NOT NULL,
+					pattern TEXT NOT NULL, -- JSON object representing PatternRule
+					example_txn_ids TEXT NOT NULL, -- JSON array
+					match_count INTEGER NOT NULL,
+					confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (report_id) REFERENCES analysis_reports(id)
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_suggested_patterns table: %w", err)
+			}
+
+			// Create analysis_category_stats table
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS analysis_category_stats (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					report_id TEXT NOT NULL,
+					category_id TEXT NOT NULL,
+					category_name TEXT NOT NULL,
+					transaction_count INTEGER NOT NULL,
+					total_amount REAL NOT NULL,
+					consistency REAL NOT NULL CHECK(consistency >= 0 AND consistency <= 1),
+					issues INTEGER NOT NULL,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (report_id) REFERENCES analysis_reports(id)
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_category_stats table: %w", err)
+			}
+
+			// Create indexes for analysis tables
+			indexes := []string{
+				// Sessions indexes
+				`CREATE INDEX idx_analysis_sessions_status ON analysis_sessions(status)`,
+				`CREATE INDEX idx_analysis_sessions_report_id ON analysis_sessions(report_id)`,
+				`CREATE INDEX idx_analysis_sessions_started_at ON analysis_sessions(started_at DESC)`,
+
+				// Reports indexes
+				`CREATE INDEX idx_analysis_reports_session_id ON analysis_reports(session_id)`,
+				`CREATE INDEX idx_analysis_reports_period ON analysis_reports(period_start, period_end)`,
+
+				// Issues indexes
+				`CREATE INDEX idx_analysis_issues_report_id ON analysis_issues(report_id)`,
+				`CREATE INDEX idx_analysis_issues_type ON analysis_issues(type)`,
+				`CREATE INDEX idx_analysis_issues_severity ON analysis_issues(severity)`,
+
+				// Fixes indexes
+				`CREATE INDEX idx_analysis_fixes_issue_id ON analysis_fixes(issue_id)`,
+				`CREATE INDEX idx_analysis_fixes_applied ON analysis_fixes(applied)`,
+
+				// Suggested patterns indexes
+				`CREATE INDEX idx_analysis_suggested_patterns_report_id ON analysis_suggested_patterns(report_id)`,
+
+				// Category stats indexes
+				`CREATE INDEX idx_analysis_category_stats_report_id ON analysis_category_stats(report_id)`,
+				`CREATE INDEX idx_analysis_category_stats_category_id ON analysis_category_stats(category_id)`,
+			}
+
+			for _, index := range indexes {
+				if _, err := tx.Exec(index); err != nil {
+					return fmt.Errorf("failed to create index: %w", err)
+				}
+			}
+
+			// Create triggers for updated_at timestamps
+			if _, err := tx.Exec(`
+				CREATE TRIGGER update_analysis_sessions_timestamp 
+				AFTER UPDATE ON analysis_sessions
+				FOR EACH ROW
+				BEGIN
+					UPDATE analysis_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+				END
+			`); err != nil {
+				return fmt.Errorf("failed to create analysis_sessions updated_at trigger: %w", err)
+			}
+
+			slog.Info("Created AI analysis tables for session management and report storage")
 			return nil
 		},
 	},

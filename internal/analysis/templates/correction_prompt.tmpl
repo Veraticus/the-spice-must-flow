@@ -1,0 +1,34 @@
+You previously attempted to analyze financial transactions, but your response contained invalid JSON. I need you to correct the JSON syntax error and provide a valid response.
+
+## Original Task
+{{.OriginalPrompt}}
+
+## Your Invalid Response
+{{.InvalidResponse}}
+
+## Error Details
+{{.ErrorDetails}}
+
+{{if .ErrorSection}}
+## Problematic Section
+The error appears to be near line {{.LineNumber}}, column {{.ColumnNumber}}:
+```
+{{.ErrorSection}}
+```
+{{end}}
+
+## Instructions for Correction
+
+1. Review the JSON syntax error described above
+2. Common issues to check:
+   - Missing or extra commas
+   - Unclosed brackets or braces
+   - Unescaped special characters in strings
+   - Missing quotation marks around property names
+   - Invalid numeric values
+
+3. Provide the complete, corrected JSON response
+4. Ensure the response matches the expected schema structure
+5. Do not include any text before or after the JSON object
+
+Please provide only the corrected JSON response:

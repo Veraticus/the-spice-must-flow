@@ -364,7 +364,35 @@ func (e *ClassificationEngine) processMerchantBatch(
 			Transactions: txns,
 		}
 
-		// Check vendor rule
+		// Check pattern rules first (if pattern classifier is available)
+		if e.patternClassifier != nil {
+			patternRanking, err := e.patternClassifier.ClassifyWithPatterns(ctx, txns)
+			if err != nil {
+				slog.Warn("pattern classification failed",
+					"merchant", merchant,
+					"error", err)
+			} else if patternRanking != nil {
+				// Use pattern-based classification
+				result.Suggestion = patternRanking
+				// Auto-accept if confidence meets threshold
+				if patternRanking.Score >= opts.AutoAcceptThreshold {
+					result.AutoAccepted = true
+				}
+				results[i] = result
+
+				// Log pattern classification
+				slog.Info("merchant classified (pattern rule)",
+					"merchant", merchant,
+					"category", patternRanking.Category,
+					"confidence", fmt.Sprintf("%.2f", patternRanking.Score),
+					"transaction_count", len(txns))
+				continue
+			}
+		}
+
+		// Fall back to vendor rule for backward compatibility
+		// DEPRECATED: Vendor rules don't validate transaction direction.
+		// Pattern rules should be used instead for proper direction validation.
 		vendor, err := e.getVendor(ctx, merchant)
 		if err == nil && vendor != nil {
 			// Use existing vendor rule
@@ -378,7 +406,7 @@ func (e *ClassificationEngine) processMerchantBatch(
 			results[i] = result
 
 			// Log vendor rule match
-			slog.Info("merchant classified (vendor rule)",
+			slog.Info("merchant classified (vendor rule - DEPRECATED)",
 				"merchant", merchant,
 				"category", vendor.Category,
 				"confidence", "1.00",

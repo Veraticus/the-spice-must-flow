@@ -61,6 +61,15 @@ type Storage interface {
 	DeleteCheckPattern(ctx context.Context, id int64) error
 	IncrementCheckPatternUseCount(ctx context.Context, id int64) error
 
+	// Pattern rule operations
+	CreatePatternRule(ctx context.Context, rule *model.PatternRule) error
+	GetPatternRule(ctx context.Context, id int) (*model.PatternRule, error)
+	GetActivePatternRules(ctx context.Context) ([]model.PatternRule, error)
+	UpdatePatternRule(ctx context.Context, rule *model.PatternRule) error
+	DeletePatternRule(ctx context.Context, id int) error
+	IncrementPatternRuleUseCount(ctx context.Context, id int) error
+	GetPatternRulesByCategory(ctx context.Context, category string) ([]model.PatternRule, error)
+
 	// Database management
 	Migrate(ctx context.Context) error
 	BeginTx(ctx context.Context) (Transaction, error)

@@ -19,6 +19,7 @@ go.work
 /data/
 /tmp/
 /vendor/
+/prompts/
 
 # IDE files
 .vscode/

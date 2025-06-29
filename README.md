@@ -18,6 +18,8 @@ A personal finance categorization engine that ingests financial transactions fro
 - 💾 **Database Checkpoints**: Save and restore database states for safe experimentation
 - 🤝 **Category Sharing**: Export and import category configurations with colleagues
 - 💰 **Check Pattern Recognition**: Automatically categorize recurring check payments based on amount and timing patterns
+- 🎯 **Pattern-Based Classification**: Intelligent pattern rules that consider merchant, amount, and transaction direction
+- 🔍 **AI-Powered Analysis**: Analyze your categorization for inconsistencies, missing patterns, and optimization opportunities
 
 ## Installation
 
@@ -422,7 +424,44 @@ spice classify --batch --from 2024-01-01 --to 2024-12-31
 - Review batch results regularly to ensure accuracy
 - Use higher thresholds for financial/tax-critical categorization
 
-### 5. Export to Google Sheets
+### 5. Analyze Your Categorization
+
+Use AI-powered analysis to identify issues and optimize your categorization:
+
+```bash
+# Analyze last 30 days (default)
+spice analyze
+
+# Analyze specific date range
+spice analyze --start-date 2024-01-01 --end-date 2024-03-31
+
+# Focus on specific aspects
+spice analyze --focus patterns    # Pattern rule effectiveness
+spice analyze --focus categories  # Category usage and distribution
+spice analyze --focus coherence   # Overall consistency
+
+# Auto-apply high-confidence fixes
+spice analyze --auto-apply
+
+# Preview fixes without applying
+spice analyze --dry-run
+```
+
+**What the Analysis Detects:**
+- **Inconsistent Categorization**: Same vendor split across multiple categories
+- **Missing Patterns**: Recurring transactions without pattern rules
+- **Ambiguous Vendors**: Merchants that legitimately span categories
+- **Category Optimization**: Opportunities to reorganize categories
+
+**Analysis Output:**
+- **Coherence Score**: 0-100% rating of categorization consistency
+- **Prioritized Issues**: Sorted by severity and impact
+- **Actionable Fixes**: Specific recommendations with confidence scores
+- **Insights**: High-level observations about your data
+
+For detailed analysis documentation, see [AI Analysis User Guide](docs/AI_ANALYSIS_USER_GUIDE.md).
+
+### 6. Export to Google Sheets
 
 Export your categorized transactions to a comprehensive financial report:
 
@@ -464,7 +503,7 @@ The Google Sheets export creates a multi-tab financial report optimized for tax 
 - The system validates data completeness before export
 - Large datasets are exported in batches for reliability
 
-### 6. Database Checkpoints
+### 7. Database Checkpoints
 
 Save and restore your database state for safe experimentation:
 
@@ -492,7 +531,102 @@ spice checkpoint import colleague-categories.spice
 spice import --auto-checkpoint
 ```
 
-### 6. Check Pattern Management
+### 8. Pattern-Based Classification
+
+The spice-must-flow uses intelligent pattern rules for accurate transaction categorization. Pattern rules are more flexible than simple vendor rules because they consider multiple transaction attributes:
+
+#### Understanding Pattern Rules
+
+Pattern rules match transactions based on:
+- **Merchant patterns**: Exact match or regex patterns (e.g., "AMAZON.*" matches all Amazon variants)
+- **Amount conditions**: Less than, greater than, equals, ranges (e.g., "< $10" for small purchases)
+- **Transaction direction**: Income, expense, or transfer-specific rules
+- **Priority**: Higher priority rules override lower ones
+
+#### Managing Pattern Rules
+
+```bash
+# List all pattern rules
+spice patterns list
+
+# Show detailed pattern information
+spice patterns show <id>
+
+# Create a new pattern rule
+spice patterns create --name "Amazon Refunds" \
+  --merchant "Amazon" \
+  --direction income \
+  --category "Refund" \
+  --confidence 95
+
+# Create complex patterns
+spice patterns create --name "Small Coffee Purchases" \
+  --merchant "Coffee|Starbucks|Peet" --regex \
+  --amount-condition lt --amount-value 10 \
+  --category "Dining" \
+  --confidence 85
+
+# Edit existing patterns
+spice patterns edit <id> --confidence 90 --priority 10
+
+# Delete patterns
+spice patterns delete <id>
+
+# Test patterns against transactions
+spice patterns test --merchant "Amazon" --amount 25.00 --direction expense
+```
+
+#### Pattern Examples
+
+**Example 1: Amazon Refunds**
+```bash
+spice patterns create \
+  --name "Amazon Refunds" \
+  --merchant "Amazon" \
+  --direction income \
+  --category "Refund" \
+  --confidence 95 \
+  --description "Amazon income transactions are usually refunds"
+```
+
+**Example 2: Small Food Purchases**
+```bash
+spice patterns create \
+  --name "Quick Food" \
+  --merchant ".*" --regex \
+  --amount-condition lt --amount-value 20 \
+  --category "Fast Food" \
+  --confidence 70 \
+  --description "Small transactions under $20 are often fast food"
+```
+
+**Example 3: Large Purchases Need Review**
+```bash
+spice patterns create \
+  --name "Large Expense Review" \
+  --amount-condition gt --amount-value 1000 \
+  --category "Large Purchase" \
+  --confidence 50 \
+  --priority 100 \
+  --description "Flag large purchases for manual review"
+```
+
+#### Pattern vs Vendor Rules
+
+Pattern rules are the recommended approach over vendor rules because:
+
+| Feature | Pattern Rules | Vendor Rules |
+|---------|--------------|--------------|
+| Direction validation | ✅ Yes | ❌ No |
+| Amount conditions | ✅ Yes | ❌ No |
+| Regex matching | ✅ Yes | ❌ No |
+| Priority system | ✅ Yes | ❌ No |
+| Use counting | ✅ Yes | ❌ No |
+| Confidence scoring | ✅ Yes | ❌ No |
+
+**Migration Tip**: Vendor rules still work but are deprecated. Pattern rules are checked first during classification.
+
+### 9. Check Pattern Management
 
 Automatically categorize check transactions based on patterns:
 
@@ -543,9 +677,107 @@ Notes (optional): Cleaning service payment
   Matches checks for $100.00 or $200.00 → Home Services
 ```
 
-### 7. Recategorize Transactions
+### 10. Migrating to Pattern-Based Classification
 
-Fix misclassified transactions or apply new vendor rules retroactively:
+If you have existing classifications using vendor rules, here's how to migrate to the more powerful pattern-based system:
+
+#### Step 1: Analyze Your Current Vendor Rules
+```bash
+# List all vendor rules to understand current mappings
+spice vendors list
+```
+
+#### Step 2: Create Pattern Rules from Vendor Rules
+For each vendor rule, create a more intelligent pattern rule:
+
+```bash
+# Old vendor rule: "AMAZON" → "Shopping"
+# Better pattern rules:
+spice patterns create --name "Amazon Shopping" \
+  --merchant "Amazon" --direction expense \
+  --category "Shopping" --confidence 85
+
+spice patterns create --name "Amazon Refunds" \
+  --merchant "Amazon" --direction income \
+  --category "Refund" --confidence 95
+```
+
+#### Step 3: Identify Common Patterns
+Look for transaction patterns that vendor rules miss:
+
+```bash
+# Find all transactions in "Miscellaneous" or "Other" categories
+spice transactions list --category "Miscellaneous"
+
+# Create patterns for common groups
+spice patterns create --name "Small Subscriptions" \
+  --amount-condition range --amount-min 5 --amount-max 20 \
+  --merchant "Spotify|Netflix|Apple" --regex \
+  --category "Subscriptions" --confidence 90
+```
+
+#### Step 4: Test Your Patterns
+Before applying patterns to all transactions:
+
+```bash
+# Test specific scenarios
+spice patterns test --merchant "Target" --amount 150 --direction expense
+
+# Run a dry-run recategorization
+spice recategorize --dry-run --from 2024-01-01
+```
+
+#### Step 5: Apply Patterns to Existing Transactions
+```bash
+# Recategorize all transactions to apply new patterns
+spice recategorize --from 2024-01-01 --force
+
+# Or recategorize specific problematic merchants
+spice recategorize --merchant "AMZN MKTP"
+spice recategorize --merchant "GOOGLE"
+```
+
+#### Migration Best Practices
+
+1. **Start with high-confidence patterns**: Create patterns for obvious cases first
+2. **Use direction wisely**: Separate income and expense patterns for the same merchant
+3. **Leverage amount conditions**: Many merchants have predictable price ranges
+4. **Monitor pattern usage**: Check `spice patterns list` to see use counts
+5. **Iterate and refine**: Adjust confidence scores based on accuracy
+
+#### Common Pattern Templates
+
+**Subscription Services:**
+```bash
+spice patterns create --name "Monthly Subscriptions" \
+  --merchant "Netflix|Spotify|HBO|Disney|Apple Music" --regex \
+  --amount-condition range --amount-min 5 --amount-max 50 \
+  --direction expense \
+  --category "Entertainment" \
+  --confidence 90
+```
+
+**Refunds and Returns:**
+```bash
+spice patterns create --name "General Refunds" \
+  --direction income \
+  --category "Refund" \
+  --confidence 80 \
+  --description "Most income transactions are refunds"
+```
+
+**Business Expenses:**
+```bash
+spice patterns create --name "Cloud Services" \
+  --merchant "AWS|Google Cloud|Azure|DigitalOcean" --regex \
+  --category "Business Services" \
+  --confidence 95 \
+  --priority 10
+```
+
+### 11. Recategorize Transactions
+
+Fix misclassified transactions or apply new pattern/vendor rules retroactively:
 
 ```bash
 # Recategorize specific merchant transactions
@@ -571,16 +803,37 @@ spice recategorize --merchant "STARBUCKS" --force
 1. Finds transactions matching your criteria
 2. Clears their existing classifications
 3. Re-runs AI classification on ONLY those transactions
-4. Applies current vendor rules and check patterns
+4. Applies pattern rules first, then vendor rules and check patterns
 5. Lets you review and approve new suggestions
 
 **Common use cases:**
+- **After adding pattern rules**: Create a pattern rule, then recategorize matching transactions
 - **After adding vendor rules**: Create a rule, then recategorize past transactions
 - **Fixing bulk mistakes**: When many transactions were wrongly categorized
 - **Category reorganization**: After splitting or merging categories
 - **Model improvements**: Apply better AI categorization to historical data
 
-Example workflow:
+Example workflows:
+
+**Pattern Rule Example:**
+```bash
+# Create pattern for Amazon refunds, then recategorize
+$ spice patterns create --name "Amazon Refunds" --merchant "Amazon" \
+    --direction income --category "Refund" --confidence 95
+$ spice recategorize --merchant "Amazon"
+
+🔄 Starting recategorization...
+🤖 Running AI classification...
+
+📊 Recategorization Summary:
+  Total transactions: 24
+  Auto-accepted: 15      # Income transactions now categorized as Refund
+  Manually reviewed: 9   # Expense transactions for manual review
+
+✓ Recategorization complete!
+```
+
+**Vendor Rule Example:**
 ```bash
 # Realize all "AUTOMATIC PAYMENT - THANK" should be Credit Card Payments
 $ spice vendors create "AUTOMATIC PAYMENT - THANK" "Credit Card Payments"
@@ -614,6 +867,14 @@ spice categories list                 # List all categories with descriptions
 spice categories add "Travel"         # Add with AI description
 spice categories update 5 --regenerate # Update with new AI description
 spice categories delete 5             # Soft delete category
+
+# Manage pattern rules
+spice patterns list                   # List all pattern rules
+spice patterns show <id>              # Show detailed pattern info
+spice patterns create                 # Create new pattern rule
+spice patterns edit <id>              # Edit existing pattern
+spice patterns delete <id>            # Delete pattern
+spice patterns test                   # Test pattern matching
 
 # Manage check patterns
 spice checks list                     # List all check patterns
@@ -660,6 +921,7 @@ internal/
   plaid/            # Plaid API client
   sheets/           # Google Sheets export
   engine/           # Core orchestration logic
+  pattern/          # Pattern-based classification system
   cli/              # CLI utilities and styling
 ```
 
@@ -670,6 +932,7 @@ Key design patterns:
 - **Command Pattern**: CLI commands as self-contained units
 - **Dynamic Categories**: Categories evolve based on usage patterns
 - **Checkpoint System**: Database snapshots for safe experimentation
+- **Pattern-Based Rules**: Flexible classification using merchant, amount, and direction patterns
 
 ## Development
 

@@ -1,0 +1,61 @@
+{
+  "coherence_score": 85,
+  "summary": "Overall categorization is good with some inconsistencies in dining and shopping categories",
+  "issues": [
+    {
+      "severity": "high",
+      "category": "pattern-inconsistency", 
+      "description": "Starbucks transactions are split between 'Coffee Shops' and 'Dining Out'",
+      "affected_transactions": ["txn_123", "txn_456", "txn_789"],
+      "suggested_fix": {
+        "type": "pattern",
+        "pattern": "STARBUCKS",
+        "category": "Coffee Shops",
+        "confidence": 95
+      }
+    }
+  ],{{if .IncludePatternSuggestions}}
+  "suggested_patterns": [
+    {
+      "pattern": "UBER.*EATS",
+      "category": "Food Delivery",
+      "example_transactions": ["txn_234", "txn_567"],
+      "potential_impact": 12,
+      "confidence": 90
+    }
+  ],{{end}}{{if .IncludeCategoryAnalysis}}
+  "category_insights": {
+    "underutilized": ["Car Insurance", "Home Insurance"],
+    "overloaded": ["Shopping"],
+    "suggested_new": [
+      {
+        "name": "Streaming Services",
+        "type": "expense",
+        "description": "Subscription streaming services like Netflix, Spotify",
+        "example_transactions": ["txn_345", "txn_678"]
+      }
+    ],
+    "suggested_merges": [
+      {
+        "from": ["Coffee Shops", "Cafes"],
+        "to": "Coffee & Tea",
+        "reason": "These categories have significant overlap"
+      }
+    ]
+  },{{end}}
+  "transaction_fixes": [
+    {
+      "transaction_id": "txn_123",
+      "current_category": "Shopping", 
+      "suggested_category": "Groceries",
+      "reason": "Transaction is from Whole Foods Market",
+      "confidence": 98
+    }
+  ],
+  "metrics": {
+    "total_analyzed": 150,
+    "issues_found": 23,
+    "patterns_suggested": 8,
+    "fixes_suggested": 15
+  }
+}

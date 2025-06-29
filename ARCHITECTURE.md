@@ -274,6 +274,17 @@ thespicemustflow/
 │   │   ├── batch_processor.go
 │   │   ├── merchant_patterns.go
 │   │   └── engine_test.go
+│   ├── pattern/                 # Pattern-based classification
+│   │   ├── interfaces.go
+│   │   ├── matcher.go
+│   │   ├── validator.go
+│   │   └── suggester.go
+│   ├── analysis/                # AI-powered analysis system
+│   │   ├── engine.go
+│   │   ├── session.go
+│   │   ├── validator.go
+│   │   ├── types.go
+│   │   └── formatter.go
 │   └── common/                  # Shared utilities
 │       ├── retry.go
 │       ├── logger.go
@@ -303,6 +314,8 @@ The `spice` CLI follows a verb-noun pattern with intuitive shortcuts:
 # Primary commands
 spice classify    # Categorize transactions
 spice vendors     # Manage vendor rules  
+spice patterns    # Manage pattern-based rules
+spice analyze     # AI-powered transaction analysis
 spice flow        # View spending flow reports
 spice migrate     # Run database migrations
 
@@ -900,7 +913,48 @@ The export process:
 
 ---
 
-## **10. Implementation Details**
+## **11. AI-Powered Analysis System**
+
+### **Overview**
+
+The AI-powered analysis system examines an entire year of transaction data to identify categorization inconsistencies, discover patterns, and suggest optimizations. This system moves beyond simple transaction-by-transaction classification to provide holistic insights about financial categorization quality.
+
+### **Core Capabilities**
+
+1. **Coherence Analysis**: Identifies merchants split across multiple categories inappropriately
+2. **Pattern Discovery**: Finds behavioral patterns that can be codified into rules
+3. **Category Optimization**: Suggests merging redundant categories or creating missing ones
+4. **Anomaly Detection**: Flags unusual transactions or potential errors
+
+### **Architecture**
+
+The analysis system (`internal/analysis/`) consists of:
+- **AnalysisEngine**: Orchestrates the analysis workflow
+- **SessionManager**: Maintains LLM context across validation rounds
+- **JSONValidator**: Ensures well-formed output from LLM
+- **ReportFormatter**: Presents actionable insights to users
+
+### **Integration with Pattern System**
+
+The analysis system generates pattern rules as output, not input:
+```
+User Data → AI Analysis → Discovered Patterns → Pattern Rules → Future Classifications
+```
+
+This creates a learning loop where the system improves over time based on actual usage patterns.
+
+### **Key Design Decisions**
+
+1. **Opus-Only Analysis**: Uses Claude 3 Opus exclusively for complex reasoning
+2. **Full-Year Context**: Analyzes entire years at once (fits within 200k token window)
+3. **JSON Output with Validation**: Structured output with recovery mechanisms
+4. **Session Persistence**: Allows recovery from failures during long analyses
+
+For detailed design documentation, see `docs/AI_ANALYSIS_DESIGN.md`.
+
+---
+
+## **12. Implementation Details**
 
 ### **Retry Logic Implementation**
 
@@ -1733,7 +1787,34 @@ func (p *CLIPrompter) getDateRange(pending []model.PendingClassification) string
 
 ---
 
-## **7. Phased Development Plan**
+## **7. Pattern-Based Classification System**
+
+### **Overview**
+
+The pattern-based classification system provides intelligent, rule-based categorization that considers multiple transaction attributes beyond just merchant name. This system addresses the limitation of simple vendor rules that don't account for transaction direction or amount patterns.
+
+### **Key Components**
+
+- **Pattern Rules**: Flexible rules combining merchant patterns, amount conditions, and transaction direction
+- **Pattern Matcher**: Evaluates transactions against all active patterns
+- **Transaction Validator**: Ensures category assignments match transaction direction
+- **Category Suggester**: Provides intelligent suggestions with confidence scoring
+
+### **Pattern Rule Capabilities**
+
+1. **Merchant Patterns**: Exact match or regex (e.g., "AMAZON.*" for all Amazon variants)
+2. **Amount Conditions**: lt, le, eq, ge, gt, range (e.g., "< $10" for small purchases)
+3. **Direction Filtering**: Income vs expense patterns for the same merchant
+4. **Priority System**: Higher priority patterns override lower ones
+5. **Confidence Scoring**: Patterns include confidence levels for nuanced classification
+
+### **Integration**
+
+Pattern rules are checked before vendor rules during classification, providing more accurate categorization while maintaining backward compatibility. The AI analysis system can generate new pattern rules based on discovered patterns in historical data.
+
+---
+
+## **8. Phased Development Plan**
 
 ### **Phase 0: Foundation & Setup**
 * **Goal:** Establish project structure, dependencies, and basic CLI shell.
@@ -1824,7 +1905,7 @@ func (p *CLIPrompter) getDateRange(pending []model.PendingClassification) string
 
 ---
 
-## **8. Testing Strategy**
+## **9. Testing Strategy**
 
 ### **Unit Testing Guidelines**
 * **Coverage Target:** >90% for business logic, >80% overall
@@ -1890,7 +1971,7 @@ func TestUserFlows(t *testing.T) {
 
 ---
 
-## **9. Configuration Reference**
+## **10. Configuration Reference**
 
 ```yaml
 # ~/.config/spice/config.yaml
@@ -1936,7 +2017,7 @@ logging:
 
 ---
 
-## **10. Performance Considerations**
+## **13. Performance Considerations**
 
 * **Batch Operations:** All database operations use prepared statements and batch inserts
 * **Connection Management:** Single SQLite connection with proper transaction boundaries
@@ -1955,7 +2036,7 @@ logging:
 
 ---
 
-## **11. Error Handling Philosophy**
+## **14. Error Handling Philosophy**
 
 The application follows these error handling principles:
 
@@ -1983,20 +2064,21 @@ Example error transformations:
 
 ---
 
-## **12. Future Extensibility**
+## **15. Future Extensibility**
 
-While out of scope for V1, the architecture supports:
+The architecture supports these future enhancements:
 
 * **Multiple Data Sources:** CSV import, other bank APIs
 * **Plugin System:** Custom categorization rules as plugins
 * **Web UI:** REST API server mode for web interface
 * **Multi-User:** Tenant isolation, user management
-* **Advanced Rules:** Pattern-based auto-categorization
 * **Receipt Matching:** Attach receipts to transactions
 * **Budget Integration:** Compare spending to budgets
 * **Recurring Transaction Detection:** Identify subscriptions
 * **Split Transactions:** Allocate single transaction to multiple categories
 * **Export Formats:** QIF, OFX, CSV in addition to Google Sheets
+* **Real-time Analysis:** Continuous learning from classification decisions
+* **Predictive Categorization:** Anticipate categories before user confirmation
 
 The interface-driven architecture makes these extensions straightforward to add without disrupting the core engine.
 

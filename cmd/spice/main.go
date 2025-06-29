@@ -35,6 +35,7 @@ func init() {
 	_ = viper.BindPFlag("logging.format", rootCmd.PersistentFlags().Lookup("log-format"))
 
 	// Add commands
+	rootCmd.AddCommand(analyzeCmd())
 	rootCmd.AddCommand(authCmd())
 	rootCmd.AddCommand(categoriesCmd())
 	rootCmd.AddCommand(checkpointCmd())
@@ -42,6 +43,7 @@ func init() {
 	rootCmd.AddCommand(classifyCmd())
 	rootCmd.AddCommand(importCmd())
 	rootCmd.AddCommand(vendorsCmd())
+	rootCmd.AddCommand(patternsCmd())
 	rootCmd.AddCommand(flowCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(institutionsCmd())

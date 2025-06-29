@@ -15,10 +15,11 @@ import (
 
 // ClassificationEngine orchestrates the classification of transactions.
 type ClassificationEngine struct {
-	storage    service.Storage
-	classifier Classifier
-	prompter   Prompter
-	batchSize  int
+	storage           service.Storage
+	classifier        Classifier
+	prompter          Prompter
+	patternClassifier *PatternClassifier
+	batchSize         int
 }
 
 // Config holds configuration options for the classification engine.
@@ -43,11 +44,20 @@ func New(storage service.Storage, classifier Classifier, prompter Prompter) *Cla
 
 // NewWithConfig creates a new classification engine with custom configuration.
 func NewWithConfig(storage service.Storage, classifier Classifier, prompter Prompter, config Config) *ClassificationEngine {
+	// Create pattern classifier
+	patternClassifier, err := NewPatternClassifier(storage)
+	if err != nil {
+		slog.Warn("failed to create pattern classifier", "error", err)
+		// Continue without pattern classifier - fall back to existing behavior
+		patternClassifier = nil
+	}
+
 	return &ClassificationEngine{
-		storage:    storage,
-		classifier: classifier,
-		prompter:   prompter,
-		batchSize:  config.BatchSize,
+		storage:           storage,
+		classifier:        classifier,
+		prompter:          prompter,
+		patternClassifier: patternClassifier,
+		batchSize:         config.BatchSize,
 	}
 }
 
@@ -127,6 +137,21 @@ func (e *ClassificationEngine) sortMerchantsByVolume(groups map[string][]model.T
 // It checks both exact matches and regex patterns.
 func (e *ClassificationEngine) getVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
 	return e.storage.FindVendorMatch(ctx, merchantName)
+}
+
+// RefreshPatternRules reloads pattern rules from storage.
+func (e *ClassificationEngine) RefreshPatternRules(ctx context.Context) error {
+	if e.patternClassifier == nil {
+		// Try to create pattern classifier if it doesn't exist
+		patternClassifier, err := NewPatternClassifier(e.storage)
+		if err != nil {
+			return fmt.Errorf("failed to create pattern classifier: %w", err)
+		}
+		e.patternClassifier = patternClassifier
+		return nil
+	}
+
+	return e.patternClassifier.RefreshPatterns(ctx)
 }
 
 // filterCategoriesByDirection filters categories based on transaction direction.
