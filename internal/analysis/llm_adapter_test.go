@@ -52,6 +52,11 @@ func (m *MockLLMClient) GenerateDescription(ctx context.Context, prompt string) 
 	return llm.DescriptionResponse{}, args.Error(1)
 }
 
+func (m *MockLLMClient) Analyze(ctx context.Context, prompt string, systemPrompt string) (string, error) {
+	args := m.Called(ctx, prompt, systemPrompt)
+	return args.String(0), args.Error(1)
+}
+
 // MockReportValidator implements ReportValidator for testing.
 type MockReportValidator struct {
 	mock.Mock
@@ -128,10 +133,8 @@ func TestAnalyzeTransactions(t *testing.T) {
 		{
 			name: "successful analysis",
 			setupMock: func(m *MockLLMClient) {
-				m.On("Classify", ctx, "test prompt").Return(
-					llm.ClassificationResponse{
-						Category: string(validJSON),
-					}, nil,
+				m.On("Analyze", ctx, "test prompt", mock.AnythingOfType("string")).Return(
+					string(validJSON), nil,
 				).Once()
 			},
 			wantJSON: string(validJSON),
@@ -141,16 +144,13 @@ func TestAnalyzeTransactions(t *testing.T) {
 			name: "retry on temporary error",
 			setupMock: func(m *MockLLMClient) {
 				// First call fails with temporary error
-				m.On("Classify", ctx, "test prompt").Return(
-					llm.ClassificationResponse{},
-					errors.New("connection timeout"),
+				m.On("Analyze", ctx, "test prompt", mock.AnythingOfType("string")).Return(
+					"", errors.New("connection timeout"),
 				).Once()
 
 				// Second call succeeds
-				m.On("Classify", ctx, "test prompt").Return(
-					llm.ClassificationResponse{
-						Category: string(validJSON),
-					}, nil,
+				m.On("Analyze", ctx, "test prompt", mock.AnythingOfType("string")).Return(
+					string(validJSON), nil,
 				).Once()
 			},
 			wantJSON: string(validJSON),
@@ -159,9 +159,8 @@ func TestAnalyzeTransactions(t *testing.T) {
 		{
 			name: "non-retryable error",
 			setupMock: func(m *MockLLMClient) {
-				m.On("Classify", ctx, "test prompt").Return(
-					llm.ClassificationResponse{},
-					errors.New("invalid API key"),
+				m.On("Analyze", ctx, "test prompt", mock.AnythingOfType("string")).Return(
+					"", errors.New("invalid API key"),
 				).Once()
 			},
 			wantJSON:    "",
@@ -171,9 +170,8 @@ func TestAnalyzeTransactions(t *testing.T) {
 		{
 			name: "max retries exceeded",
 			setupMock: func(m *MockLLMClient) {
-				m.On("Classify", ctx, "test prompt").Return(
-					llm.ClassificationResponse{},
-					errors.New("rate limit exceeded"),
+				m.On("Analyze", ctx, "test prompt", mock.AnythingOfType("string")).Return(
+					"", errors.New("rate limit exceeded"),
 				).Times(3)
 			},
 			wantJSON:    "",
@@ -236,10 +234,9 @@ func TestAnalyzeWithFallback(t *testing.T) {
 		{
 			name: "successful on first attempt",
 			setupMocks: func(mockLLM *MockLLMClient, validator *MockReportValidator) {
-				mockLLM.On("Classify", ctx, mock.Anything).Return(
-					llm.ClassificationResponse{
-						Category: string(validJSON),
-					}, nil,
+				mockLLM.On("Analyze", ctx, mock.Anything, mock.Anything).Return(
+					string(validJSON),
+					nil,
 				).Once()
 
 				validator.On("Validate", validJSON).Return(validReport, nil).Once()
@@ -254,6 +251,11 @@ func TestAnalyzeWithFallback(t *testing.T) {
 				DateRange:  DateRange{Start: time.Now(), End: time.Now()},
 				TotalCount: 1,
 				SampleSize: 1,
+				FileBasedData: &FileBasedPromptData{
+					FilePath:           "/tmp/test-transactions.json",
+					TransactionCount:   1,
+					UseFileBasedPrompt: true,
+				},
 			},
 			wantReport: validReport,
 			wantErr:    false,
@@ -263,10 +265,9 @@ func TestAnalyzeWithFallback(t *testing.T) {
 			setupMocks: func(mockLLM *MockLLMClient, validator *MockReportValidator) {
 				// First attempt returns invalid JSON
 				invalidJSON := `{"coherence_score": 85, "summary": "test"`
-				mockLLM.On("Classify", ctx, mock.Anything).Return(
-					llm.ClassificationResponse{
-						Category: invalidJSON,
-					}, nil,
+				mockLLM.On("Analyze", ctx, mock.Anything, mock.Anything).Return(
+					invalidJSON,
+					nil,
 				).Once()
 
 				// Validation fails
@@ -283,10 +284,9 @@ func TestAnalyzeWithFallback(t *testing.T) {
 				).Once()
 
 				// Correction attempt succeeds
-				mockLLM.On("Classify", ctx, mock.Anything).Return(
-					llm.ClassificationResponse{
-						Category: string(validJSON),
-					}, nil,
+				mockLLM.On("Analyze", ctx, mock.Anything, mock.Anything).Return(
+					string(validJSON),
+					nil,
 				).Once()
 
 				// Validation succeeds
@@ -302,6 +302,11 @@ func TestAnalyzeWithFallback(t *testing.T) {
 				DateRange:  DateRange{Start: time.Now(), End: time.Now()},
 				TotalCount: 1,
 				SampleSize: 1,
+				FileBasedData: &FileBasedPromptData{
+					FilePath:           "/tmp/test-transactions.json",
+					TransactionCount:   1,
+					UseFileBasedPrompt: true,
+				},
 			},
 			wantReport: validReport,
 			wantErr:    false,
@@ -310,8 +315,8 @@ func TestAnalyzeWithFallback(t *testing.T) {
 			name: "correction also fails",
 			setupMocks: func(mockLLM *MockLLMClient, _ *MockReportValidator) {
 				// First attempt fails
-				mockLLM.On("Classify", ctx, mock.Anything).Return(
-					llm.ClassificationResponse{},
+				mockLLM.On("Analyze", ctx, mock.Anything, mock.Anything).Return(
+					"",
 					errors.New("network error"),
 				).Twice() // Once for initial, once for correction
 			},
@@ -325,6 +330,11 @@ func TestAnalyzeWithFallback(t *testing.T) {
 				DateRange:  DateRange{Start: time.Now(), End: time.Now()},
 				TotalCount: 1,
 				SampleSize: 1,
+				FileBasedData: &FileBasedPromptData{
+					FilePath:           "/tmp/test-transactions.json",
+					TransactionCount:   1,
+					UseFileBasedPrompt: true,
+				},
 			},
 			wantReport:  nil,
 			wantErr:     true,

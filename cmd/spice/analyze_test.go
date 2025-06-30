@@ -13,11 +13,11 @@ import (
 
 func TestAnalyzeCmd(t *testing.T) {
 	tests := []struct {
+		outputCheck   func(t *testing.T, output string)
 		name          string
+		errorContains string
 		args          []string
 		wantErr       bool
-		errorContains string
-		outputCheck   func(t *testing.T, output string)
 	}{
 		{
 			name: "default execution shows under development message",
@@ -85,18 +85,18 @@ func TestAnalyzeCmd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create command
 			cmd := analyzeCmd()
-			
+
 			// Set args
 			cmd.SetArgs(tt.args)
-			
+
 			// Capture output
 			var buf bytes.Buffer
 			cmd.SetOut(&buf)
 			cmd.SetErr(&buf)
-			
+
 			// Execute
 			err := cmd.Execute()
-			
+
 			// Check error
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -106,7 +106,7 @@ func TestAnalyzeCmd(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
-			
+
 			// Check output
 			if tt.outputCheck != nil {
 				tt.outputCheck(t, buf.String())
@@ -119,20 +119,20 @@ func TestAnalyzeCmd_DefaultDates(t *testing.T) {
 	// Test that default dates are set correctly when not provided
 	cmd := analyzeCmd()
 	cmd.SetArgs([]string{})
-	
+
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	
+
 	err := cmd.Execute()
 	require.NoError(t, err)
-	
+
 	output := buf.String()
-	
+
 	// Check that it uses a date range (default is 30 days ago to today)
 	now := time.Now()
 	thirtyDaysAgo := now.AddDate(0, 0, -30)
-	
+
 	// The output should contain dates in the expected range
 	assert.Contains(t, output, "Starting transaction analysis")
 	assert.Contains(t, output, thirtyDaysAgo.Format("2006-01-02"))
@@ -142,16 +142,16 @@ func TestAnalyzeCmd_DefaultDates(t *testing.T) {
 func TestAnalyzeCmd_Help(t *testing.T) {
 	cmd := analyzeCmd()
 	cmd.SetArgs([]string{"--help"})
-	
+
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	
+
 	err := cmd.Execute()
 	require.NoError(t, err)
-	
+
 	output := buf.String()
-	
+
 	// Check help content
 	assert.Contains(t, output, "Perform AI-powered analysis")
 	assert.Contains(t, output, "Examples:")
@@ -167,13 +167,13 @@ func TestAnalyzeCmd_Help(t *testing.T) {
 func TestAnalyzeCmd_Interruption(t *testing.T) {
 	// Test context cancellation handling
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	cmd := analyzeCmd()
 	cmd.SetContext(ctx)
-	
+
 	// Cancel immediately
 	cancel()
-	
+
 	// Execute should still work (the current implementation doesn't actually use context)
 	err := cmd.Execute()
 	assert.NoError(t, err)
@@ -181,19 +181,19 @@ func TestAnalyzeCmd_Interruption(t *testing.T) {
 
 func TestAnalyzeCmd_FocusOptions(t *testing.T) {
 	validFocusOptions := []string{"all", "coherence", "patterns", "categories"}
-	
+
 	for _, focus := range validFocusOptions {
 		t.Run("focus_"+focus, func(t *testing.T) {
 			cmd := analyzeCmd()
 			cmd.SetArgs([]string{"--focus", focus})
-			
+
 			var buf bytes.Buffer
 			cmd.SetOut(&buf)
 			cmd.SetErr(&buf)
-			
+
 			err := cmd.Execute()
 			assert.NoError(t, err)
-			
+
 			output := buf.String()
 			assert.Contains(t, output, "focus="+focus)
 		})
@@ -203,34 +203,34 @@ func TestAnalyzeCmd_FocusOptions(t *testing.T) {
 func TestAnalyzeCmd_InvalidDateCombinations(t *testing.T) {
 	tests := []struct {
 		name          string
+		errorContains string
 		args          []string
 		wantErr       bool
-		errorContains string
 	}{
 		{
-			name:          "start date after end date",
-			args:          []string{"--start-date", "2024-12-31", "--end-date", "2024-01-01"},
-			wantErr:       false, // Current implementation doesn't validate this
+			name:    "start date after end date",
+			args:    []string{"--start-date", "2024-12-31", "--end-date", "2024-01-01"},
+			wantErr: false, // Current implementation doesn't validate this
 		},
 		{
-			name:          "future dates",
-			args:          []string{"--start-date", "2099-01-01"},
-			wantErr:       false, // Current implementation allows future dates
+			name:    "future dates",
+			args:    []string{"--start-date", "2099-01-01"},
+			wantErr: false, // Current implementation allows future dates
 		},
 		{
-			name:          "very old dates",
-			args:          []string{"--start-date", "1900-01-01"},
-			wantErr:       false, // Current implementation allows very old dates
+			name:    "very old dates",
+			args:    []string{"--start-date", "1900-01-01"},
+			wantErr: false, // Current implementation allows very old dates
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := analyzeCmd()
 			cmd.SetArgs(tt.args)
-			
+
 			err := cmd.Execute()
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errorContains != "" {
@@ -243,10 +243,10 @@ func TestAnalyzeCmd_InvalidDateCombinations(t *testing.T) {
 	}
 }
 
-// Integration test placeholder - would require full analysis engine setup
+// Integration test placeholder - would require full analysis engine setup.
 func TestAnalyzeCmd_FullIntegration(t *testing.T) {
 	t.Skip("Full integration test requires complete analysis engine implementation")
-	
+
 	// This test would:
 	// 1. Set up a test database with sample transactions
 	// 2. Create mock LLM client
@@ -257,7 +257,7 @@ func TestAnalyzeCmd_FullIntegration(t *testing.T) {
 	// 7. Test different output formats
 }
 
-// Benchmark for command parsing
+// Benchmark for command parsing.
 func BenchmarkAnalyzeCmd_Parse(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		cmd := analyzeCmd()
@@ -268,7 +268,7 @@ func BenchmarkAnalyzeCmd_Parse(b *testing.B) {
 			"--max-issues", "100",
 			"--dry-run",
 		})
-		
+
 		// Just parse, don't execute
 		_ = cmd.ParseFlags([]string{
 			"--start-date", "2024-01-01",
@@ -280,14 +280,14 @@ func BenchmarkAnalyzeCmd_Parse(b *testing.B) {
 	}
 }
 
-// Test flag parsing edge cases
+// Test flag parsing edge cases.
 func TestAnalyzeCmd_FlagParsing(t *testing.T) {
 	tests := []struct {
-		name        string
-		args        []string
-		checkFlag   string
-		expected    interface{}
-		flagType    string
+		expected  interface{}
+		name      string
+		checkFlag string
+		flagType  string
+		args      []string
 	}{
 		{
 			name:      "max-issues default",
@@ -332,16 +332,16 @@ func TestAnalyzeCmd_FlagParsing(t *testing.T) {
 			flagType:  "string",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := analyzeCmd()
 			cmd.SetArgs(tt.args)
-			
+
 			// Parse flags without executing
 			err := cmd.ParseFlags(tt.args)
 			require.NoError(t, err)
-			
+
 			// Check flag value
 			switch tt.flagType {
 			case "int":
@@ -361,7 +361,7 @@ func TestAnalyzeCmd_FlagParsing(t *testing.T) {
 	}
 }
 
-// Test that all documented examples work
+// Test that all documented examples work.
 func TestAnalyzeCmd_Examples(t *testing.T) {
 	examples := []struct {
 		name string
@@ -392,60 +392,60 @@ func TestAnalyzeCmd_Examples(t *testing.T) {
 			args: []string{"--session-id", "abc123"},
 		},
 	}
-	
+
 	for _, ex := range examples {
 		t.Run(ex.name, func(t *testing.T) {
 			cmd := analyzeCmd()
 			cmd.SetArgs(ex.args)
-			
+
 			err := cmd.Execute()
 			assert.NoError(t, err, "Example command should not error")
 		})
 	}
 }
 
-// Test output format validation once analysis is implemented
+// Test output format validation once analysis is implemented.
 func TestAnalyzeCmd_OutputFormats(t *testing.T) {
 	outputFormats := []string{"interactive", "summary", "json"}
-	
+
 	for _, format := range outputFormats {
 		t.Run("output_"+format, func(t *testing.T) {
 			cmd := analyzeCmd()
 			cmd.SetArgs([]string{"--output", format})
-			
+
 			// Currently just verifying the flag is accepted
 			err := cmd.ParseFlags([]string{"--output", format})
 			assert.NoError(t, err)
-			
+
 			val, _ := cmd.Flags().GetString("output")
 			assert.Equal(t, format, val)
 		})
 	}
 }
 
-// Test that logs are properly formatted
+// Test that logs are properly formatted.
 func TestAnalyzeCmd_LogOutput(t *testing.T) {
 	cmd := analyzeCmd()
 	cmd.SetArgs([]string{"--focus", "patterns"})
-	
+
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	
+
 	err := cmd.Execute()
 	require.NoError(t, err)
-	
+
 	output := buf.String()
-	
+
 	// Verify log format includes expected fields
 	logLines := strings.Split(output, "\n")
 	for _, line := range logLines {
 		if strings.Contains(line, "INFO") {
 			// Basic log format validation
-			assert.True(t, 
-				strings.Contains(line, "INFO") || 
-				strings.Contains(line, "ERROR") || 
-				strings.Contains(line, "WARN"),
+			assert.True(t,
+				strings.Contains(line, "INFO") ||
+					strings.Contains(line, "ERROR") ||
+					strings.Contains(line, "WARN"),
 				"Log line should have level: %s", line)
 		}
 	}

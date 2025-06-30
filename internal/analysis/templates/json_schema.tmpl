@@ -1,61 +1,71 @@
 {
-  "coherence_score": 85,
-  "summary": "Overall categorization is good with some inconsistencies in dining and shopping categories",
+  "coherence_score": 0.85,
   "issues": [
     {
+      "id": "issue_001",
+      "type": "inconsistent",
       "severity": "high",
-      "category": "pattern-inconsistency", 
       "description": "Starbucks transactions are split between 'Coffee Shops' and 'Dining Out'",
-      "affected_transactions": ["txn_123", "txn_456", "txn_789"],
-      "suggested_fix": {
-        "type": "pattern",
-        "pattern": "STARBUCKS",
-        "category": "Coffee Shops",
-        "confidence": 95
+      "transaction_ids": ["txn_123", "txn_456", "txn_789"],
+      "affected_count": 3,
+      "confidence": 0.95,
+      "current_category": "Dining Out",
+      "suggested_category": "Coffee Shops",
+      "fix": {
+        "id": "fix_001",
+        "issue_id": "issue_001",
+        "type": "create_pattern",
+        "description": "Create pattern rule for Starbucks transactions",
+        "applied": false,
+        "data": {
+          "pattern": "STARBUCKS",
+          "category": "Coffee Shops"
+        }
       }
     }
   ],{{if .IncludePatternSuggestions}}
   "suggested_patterns": [
     {
-      "pattern": "UBER.*EATS",
-      "category": "Food Delivery",
-      "example_transactions": ["txn_234", "txn_567"],
-      "potential_impact": 12,
+      "id": "pattern_001",
+      "name": "Uber Eats Pattern",
+      "description": "Matches all Uber Eats food delivery transactions",
+      "impact": "Would correctly categorize 12 transactions",
+      "example_txn_ids": ["txn_234", "txn_567"],
+      "pattern": {
+        "id": "new_pattern_001",
+        "merchant_pattern": "UBER.*EATS",
+        "default_category": "Food Delivery",
+        "priority": 100,
+        "is_regex": true
+      },
+      "match_count": 12,
       "confidence": 90
     }
-  ],{{end}}{{if .IncludeCategoryAnalysis}}
-  "category_insights": {
-    "underutilized": ["Car Insurance", "Home Insurance"],
-    "overloaded": ["Shopping"],
-    "suggested_new": [
-      {
-        "name": "Streaming Services",
-        "type": "expense",
-        "description": "Subscription streaming services like Netflix, Spotify",
-        "example_transactions": ["txn_345", "txn_678"]
-      }
-    ],
-    "suggested_merges": [
-      {
-        "from": ["Coffee Shops", "Cafes"],
-        "to": "Coffee & Tea",
-        "reason": "These categories have significant overlap"
-      }
-    ]
-  },{{end}}
-  "transaction_fixes": [
-    {
-      "transaction_id": "txn_123",
-      "current_category": "Shopping", 
-      "suggested_category": "Groceries",
-      "reason": "Transaction is from Whole Foods Market",
-      "confidence": 98
-    }
+  ],{{end}}
+  "insights": [
+    "Dining transactions show 30% inconsistency in categorization",
+    "5 recurring merchants lack pattern rules",
+    "Shopping category may be too broad - consider splitting"
   ],
-  "metrics": {
-    "total_analyzed": 150,
-    "issues_found": 23,
-    "patterns_suggested": 8,
-    "fixes_suggested": 15
+  "period_start": "2024-01-01T00:00:00Z",
+  "period_end": "2024-12-31T23:59:59Z",
+  "generated_at": "2024-06-29T00:00:00Z",
+  "id": "report_abc123",
+  "session_id": "session_xyz789",
+  "category_summary": {
+    "groceries": {
+      "category_id": "groceries",
+      "category_name": "Groceries",
+      "transaction_count": 45,
+      "total_amount": 2150.50,
+      "consistency": 0.92
+    },
+    "dining-out": {
+      "category_id": "dining-out",
+      "category_name": "Dining Out",
+      "transaction_count": 38,
+      "total_amount": 890.25,
+      "consistency": 0.78
+    }
   }
 }

@@ -266,6 +266,11 @@ func (m *engineMockLLMClient) ValidateAndCorrectResponse(ctx context.Context, co
 	return args.String(0), args.Error(1)
 }
 
+func (m *engineMockLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]interface{}) (string, error) {
+	args := m.Called(ctx, prompt, transactionData)
+	return args.String(0), args.Error(1)
+}
+
 type engineMockSessionStore struct {
 	mock.Mock
 }
@@ -414,7 +419,7 @@ func TestEngine_Analyze(t *testing.T) {
 					"insights": ["Good categorization"],
 					"suggested_patterns": []
 				}`
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(validJSON, nil)
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(validJSON, nil)
 
 				// Validation
 				report := &Report{
@@ -457,14 +462,14 @@ func TestEngine_Analyze(t *testing.T) {
 
 				// First attempt fails validation
 				invalidJSON := `{"coherence_score": "invalid"}`
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(invalidJSON, nil).Once()
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(invalidJSON, nil).Once()
 
 				validator.On("Validate", []byte(invalidJSON)).Return(nil, errors.New("invalid JSON")).Once()
 				validator.On("ExtractError", []byte(invalidJSON), mock.AnythingOfType("*errors.errorString")).Return("coherence_score", 1, 20)
 
 				// Second attempt succeeds
 				validJSON := `{"coherence_score": 75, "issues": [], "insights": ["Fixed"]}`
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(validJSON, nil).Once()
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(validJSON, nil).Once()
 
 				report := &Report{
 					CoherenceScore: 75,
@@ -496,7 +501,7 @@ func TestEngine_Analyze(t *testing.T) {
 				storage.On("GetActiveCheckPatterns", mock.Anything).Return([]model.CheckPattern{}, nil)
 
 				// All attempts fail
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(`{"invalid": true}`, nil)
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(`{"invalid": true}`, nil)
 
 				validator.On("Validate", mock.Anything).Return(nil, errors.New("validation failed"))
 				validator.On("ExtractError", mock.Anything, mock.Anything).Return("", 0, 0)
@@ -540,7 +545,7 @@ func TestEngine_Analyze(t *testing.T) {
 					}]
 				}`
 
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(validJSON, nil)
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(validJSON, nil)
 
 				report := &Report{
 					CoherenceScore: 90,
@@ -612,7 +617,7 @@ func TestEngine_Analyze(t *testing.T) {
 				storage.On("GetActiveCheckPatterns", mock.Anything).Return([]model.CheckPattern{}, nil)
 
 				validJSON := `{"coherence_score": 80, "issues": [], "insights": ["Good"]}`
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(validJSON, nil)
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(validJSON, nil)
 
 				report := &Report{CoherenceScore: 80}
 				validator.On("Validate", []byte(validJSON)).Return(report, nil)
@@ -639,7 +644,7 @@ func TestEngine_Analyze(t *testing.T) {
 				storage.On("GetActiveCheckPatterns", mock.Anything).Return([]model.CheckPattern{}, nil)
 
 				validJSON := `{"coherence_score": 95, "issues": [], "insights": ["Excellent"]}`
-				llm.On("AnalyzeTransactions", mock.Anything, mock.AnythingOfType("string")).Return(validJSON, nil)
+				llm.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).Return(validJSON, nil)
 
 				report := &Report{CoherenceScore: 95}
 				validator.On("Validate", []byte(validJSON)).Return(report, nil)
@@ -713,65 +718,6 @@ func TestEngine_Analyze(t *testing.T) {
 			reportStore.AssertExpectations(t)
 			validator.AssertExpectations(t)
 			fixApplier.AssertExpectations(t)
-		})
-	}
-}
-
-func TestEngine_sampleTransactions(t *testing.T) {
-	engine := &Engine{}
-
-	tests := []struct {
-		name         string
-		transactions []model.Transaction
-		maxSample    int
-		wantCount    int
-	}{
-		{
-			name: "fewer transactions than max",
-			transactions: []model.Transaction{
-				{ID: "1"}, {ID: "2"}, {ID: "3"},
-			},
-			maxSample: 10,
-			wantCount: 3,
-		},
-		{
-			name: "exact number of transactions",
-			transactions: []model.Transaction{
-				{ID: "1"}, {ID: "2"}, {ID: "3"}, {ID: "4"}, {ID: "5"},
-			},
-			maxSample: 5,
-			wantCount: 5,
-		},
-		{
-			name: "more transactions than max",
-			transactions: func() []model.Transaction {
-				txns := make([]model.Transaction, 100)
-				for i := range txns {
-					txns[i] = model.Transaction{ID: string(rune(i))}
-				}
-				return txns
-			}(),
-			maxSample: 20,
-			wantCount: 20,
-		},
-		{
-			name: "zero max uses default",
-			transactions: func() []model.Transaction {
-				txns := make([]model.Transaction, 2000)
-				for i := range txns {
-					txns[i] = model.Transaction{ID: string(rune(i))}
-				}
-				return txns
-			}(),
-			maxSample: 0,
-			wantCount: 1000,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sampled := engine.sampleTransactions(tt.transactions, tt.maxSample)
-			assert.Equal(t, tt.wantCount, len(sampled))
 		})
 	}
 }

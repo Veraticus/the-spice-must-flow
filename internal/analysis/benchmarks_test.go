@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Benchmark template-based prompt generation with varying transaction counts
+// Benchmark template-based prompt generation with varying transaction counts.
 func BenchmarkPromptBuilder_BuildAnalysisPrompt(b *testing.B) {
 	testCases := []struct {
 		name     string
@@ -53,10 +53,10 @@ func BenchmarkPromptBuilder_BuildAnalysisPrompt(b *testing.B) {
 	}
 }
 
-// Benchmark JSON validation with different sizes
+// Benchmark JSON validation with different sizes.
 func BenchmarkJSONValidator_Validate(b *testing.B) {
 	testCases := []struct {
-		name      string
+		name       string
 		issueCount int
 	}{
 		{"10_issues", 10},
@@ -77,13 +77,13 @@ func BenchmarkJSONValidator_Validate(b *testing.B) {
 	}
 }
 
-// Benchmark fix application
+// Benchmark fix application.
 func BenchmarkTransactionalFixApplier_ApplyFixes(b *testing.B) {
 	ctx := context.Background()
-	
+
 	b.Run("batch_processing", func(b *testing.B) {
 		fixes := generateBenchmarkFixes(100)
-		
+
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			// Simulate batch processing logic
@@ -168,11 +168,11 @@ func generateBenchmarkJSON(issueCount int) []byte {
 		PeriodEnd:      time.Now(),
 		Issues:         make([]Issue, issueCount),
 	}
-	
+
 	for i := 0; i < issueCount; i++ {
 		report.Issues[i] = generateBenchmarkIssue(i)
 	}
-	
+
 	// Use a simple JSON encoding for benchmarking
 	// In real benchmarks, we'd use json.Marshal
 	return []byte(`{"id":"bench-test","sessionID":"bench-session","coherenceScore":0.85}`)
@@ -181,7 +181,7 @@ func generateBenchmarkJSON(issueCount int) []byte {
 func generateBenchmarkFixes(count int) []Fix {
 	fixes := make([]Fix, count)
 	types := []string{"pattern", "category", "recategorize"}
-	
+
 	for i := 0; i < count; i++ {
 		fixes[i] = Fix{
 			ID:          generateID("fix", i),
@@ -210,7 +210,7 @@ func generateBenchmarkIssue(index int) Issue {
 	}
 }
 
-// Utility functions
+// Utility functions.
 func generateID(prefix string, index int) string {
 	return prefix + "_" + intToString(index)
 }
@@ -237,21 +237,21 @@ func intToString(i int) string {
 	if i == 0 {
 		return "0"
 	}
-	
+
 	var result []byte
 	negative := i < 0
 	if negative {
 		i = -i
 	}
-	
+
 	for i > 0 {
 		result = append([]byte{byte('0' + i%10)}, result...)
 		i /= 10
 	}
-	
+
 	if negative {
 		result = append([]byte{'-'}, result...)
 	}
-	
+
 	return string(result)
 }

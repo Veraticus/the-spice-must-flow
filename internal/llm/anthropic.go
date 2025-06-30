@@ -445,3 +445,66 @@ func (c *anthropicClient) parseMerchantBatchResponse(content string) (MerchantBa
 		Classifications: classifications,
 	}, nil
 }
+
+// Analyze performs general-purpose AI analysis and returns raw response text.
+func (c *anthropicClient) Analyze(ctx context.Context, prompt string, systemPrompt string) (string, error) {
+	// Use higher token limit for analysis
+	maxTokens := 4000
+	if c.maxTokens > 4000 {
+		maxTokens = c.maxTokens
+	}
+
+	requestBody := map[string]any{
+		"model":       c.model,
+		"max_tokens":  maxTokens,
+		"temperature": c.temperature,
+		"system":      systemPrompt,
+		"messages": []map[string]string{
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response anthropicResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Content) == 0 {
+		return "", fmt.Errorf("no content in response")
+	}
+
+	// Return raw content without any parsing
+	return response.Content[0].Text, nil
+}

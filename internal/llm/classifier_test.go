@@ -88,6 +88,20 @@ func (m *mockClient) ClassifyMerchantBatch(_ context.Context, _ string) (Merchan
 	return MerchantBatchResponse{}, nil
 }
 
+func (m *mockClient) Analyze(_ context.Context, prompt string, systemPrompt string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// For testing, return a simple response
+	if m.calls == 0 && len(m.errors) > 0 && m.errors[0] != nil {
+		m.calls++
+		return "", m.errors[0]
+	}
+
+	m.calls++
+	return fmt.Sprintf("Analysis result for prompt: %s", prompt), nil
+}
+
 func TestNewClassifier(t *testing.T) {
 	logger := slog.Default()
 

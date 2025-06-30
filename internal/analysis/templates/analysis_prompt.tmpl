@@ -3,7 +3,6 @@ You are an expert financial analyst tasked with analyzing personal finance trans
 ## Analysis Context
 
 You are analyzing {{.TotalCount}} transactions from {{formatDate .DateRange.Start}} to {{formatDate .DateRange.End}}.
-{{if ne .TotalCount .SampleSize}}Note: You are seeing a sample of {{.SampleSize}} transactions for analysis.{{end}}
 
 ### Available Categories
 {{range .Categories}}
@@ -32,18 +31,27 @@ No pattern rules are currently configured.
 
 ## Transactions to Analyze
 
-{{range .Transactions}}
-{{.ID}} | {{formatDate .Date}} | {{truncate .Name 50}} | {{formatAmount .Amount}} | Type: {{.Type}} | Current Category: {{join .Category ", "}}{{end}}
+The transaction data is stored in a JSON file at: {{.FileBasedData.FilePath}}
+
+Please read this file first to access the full transaction data ({{.FileBasedData.TransactionCount}} transactions). The file contains an array of transaction objects with the following fields:
+- ID: unique transaction identifier
+- Date: transaction date
+- Name: merchant/description
+- Amount: transaction amount
+- Type: transaction type (e.g., DEBIT, CHECK, etc.)
+- Category: current category assignment (may be an array)
+
+After reading the file, proceed with the analysis as described below.
 
 ## Your Task
 
 Analyze these transactions to provide:
 
-1. **Coherence Score (0-100)**: How consistent and logical are the current categorizations?
-   - 90-100: Excellent - highly consistent with clear patterns
-   - 70-89: Good - mostly consistent with minor issues
-   - 50-69: Fair - noticeable inconsistencies that need attention
-   - Below 50: Poor - significant issues requiring immediate attention
+1. **Coherence Score (0.0-1.0)**: How consistent and logical are the current categorizations?
+   - 0.90-1.00: Excellent - highly consistent with clear patterns
+   - 0.70-0.89: Good - mostly consistent with minor issues
+   - 0.50-0.69: Fair - noticeable inconsistencies that need attention
+   - Below 0.50: Poor - significant issues requiring immediate attention
 
 2. **Key Issues**: Identify specific problems with the current categorization:
    - Transactions miscategorized based on their description
@@ -79,4 +87,4 @@ Important guidelines:
 - Prioritize high-impact changes that affect multiple transactions
 - Ensure all suggested categories exist in the available categories list
 - For suggested patterns, use regex-compatible patterns when needed
-- Confidence scores: 90-100 (very confident), 70-89 (confident), 50-69 (somewhat confident), below 50 (uncertain)
+- Confidence scores must be between 0 and 1: 0.90-1.00 (very confident), 0.70-0.89 (confident), 0.50-0.69 (somewhat confident), below 0.50 (uncertain)

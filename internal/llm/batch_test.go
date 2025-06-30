@@ -276,6 +276,14 @@ func (m *mockBatchClient) GenerateDescription(_ context.Context, _ string) (Desc
 	return DescriptionResponse{}, nil
 }
 
+func (m *mockBatchClient) Analyze(_ context.Context, prompt string, systemPrompt string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	// For testing, return a simple response
+	return "Batch mock analysis response", nil
+}
+
 func TestBatchPromptGeneration(t *testing.T) {
 	classifier := &Classifier{}
 

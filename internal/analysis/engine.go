@@ -67,24 +67,36 @@ func (e *Engine) Analyze(ctx context.Context, opts Options) (*Report, error) {
 
 	// Step 4: Build prompt data
 	progress("Preparing analysis", 30)
+
+	// Always use file-based analysis
+	fileBasedData := &FileBasedPromptData{
+		TransactionCount:   len(transactions),
+		UseFileBasedPrompt: true,
+		// FilePath will be set by the LLM adapter when it creates the temp file
+	}
+	slog.Info("Using file-based analysis",
+		"transaction_count", len(transactions),
+	)
+
 	promptData := PromptData{
 		DateRange: DateRange{
 			Start: opts.StartDate,
 			End:   opts.EndDate,
 		},
-		Transactions:    e.sampleTransactions(transactions, opts.MaxIssues),
+		Transactions:    nil, // Never include transactions in prompt
 		Categories:      categories,
 		Patterns:        patterns,
 		CheckPatterns:   checkPatterns,
 		RecentVendors:   vendorAnalysis,
 		AnalysisOptions: opts,
 		TotalCount:      len(transactions),
-		SampleSize:      minInt(len(transactions), 1000), // Limit sample size
+		SampleSize:      0,
+		FileBasedData:   fileBasedData,
 	}
 
 	// Step 5: Perform analysis with validation recovery
 	progress("Running AI analysis", 40)
-	report, err := e.performAnalysisWithRecovery(ctx, session, promptData, progress)
+	report, err := e.performAnalysisWithRecovery(ctx, session, promptData, transactions, progress)
 	if err != nil {
 		return nil, e.failSession(ctx, session, fmt.Errorf("analysis failed: %w", err))
 	}
@@ -126,7 +138,7 @@ func (e *Engine) Analyze(ctx context.Context, opts Options) (*Report, error) {
 }
 
 // performAnalysisWithRecovery performs the LLM analysis with validation recovery loop.
-func (e *Engine) performAnalysisWithRecovery(ctx context.Context, session *Session, promptData PromptData, progress ProgressCallback) (*Report, error) {
+func (e *Engine) performAnalysisWithRecovery(ctx context.Context, session *Session, promptData PromptData, allTransactions []model.Transaction, progress ProgressCallback) (*Report, error) {
 	const maxAttempts = 3
 
 	// Build the initial prompt
@@ -146,8 +158,31 @@ func (e *Engine) performAnalysisWithRecovery(ctx context.Context, session *Sessi
 
 		progress(fmt.Sprintf("Analysis attempt %d/%d", attempt, maxAttempts), 40+attempt*10)
 
-		// Perform analysis
-		responseJSON, err := e.deps.LLMClient.AnalyzeTransactions(ctx, prompt)
+		// Always use file-based analysis
+		var responseJSON string
+		// Prepare transaction data for file-based analysis
+		transactionData := make(map[string]interface{})
+		transactionArray := make([]map[string]interface{}, len(allTransactions))
+
+		for i, txn := range allTransactions {
+			// Extract the first category from the slice for LLM analysis
+			var category string
+			if len(txn.Category) > 0 {
+				category = txn.Category[0]
+			}
+
+			transactionArray[i] = map[string]interface{}{
+				"ID":       txn.ID,
+				"Date":     txn.Date.Format("2006-01-02"),
+				"Name":     txn.Name,
+				"Amount":   txn.Amount,
+				"Type":     txn.Type,
+				"Category": category,
+			}
+		}
+		transactionData["transactions"] = transactionArray
+
+		responseJSON, err = e.deps.LLMClient.AnalyzeTransactionsWithFile(ctx, prompt, transactionData)
 		if err != nil {
 			lastErr = fmt.Errorf("LLM request failed (attempt %d): %w", attempt, err)
 			slog.Warn("Analysis request failed", "attempt", attempt, "error", err)
@@ -249,7 +284,12 @@ func (e *Engine) loadTransactions(ctx context.Context, startDate, endDate time.T
 	// Extract unique transactions from classifications
 	txnMap := make(map[string]model.Transaction)
 	for _, c := range classifications {
-		txnMap[c.Transaction.ID] = c.Transaction
+		txn := c.Transaction
+		// Use the classification category instead of the original transaction categories
+		if c.Category != "" {
+			txn.Category = []string{c.Category}
+		}
+		txnMap[c.Transaction.ID] = txn
 	}
 
 	// Convert to slice
@@ -330,31 +370,6 @@ func (e *Engine) analyzeVendors(_ context.Context, transactions []model.Transact
 	}
 
 	return vendors, nil
-}
-
-// sampleTransactions samples transactions for analysis, prioritizing diversity.
-func (e *Engine) sampleTransactions(transactions []model.Transaction, maxSample int) []model.Transaction {
-	if maxSample <= 0 {
-		maxSample = 1000 // Default sample size
-	}
-
-	if len(transactions) <= maxSample {
-		return transactions
-	}
-
-	// Simple sampling: take every Nth transaction
-	// TODO: Implement smarter sampling that ensures category diversity
-	step := len(transactions) / maxSample
-	if step < 1 {
-		step = 1
-	}
-
-	sampled := make([]model.Transaction, 0, maxSample)
-	for i := 0; i < len(transactions) && len(sampled) < maxSample; i += step {
-		sampled = append(sampled, transactions[i])
-	}
-
-	return sampled
 }
 
 // applyFixes applies recommended fixes from the report.

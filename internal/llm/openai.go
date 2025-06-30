@@ -455,3 +455,68 @@ func (c *openAIClient) parseMerchantBatchResponse(content string) (MerchantBatch
 		Classifications: classifications,
 	}, nil
 }
+
+// Analyze performs general-purpose AI analysis and returns raw response text.
+func (c *openAIClient) Analyze(ctx context.Context, prompt string, systemPrompt string) (string, error) {
+	// Use higher token limit for analysis
+	maxTokens := 4000
+	if c.maxTokens > 4000 {
+		maxTokens = c.maxTokens
+	}
+
+	requestBody := map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": systemPrompt,
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": c.temperature,
+		"max_tokens":  maxTokens,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response openAIResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("no completion choices returned")
+	}
+
+	// Return raw content without any parsing
+	return response.Choices[0].Message.Content, nil
+}

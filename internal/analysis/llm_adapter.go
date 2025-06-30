@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/common"
@@ -13,8 +14,9 @@ import (
 
 // LLMAnalysisAdapter wraps the LLM client with analysis-specific functionality.
 type LLMAnalysisAdapter struct {
-	client       llm.Client
-	retryOptions service.RetryOptions
+	client          llm.Client
+	tempFileManager *TempFileManager
+	retryOptions    service.RetryOptions
 }
 
 // Ensure LLMAnalysisAdapter implements LLMClient interface.
@@ -22,6 +24,9 @@ var _ LLMClient = (*LLMAnalysisAdapter)(nil)
 
 // NewLLMAnalysisAdapter creates a new LLM adapter.
 func NewLLMAnalysisAdapter(client llm.Client) *LLMAnalysisAdapter {
+	// Generate unique temp directory for this session
+	tempBaseDir := fmt.Sprintf("/tmp/spice-analysis-%d", os.Getpid())
+
 	return &LLMAnalysisAdapter{
 		client: client,
 		retryOptions: service.RetryOptions{
@@ -30,14 +35,19 @@ func NewLLMAnalysisAdapter(client llm.Client) *LLMAnalysisAdapter {
 			MaxDelay:     30 * time.Second,
 			Multiplier:   2.0,
 		},
+		tempFileManager: NewTempFileManager(tempBaseDir),
 	}
 }
 
 // NewLLMAnalysisAdapterWithRetry creates a new LLM adapter with custom retry options.
 func NewLLMAnalysisAdapterWithRetry(client llm.Client, retryOptions service.RetryOptions) *LLMAnalysisAdapter {
+	// Generate unique temp directory for this session
+	tempBaseDir := fmt.Sprintf("/tmp/spice-analysis-%d", os.Getpid())
+
 	return &LLMAnalysisAdapter{
-		client:       client,
-		retryOptions: retryOptions,
+		client:          client,
+		retryOptions:    retryOptions,
+		tempFileManager: NewTempFileManager(tempBaseDir),
 	}
 }
 
@@ -46,11 +56,35 @@ func (a *LLMAnalysisAdapter) AnalyzeTransactions(ctx context.Context, prompt str
 	var responseJSON string
 	var lastErr error
 
+	// System prompt for analysis - include "ultrathink" for better reasoning
+	systemPrompt := `You are an AI assistant specialized in financial transaction analysis. Your task is to analyze transaction categorization patterns and provide detailed insights. 
+
+IMPORTANT: Please ultrathink through this analysis carefully, examining patterns and inconsistencies thoroughly before responding.
+
+You MUST respond with ONLY a valid JSON object that matches the provided schema. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.
+
+If the prompt references a file path (starting with /tmp/spice-analysis-), please read that file to get the full transaction data before performing your analysis.
+
+Focus on:
+1. Detecting inconsistent categorizations
+2. Identifying missing pattern rules
+3. Suggesting improvements
+4. Calculating coherence scores
+
+Be specific and actionable in your recommendations.`
+
 	err := common.WithRetry(ctx, func() error {
-		// Call the LLM
-		response, err := a.client.Classify(ctx, prompt)
+		// Log the full prompt in debug mode
+		slog.Debug("Sending analysis request to LLM",
+			"prompt_length", len(prompt),
+			"system_prompt_length", len(systemPrompt),
+		)
+
+		// Use the new Analyze method for general-purpose analysis
+		response, err := a.client.Analyze(ctx, prompt, systemPrompt)
 		if err != nil {
 			lastErr = err
+			slog.Debug("LLM request failed", "error", err)
 			// Check if error is retryable
 			return &common.RetryableError{
 				Err:       fmt.Errorf("LLM request failed: %w", err),
@@ -58,9 +92,13 @@ func (a *LLMAnalysisAdapter) AnalyzeTransactions(ctx context.Context, prompt str
 			}
 		}
 
-		// The Classify method returns a ClassificationResponse, but for analysis
-		// we expect the full JSON response in the Category field
-		responseJSON = response.Category
+		// Log the response in debug mode
+		slog.Debug("Received LLM response",
+			"response_length", len(response),
+			"response_preview", truncateForLog(response, 200),
+		)
+
+		responseJSON = response
 		return nil
 	}, a.retryOptions)
 
@@ -79,9 +117,19 @@ func (a *LLMAnalysisAdapter) ValidateAndCorrectResponse(ctx context.Context, cor
 	var responseJSON string
 	var lastErr error
 
+	// System prompt for correction
+	systemPrompt := `You are a JSON correction specialist. Your task is to fix the malformed JSON response based on the error information provided.
+
+You MUST respond with ONLY a valid JSON object. Do not include any explanatory text, markdown formatting, or commentary before or after the JSON. Start your response directly with { and end with }.
+
+Focus on:
+1. Fixing the specific JSON syntax error mentioned
+2. Maintaining all the original data and structure
+3. Ensuring proper JSON formatting throughout`
+
 	err := common.WithRetry(ctx, func() error {
-		// Use a shorter retry for corrections
-		response, err := a.client.Classify(ctx, correctionPrompt)
+		// Use the Analyze method for corrections too
+		response, err := a.client.Analyze(ctx, correctionPrompt, systemPrompt)
 		if err != nil {
 			lastErr = err
 			return &common.RetryableError{
@@ -90,7 +138,7 @@ func (a *LLMAnalysisAdapter) ValidateAndCorrectResponse(ctx context.Context, cor
 			}
 		}
 
-		responseJSON = response.Category
+		responseJSON = response
 		return nil
 	}, service.RetryOptions{
 		MaxAttempts:  2, // Fewer attempts for corrections
@@ -232,4 +280,38 @@ func toLower(b byte) byte {
 		return b + ('a' - 'A')
 	}
 	return b
+}
+
+// truncateForLog truncates a string for logging, preserving readability.
+func truncateForLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+// AnalyzeTransactionsWithFile performs AI analysis using file-based approach for large datasets.
+func (a *LLMAnalysisAdapter) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]interface{}) (string, error) {
+	// Create temporary file with transaction data
+	filePath, cleanup, err := a.tempFileManager.CreateTransactionFile(transactionData)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer cleanup()
+
+	// Modify prompt to reference the file
+	filePrompt := fmt.Sprintf(`The transaction data is stored in a JSON file at: %s
+
+Please read this file to access the full transaction data before performing your analysis.
+
+%s`, filePath, prompt)
+
+	slog.Debug("Using file-based analysis",
+		"file_path", filePath,
+		"temp_dir", a.tempFileManager.GetBaseDir(),
+		"original_prompt_length", len(prompt),
+	)
+
+	// Use the standard AnalyzeTransactions with the file reference
+	return a.AnalyzeTransactions(ctx, filePrompt)
 }

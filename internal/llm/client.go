@@ -12,6 +12,9 @@ type Client interface {
 	ClassifyWithRankings(ctx context.Context, prompt string) (RankingResponse, error)
 	ClassifyMerchantBatch(ctx context.Context, prompt string) (MerchantBatchResponse, error)
 	GenerateDescription(ctx context.Context, prompt string) (DescriptionResponse, error)
+	// Analyze performs general-purpose AI analysis and returns raw response text.
+	// This is used for complex analysis tasks that return arbitrary JSON or text.
+	Analyze(ctx context.Context, prompt string, systemPrompt string) (string, error)
 	// TODO: Add when implementing direction detection
 	// ClassifyDirection(ctx context.Context, prompt string) (DirectionResponse, error)
 }

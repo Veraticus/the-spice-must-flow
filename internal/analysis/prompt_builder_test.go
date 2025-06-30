@@ -103,6 +103,11 @@ func TestBuildAnalysisPrompt(t *testing.T) {
 				AnalysisOptions: Options{
 					Focus: FocusPatterns,
 				},
+				FileBasedData: &FileBasedPromptData{
+					FilePath:           "/tmp/test-transactions.json",
+					TransactionCount:   100,
+					UseFileBasedPrompt: true,
+				},
 			},
 			wantErr: false,
 			checkOutput: func(t *testing.T, output string) {
@@ -110,9 +115,8 @@ func TestBuildAnalysisPrompt(t *testing.T) {
 				// Check that key elements are present
 				assert.Contains(t, output, "You are an expert financial analyst")
 				assert.Contains(t, output, "100 transactions")
-				assert.Contains(t, output, "sample of 2 transactions")
-				assert.Contains(t, output, "STARBUCKS STORE #12345")
-				assert.Contains(t, output, "WHOLE FOODS MARKET")
+				assert.Contains(t, output, "/tmp/test-transactions.json")
+				assert.Contains(t, output, "read this file")
 				assert.Contains(t, output, "Groceries")
 				assert.Contains(t, output, "Pattern: STARBUCKS")
 				assert.Contains(t, output, "Check #1234")
@@ -148,12 +152,17 @@ func TestBuildAnalysisPrompt(t *testing.T) {
 				TotalCount:      1,
 				SampleSize:      1,
 				AnalysisOptions: Options{},
+				FileBasedData: &FileBasedPromptData{
+					FilePath:           "/tmp/test-transactions.json",
+					TransactionCount:   1,
+					UseFileBasedPrompt: true,
+				},
 			},
 			wantErr: false,
 			checkOutput: func(t *testing.T, output string) {
 				t.Helper()
 				assert.Contains(t, output, "1 transactions")
-				assert.NotContains(t, output, "sample of")
+				assert.Contains(t, output, "/tmp/test-transactions.json")
 				assert.Contains(t, output, "No pattern rules are currently configured")
 				assert.NotContains(t, output, "Check #")
 				assert.NotContains(t, output, "Recent Vendor")
@@ -186,6 +195,11 @@ func TestBuildAnalysisPrompt(t *testing.T) {
 				SampleSize: 1,
 				AnalysisOptions: Options{
 					Focus: FocusCategories,
+				},
+				FileBasedData: &FileBasedPromptData{
+					FilePath:           "/tmp/test-transactions.json",
+					TransactionCount:   1,
+					UseFileBasedPrompt: true,
 				},
 			},
 			wantErr: false,
@@ -321,6 +335,11 @@ func TestPromptOutput(t *testing.T) {
 		TotalCount:      1,
 		SampleSize:      1,
 		AnalysisOptions: Options{},
+		FileBasedData: &FileBasedPromptData{
+			FilePath:           "/tmp/test-transactions.json",
+			TransactionCount:   1,
+			UseFileBasedPrompt: true,
+		},
 	}
 
 	prompt, err := pb.BuildAnalysisPrompt(data)
@@ -335,5 +354,5 @@ func TestPromptOutput(t *testing.T) {
 	// Ensure JSON schema is included
 	assert.True(t, strings.Contains(prompt, `"coherence_score"`))
 	assert.True(t, strings.Contains(prompt, `"issues"`))
-	assert.True(t, strings.Contains(prompt, `"transaction_fixes"`))
+	assert.True(t, strings.Contains(prompt, `"suggested_patterns"`))
 }

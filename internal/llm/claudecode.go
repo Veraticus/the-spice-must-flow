@@ -5,10 +5,27 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// Helper functions for min/max.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // claudeCodeClient implements the Client interface using Claude Code CLI.
 type claudeCodeClient struct {
@@ -51,7 +68,7 @@ func newClaudeCodeClient(cfg Config) (Client, error) {
 		model:       model,
 		temperature: temperature,
 		maxTokens:   maxTokens,
-		maxTurns:    1, // Single turn for categorization
+		maxTurns:    10, // Allow up to 10 turns for complex analysis
 		cliPath:     cliPath,
 	}, nil
 }
@@ -438,4 +455,184 @@ func (c *claudeCodeClient) parseMerchantBatchResponse(content string) (MerchantB
 	return MerchantBatchResponse{
 		Classifications: classifications,
 	}, nil
+}
+
+// Analyze performs general-purpose AI analysis and returns raw response text.
+func (c *claudeCodeClient) Analyze(ctx context.Context, prompt string, systemPrompt string) (string, error) {
+	// Build the full prompt with system context
+	fullPrompt := systemPrompt + "\n\n" + prompt
+
+	// Log prompt details in debug mode
+	slog.Debug("Claude Code analysis request",
+		"model", c.model,
+		"prompt_length", len(fullPrompt),
+		"prompt_preview", truncateStr(fullPrompt, 500),
+	)
+
+	// For very large prompts, use stdin instead of command args
+	// Command line args are limited to ~2MB on most systems
+	useStdin := len(fullPrompt) > 100000 // Use stdin for prompts over 100KB
+
+	var args []string
+	var cmd *exec.Cmd
+
+	// Check if prompt contains a file path reference to temp directory
+	var tempDir string
+	// Look for the specific pattern used by the analysis command:
+	// "The transaction data is stored in a JSON file at: /tmp/spice-analysis-XXX/transactions_UUID.json"
+	fileAtPattern := "file at: /tmp/spice-analysis-"
+	if idx := strings.Index(fullPrompt, fileAtPattern); idx != -1 {
+		// Start from after "file at: "
+		pathStart := idx + len("file at: ")
+
+		// Find the end of the directory path (up to the next slash after the directory name)
+		dirStart := pathStart
+		dirEnd := pathStart + len("/tmp/spice-analysis-")
+
+		// Continue until we find a '/' which indicates the start of the filename
+		for dirEnd < len(fullPrompt) && fullPrompt[dirEnd] != '/' {
+			dirEnd++
+		}
+
+		// Extract the directory path
+		if dirEnd < len(fullPrompt) && fullPrompt[dirEnd] == '/' {
+			tempDir = fullPrompt[dirStart:dirEnd]
+
+			// Extract more context for debugging
+			contextEnd := dirEnd + 50
+			if contextEnd > len(fullPrompt) {
+				contextEnd = len(fullPrompt)
+			}
+
+			slog.Debug("Detected temp directory in prompt",
+				"temp_dir", tempDir,
+				"full_path_context", fullPrompt[pathStart:contextEnd])
+		} else {
+			slog.Debug("Found file path pattern but couldn't extract directory",
+				"pattern_index", idx)
+		}
+	}
+
+	if useStdin {
+		// Use stdin for large prompts
+		args = []string{
+			"--print", // Required for --output-format json to return result field
+			"--output-format", "json",
+			"--model", c.model,
+			"--max-turns", strconv.Itoa(c.maxTurns),
+		}
+		// Add temp directory access if detected
+		if tempDir != "" {
+			args = append(args, "--add-dir", tempDir)
+			slog.Debug("Added temp directory access", "dir", tempDir)
+		}
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+		cmd.Stdin = strings.NewReader(fullPrompt)
+		slog.Debug("Using stdin for large prompt", "size", len(fullPrompt))
+	} else {
+		// Use command args for smaller prompts
+		args = []string{
+			"-p", fullPrompt,
+			"--output-format", "json",
+			"--model", c.model,
+			"--max-turns", strconv.Itoa(c.maxTurns),
+		}
+		// Add temp directory access if detected
+		if tempDir != "" {
+			args = append(args, "--add-dir", tempDir)
+			slog.Debug("Added temp directory access", "dir", tempDir)
+		}
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+	}
+
+	// Capture both stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Set timeout if not already set in context
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		// Use 5 minute timeout for analysis with ultrathink
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+	}
+
+	// Recreate command with potentially updated context
+	if useStdin {
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+		cmd.Stdin = strings.NewReader(fullPrompt)
+	} else {
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+	}
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Log command execution start
+	slog.Debug("Executing Claude Code command",
+		"timeout", "5m",
+		"args", args,
+	)
+
+	// Execute command
+	startTime := time.Now()
+	if err := cmd.Run(); err != nil {
+		duration := time.Since(startTime)
+		slog.Debug("Claude Code command failed",
+			"duration", duration,
+			"error", err,
+			"stderr", stderr.String(),
+			"stdout_size", stdout.Len(),
+		)
+		if stderr.Len() > 0 {
+			return "", fmt.Errorf("claude code error after %v: %s", duration, stderr.String())
+		}
+		return "", fmt.Errorf("failed to execute claude after %v: %w", duration, err)
+	}
+
+	duration := time.Since(startTime)
+	slog.Debug("Claude Code command completed",
+		"duration", duration,
+		"stdout_size", stdout.Len(),
+		"stderr_size", stderr.Len(),
+		"stdout", stdout.String(),
+		"stderr", stderr.String(),
+	)
+
+	// Parse JSON response from Claude Code
+	var response claudeCodeResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		slog.Debug("Failed to parse Claude Code JSON response",
+			"error", err,
+			"raw_output", truncateStr(stdout.String(), 1000),
+		)
+		return "", fmt.Errorf("failed to parse claude code response: %w", err)
+	}
+
+	// Check for errors in response
+	if response.IsError {
+		slog.Debug("Claude Code returned error response",
+			"is_error", response.IsError,
+			"result", truncateStr(response.Result, 500),
+		)
+		return "", fmt.Errorf("claude code error in response")
+	}
+
+	// Log response in debug mode
+	slog.Debug("Claude Code analysis response",
+		"response_length", len(response.Result),
+		"response_preview", truncateStr(response.Result, 500),
+		"is_error", response.IsError,
+	)
+
+	// Return the raw result without any parsing
+	return response.Result, nil
+}
+
+// truncateStr truncates a string for logging purposes.
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

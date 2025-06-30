@@ -57,6 +57,14 @@ func (m *mockRankingClient) ClassifyMerchantBatch(_ context.Context, _ string) (
 	return MerchantBatchResponse{}, nil
 }
 
+func (m *mockRankingClient) Analyze(_ context.Context, prompt string, systemPrompt string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	// For testing, return a simple response
+	return "Ranking mock analysis response", nil
+}
+
 func TestClassifier_SuggestCategoryRankings(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 

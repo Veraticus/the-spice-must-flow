@@ -55,6 +55,7 @@ func NewTemplatePromptBuilder() (*TemplatePromptBuilder, error) {
 // PromptData contains all data needed for the analysis prompt.
 type PromptData struct {
 	DateRange       DateRange
+	FileBasedData   *FileBasedPromptData
 	Transactions    []model.Transaction
 	Categories      []model.Category
 	Patterns        []model.PatternRule
@@ -63,6 +64,13 @@ type PromptData struct {
 	AnalysisOptions Options
 	TotalCount      int
 	SampleSize      int
+}
+
+// FileBasedPromptData contains information for file-based analysis.
+type FileBasedPromptData struct {
+	FilePath           string
+	TransactionCount   int
+	UseFileBasedPrompt bool
 }
 
 // RecentVendor represents a recently categorized vendor for context.

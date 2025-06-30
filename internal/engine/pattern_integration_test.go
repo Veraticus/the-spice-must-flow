@@ -17,13 +17,13 @@ import (
 )
 
 // MockStorage for testing pattern classifier
-// We embed UnimplementedStorage to get default implementations of all methods
+// We embed UnimplementedStorage to get default implementations of all methods.
 type MockStorage struct {
-	mock.Mock
 	UnimplementedStorage
+	mock.Mock
 }
 
-// UnimplementedStorage provides default panic implementations for all Storage methods
+// UnimplementedStorage provides default panic implementations for all Storage methods.
 type UnimplementedStorage struct{}
 
 func (u UnimplementedStorage) SaveTransactions(ctx context.Context, transactions []model.Transaction) error {
@@ -180,7 +180,7 @@ func (u UnimplementedStorage) Close() error {
 	panic("unimplemented")
 }
 
-// Now override only the methods we need for testing
+// Now override only the methods we need for testing.
 func (m *MockStorage) GetActivePatternRules(ctx context.Context) ([]model.PatternRule, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
@@ -202,7 +202,7 @@ func (m *MockStorage) IncrementPatternRuleUseCount(ctx context.Context, ruleID i
 	return args.Error(0)
 }
 
-// MockMatcher for testing
+// MockMatcher for testing.
 type MockMatcher struct {
 	mock.Mock
 }
@@ -215,7 +215,7 @@ func (m *MockMatcher) Match(ctx context.Context, txn model.Transaction) ([]patte
 	return args.Get(0).([]pattern.Rule), args.Error(1)
 }
 
-// MockCategorySuggester for testing
+// MockCategorySuggester for testing.
 type MockCategorySuggester struct {
 	mock.Mock
 }
@@ -236,7 +236,7 @@ func (m *MockCategorySuggester) SuggestWithValidation(ctx context.Context, txn m
 	return args.Get(0).([]pattern.Suggestion), args.Error(1)
 }
 
-// MockTransactionValidator for testing
+// MockTransactionValidator for testing.
 type MockTransactionValidator struct {
 	mock.Mock
 }
@@ -248,10 +248,10 @@ func (m *MockTransactionValidator) ValidateDirection(ctx context.Context, txn mo
 
 func TestNewPatternClassifier(t *testing.T) {
 	tests := []struct {
-		name          string
 		setupMock     func(*MockStorage)
-		wantErr       bool
+		name          string
 		errorContains string
+		wantErr       bool
 	}{
 		{
 			name: "success with no rules",
@@ -265,12 +265,12 @@ func TestNewPatternClassifier(t *testing.T) {
 			setupMock: func(ms *MockStorage) {
 				rules := []model.PatternRule{
 					{
-						ID:               1,
-						Name:             "Test Rule",
-						MerchantPattern:  "AMAZON",
-						DefaultCategory:  "Shopping",
-						IsActive:         true,
-						Confidence:       0.9,
+						ID:              1,
+						Name:            "Test Rule",
+						MerchantPattern: "AMAZON",
+						DefaultCategory: "Shopping",
+						IsActive:        true,
+						Confidence:      0.9,
 					},
 				}
 				ms.On("GetActivePatternRules", mock.Anything).Return(rules, nil)
@@ -316,19 +316,19 @@ func TestNewPatternClassifier(t *testing.T) {
 
 func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
-		name          string
-		transactions  []model.Transaction
-		setupMock     func(*MockStorage)
+		setupMock      func(*MockStorage)
 		setupSuggester func(*pattern.Suggester) ([]pattern.Suggestion, error)
-		want          *model.CategoryRanking
-		wantErr       bool
-		errorContains string
+		want           *model.CategoryRanking
+		name           string
+		errorContains  string
+		transactions   []model.Transaction
+		wantErr        bool
 	}{
 		{
-			name:          "no transactions error",
-			transactions:  []model.Transaction{},
+			name:         "no transactions error",
+			transactions: []model.Transaction{},
 			setupMock: func(ms *MockStorage) {
 				// NewPatternClassifier always calls GetActivePatternRules
 				ms.On("GetActivePatternRules", mock.Anything).Return([]model.PatternRule{}, nil).Once()
@@ -497,12 +497,12 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockStorage := new(MockStorage)
-			
+
 			// Call test-specific setup first
 			tt.setupMock(mockStorage)
 
 			pc, err := NewPatternClassifier(mockStorage)
-			
+
 			// Only check error if we're not expecting a test error
 			if !tt.wantErr || tt.name == "no transactions error" {
 				require.NoError(t, err)
@@ -511,7 +511,7 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 			// If we have a custom suggester setup, we need to inject it
 			if tt.setupSuggester != nil && pc != nil {
 				suggestions, _ := tt.setupSuggester(pc.suggester.(*pattern.Suggester))
-				
+
 				// Create a mock suggester that returns our custom suggestions
 				mockSuggester := new(MockCategorySuggester)
 				mockSuggester.On("SuggestWithValidation", ctx, mock.Anything, mock.Anything).Return(suggestions, nil)
@@ -542,10 +542,10 @@ func TestPatternClassifier_RefreshPatterns(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name          string
 		setupMock     func(*MockStorage)
-		wantErr       bool
+		name          string
 		errorContains string
+		wantErr       bool
 	}{
 		{
 			name: "successful refresh",
@@ -584,7 +584,7 @@ func TestPatternClassifier_RefreshPatterns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockStorage := new(MockStorage)
-			
+
 			// Initial setup for creating the classifier
 			initialRules := []model.PatternRule{
 				{
@@ -623,7 +623,7 @@ func TestPatternClassifier_RefreshPatterns(t *testing.T) {
 	}
 }
 
-// Test edge cases and concurrent access
+// Test edge cases and concurrent access.
 func TestPatternClassifier_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 	mockStorage := new(MockStorage)
@@ -683,7 +683,7 @@ func TestPatternClassifier_ConcurrentAccess(t *testing.T) {
 	assert.True(t, true, "Concurrent access handled successfully")
 }
 
-// Benchmark for performance testing
+// Benchmark for performance testing.
 func BenchmarkPatternClassifier_ClassifyWithPatterns(b *testing.B) {
 	ctx := context.Background()
 	mockStorage := new(MockStorage)
@@ -722,10 +722,10 @@ func BenchmarkPatternClassifier_ClassifyWithPatterns(b *testing.B) {
 	}
 }
 
-// Benchmark pattern refresh operation
+// Benchmark pattern refresh operation.
 func BenchmarkPatternClassifier_RefreshPatterns(b *testing.B) {
 	ctx := context.Background()
-	
+
 	testCases := []struct {
 		name      string
 		ruleCount int
@@ -740,7 +740,7 @@ func BenchmarkPatternClassifier_RefreshPatterns(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			mockStorage := new(MockStorage)
-			
+
 			// Generate initial rules
 			initialRules := make([]model.PatternRule, tc.ruleCount)
 			for i := 0; i < tc.ruleCount; i++ {
@@ -753,16 +753,16 @@ func BenchmarkPatternClassifier_RefreshPatterns(b *testing.B) {
 					Confidence:      0.7 + float64(i%30)/100,
 				}
 			}
-			
+
 			// Setup initial call
 			mockStorage.On("GetActivePatternRules", mock.Anything).Return(initialRules, nil).Once()
-			
+
 			pc, err := NewPatternClassifier(mockStorage)
 			require.NoError(b, err)
-			
+
 			// Setup refresh calls
 			mockStorage.On("GetActivePatternRules", ctx).Return(initialRules, nil)
-			
+
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = pc.RefreshPatterns(ctx)
@@ -771,13 +771,13 @@ func BenchmarkPatternClassifier_RefreshPatterns(b *testing.B) {
 	}
 }
 
-// Benchmark pattern matching with regex patterns
+// Benchmark pattern matching with regex patterns.
 func BenchmarkPatternClassifier_RegexMatching(b *testing.B) {
 	ctx := context.Background()
-	
+
 	testCases := []struct {
-		name         string
-		regexCount   int
+		name          string
+		regexCount    int
 		nonRegexCount int
 	}{
 		{"all_exact", 0, 100},
@@ -788,11 +788,11 @@ func BenchmarkPatternClassifier_RegexMatching(b *testing.B) {
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			mockStorage := new(MockStorage)
-			
+
 			// Generate rules with mix of regex and exact patterns
 			rules := make([]model.PatternRule, tc.regexCount+tc.nonRegexCount)
 			idx := 0
-			
+
 			// Add regex rules
 			for i := 0; i < tc.regexCount; i++ {
 				rules[idx] = model.PatternRule{
@@ -806,7 +806,7 @@ func BenchmarkPatternClassifier_RegexMatching(b *testing.B) {
 				}
 				idx++
 			}
-			
+
 			// Add exact match rules
 			for i := 0; i < tc.nonRegexCount; i++ {
 				rules[idx] = model.PatternRule{
@@ -820,26 +820,26 @@ func BenchmarkPatternClassifier_RegexMatching(b *testing.B) {
 				}
 				idx++
 			}
-			
+
 			mockStorage.On("GetActivePatternRules", mock.Anything).Return(rules, nil)
-			
+
 			pc, err := NewPatternClassifier(mockStorage)
 			require.NoError(b, err)
-			
+
 			// Setup classification
 			categories := []model.Category{
 				{ID: 1, Name: "Shopping", Type: "expense"},
 			}
 			mockStorage.On("GetCategories", ctx).Return(categories, nil)
 			mockStorage.On("IncrementPatternRuleUseCount", ctx, mock.Anything).Return(nil).Maybe()
-			
+
 			// Test transactions
 			txns := []model.Transaction{
 				{ID: "1", MerchantName: "PATTERN_5_STORE"},
 				{ID: "2", MerchantName: "EXACT_PATTERN_10"},
 				{ID: "3", MerchantName: "RANDOM_MERCHANT"},
 			}
-			
+
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				for _, txn := range txns {
@@ -850,11 +850,11 @@ func BenchmarkPatternClassifier_RegexMatching(b *testing.B) {
 	}
 }
 
-// Benchmark memory allocation in pattern classification
+// Benchmark memory allocation in pattern classification.
 func BenchmarkPatternClassifier_MemoryAllocation(b *testing.B) {
 	ctx := context.Background()
 	mockStorage := new(MockStorage)
-	
+
 	// Setup with reasonable number of rules
 	rules := make([]model.PatternRule, 50)
 	for i := 0; i < 50; i++ {
@@ -867,12 +867,12 @@ func BenchmarkPatternClassifier_MemoryAllocation(b *testing.B) {
 			Confidence:      0.85,
 		}
 	}
-	
+
 	mockStorage.On("GetActivePatternRules", mock.Anything).Return(rules, nil)
-	
+
 	pc, err := NewPatternClassifier(mockStorage)
 	require.NoError(b, err)
-	
+
 	categories := make([]model.Category, 10)
 	for i := 0; i < 10; i++ {
 		categories[i] = model.Category{
@@ -883,26 +883,26 @@ func BenchmarkPatternClassifier_MemoryAllocation(b *testing.B) {
 	}
 	mockStorage.On("GetCategories", ctx).Return(categories, nil)
 	mockStorage.On("IncrementPatternRuleUseCount", ctx, mock.Anything).Return(nil).Maybe()
-	
+
 	// Create varying sizes of transaction batches
 	smallBatch := generateBenchmarkTransactions(10)
 	mediumBatch := generateBenchmarkTransactions(100)
 	largeBatch := generateBenchmarkTransactions(1000)
-	
+
 	b.Run("small_batch", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			_, _ = pc.ClassifyWithPatterns(ctx, smallBatch)
 		}
 	})
-	
+
 	b.Run("medium_batch", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			_, _ = pc.ClassifyWithPatterns(ctx, mediumBatch)
 		}
 	})
-	
+
 	b.Run("large_batch", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -920,7 +920,7 @@ func generateBenchmarkTransactions(count int) []model.Transaction {
 		"WHOLE FOODS MARKET",
 		"WALMART SUPERCENTER",
 	}
-	
+
 	for i := 0; i < count; i++ {
 		txns[i] = model.Transaction{
 			ID:           fmt.Sprintf("txn_%d", i),
