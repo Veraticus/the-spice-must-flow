@@ -23,7 +23,7 @@ func NewTempFileManager(baseDir string) *TempFileManager {
 
 // CreateTransactionFile writes transactions to a temporary JSON file
 // Returns the file path and a cleanup function.
-func (t *TempFileManager) CreateTransactionFile(data map[string]interface{}) (string, func(), error) {
+func (t *TempFileManager) CreateTransactionFile(data map[string]any) (string, func(), error) {
 	// Ensure base directory exists
 	if err := os.MkdirAll(t.baseDir, 0700); err != nil {
 		return "", nil, fmt.Errorf("failed to create temp directory: %w", err)

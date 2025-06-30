@@ -36,6 +36,12 @@ func NewMemorySessionStore() *MemorySessionStore {
 	return store
 }
 
+// Close stops the cleanup goroutine and releases resources.
+func (s *MemorySessionStore) Close() error {
+	close(s.stopCh)
+	return nil
+}
+
 // Create creates a new analysis session.
 func (s *MemorySessionStore) Create(ctx context.Context, session *Session) error {
 	if err := validateContext(ctx); err != nil {

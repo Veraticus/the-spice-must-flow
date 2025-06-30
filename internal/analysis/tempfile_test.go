@@ -86,7 +86,7 @@ func TestTempFileManager_CreateTransactionFile(t *testing.T) {
 			assert.Equal(t, os.FileMode(0600), info.Mode().Perm())
 
 			// Verify file contains valid JSON
-			data, err := os.ReadFile(filePath)
+			data, err := os.ReadFile(filePath) // #nosec G304 - test code reading temp file we created
 			require.NoError(t, err)
 			assert.NotEmpty(t, data)
 

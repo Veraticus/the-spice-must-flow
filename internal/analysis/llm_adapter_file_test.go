@@ -51,7 +51,7 @@ func (m *mockLLMClientForFile) GenerateDescription(ctx context.Context, prompt s
 func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 	tests := []struct {
 		mockError       error
-		transactionData map[string]interface{}
+		transactionData map[string]any
 		checkPrompt     func(t *testing.T, prompt string)
 		name            string
 		originalPrompt  string
@@ -60,8 +60,8 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 	}{
 		{
 			name: "successful file-based analysis",
-			transactionData: map[string]interface{}{
-				"transactions": []map[string]interface{}{
+			transactionData: map[string]any{
+				"transactions": []map[string]any{
 					{
 						"id":     "123",
 						"name":   "Test Merchant",
@@ -81,7 +81,7 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 		},
 		{
 			name: "large transaction dataset",
-			transactionData: map[string]interface{}{
+			transactionData: map[string]any{
 				"transactions": make([]map[string]interface{}, 10000),
 			},
 			originalPrompt: "Analyze these transactions",
@@ -93,8 +93,8 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 		},
 		{
 			name: "empty transaction data",
-			transactionData: map[string]interface{}{
-				"transactions": []map[string]interface{}{},
+			transactionData: map[string]any{
+				"transactions": []map[string]any{},
 			},
 			originalPrompt: "Analyze these transactions",
 			mockResponse:   `{"coherenceScore": 100, "issues": []}`,
@@ -102,7 +102,7 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 		},
 		{
 			name:            "llm error",
-			transactionData: map[string]interface{}{"transactions": []map[string]interface{}{{}}},
+			transactionData: map[string]any{"transactions": []map[string]interface{}{{}}},
 			originalPrompt:  "Analyze these transactions",
 			mockError:       fmt.Errorf("LLM service unavailable"),
 			wantErr:         true,

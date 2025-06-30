@@ -143,15 +143,14 @@ func TestJSONValidator_Validate(t *testing.T) {
 			errContains: "issue ID is required",
 		},
 		{
-			name: "invalid issue type",
+			name: "invalid issue type - now accepted",
 			input: func() string {
 				report := createValidReport()
 				report.Issues[0].Type = "invalid_type"
 				data, _ := json.Marshal(report)
 				return string(data)
 			}(),
-			wantErr:     true,
-			errContains: "invalid issue type",
+			wantErr: false, // No longer validated - any issue type is accepted
 		},
 		{
 			name: "invalid issue severity",

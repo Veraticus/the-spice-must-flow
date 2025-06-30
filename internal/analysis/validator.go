@@ -174,17 +174,8 @@ func validateIssue(issue Issue) error {
 		return fmt.Errorf("issue type is required")
 	}
 
-	// Validate issue type is one of the allowed values
-	validTypes := map[IssueType]bool{
-		IssueTypeMiscategorized:   true,
-		IssueTypeInconsistent:     true,
-		IssueTypeMissingPattern:   true,
-		IssueTypeDuplicatePattern: true,
-		IssueTypeAmbiguousVendor:  true,
-	}
-	if !validTypes[issue.Type] {
-		return fmt.Errorf("invalid issue type: %s", issue.Type)
-	}
+	// Allow any issue type - let the LLM identify whatever issues it finds
+	// The LLM might discover new patterns or issues we haven't anticipated
 
 	// Validate severity
 	validSeverities := map[IssueSeverity]bool{

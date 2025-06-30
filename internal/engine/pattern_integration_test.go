@@ -26,13 +26,13 @@ type MockStorage struct {
 // UnimplementedStorage provides default panic implementations for all Storage methods.
 type UnimplementedStorage struct{}
 
-func (u UnimplementedStorage) SaveTransactions(ctx context.Context, transactions []model.Transaction) error {
+func (u UnimplementedStorage) SaveTransactions(_ context.Context, _ []model.Transaction) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetTransactionsToClassify(ctx context.Context, fromDate *time.Time) ([]model.Transaction, error) {
+func (u UnimplementedStorage) GetTransactionsToClassify(_ context.Context, _ *time.Time) ([]model.Transaction, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetTransactionByID(ctx context.Context, id string) (*model.Transaction, error) {
+func (u UnimplementedStorage) GetTransactionByID(_ context.Context, _ string) (*model.Transaction, error) {
 	panic("unimplemented")
 }
 func (u UnimplementedStorage) GetTransactionsByCategory(ctx context.Context, categoryName string) ([]model.Transaction, error) {
@@ -186,7 +186,11 @@ func (m *MockStorage) GetActivePatternRules(ctx context.Context) ([]model.Patter
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]model.PatternRule), args.Error(1)
+	rules, ok := args.Get(0).([]model.PatternRule)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for pattern rules: %T", args.Get(0))
+	}
+	return rules, args.Error(1)
 }
 
 func (m *MockStorage) GetCategories(ctx context.Context) ([]model.Category, error) {
@@ -194,7 +198,11 @@ func (m *MockStorage) GetCategories(ctx context.Context) ([]model.Category, erro
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]model.Category), args.Error(1)
+	categories, ok := args.Get(0).([]model.Category)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for categories: %T", args.Get(0))
+	}
+	return categories, args.Error(1)
 }
 
 func (m *MockStorage) IncrementPatternRuleUseCount(ctx context.Context, ruleID int) error {
@@ -212,7 +220,11 @@ func (m *MockMatcher) Match(ctx context.Context, txn model.Transaction) ([]patte
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]pattern.Rule), args.Error(1)
+	rules, ok := args.Get(0).([]pattern.Rule)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for rules: %T", args.Get(0))
+	}
+	return rules, args.Error(1)
 }
 
 // MockCategorySuggester for testing.
@@ -352,7 +364,7 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 				}
 				ms.On("GetCategories", ctx).Return(categories, nil)
 			},
-			setupSuggester: func(s *pattern.Suggester) ([]pattern.Suggestion, error) {
+			setupSuggester: func(_ *pattern.Suggester) ([]pattern.Suggestion, error) {
 				return []pattern.Suggestion{}, nil
 			},
 			want:    nil,
@@ -385,7 +397,7 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 				ms.On("GetCategories", ctx).Return(categories, nil)
 				ms.On("IncrementPatternRuleUseCount", ctx, 1).Return(nil)
 			},
-			setupSuggester: func(s *pattern.Suggester) ([]pattern.Suggestion, error) {
+			setupSuggester: func(_ *pattern.Suggester) ([]pattern.Suggestion, error) {
 				ruleID := 1
 				return []pattern.Suggestion{
 					{
@@ -443,7 +455,7 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 				ms.On("GetCategories", ctx).Return(categories, nil)
 				ms.On("IncrementPatternRuleUseCount", ctx, 1).Return(errors.New("increment error"))
 			},
-			setupSuggester: func(s *pattern.Suggester) ([]pattern.Suggestion, error) {
+			setupSuggester: func(_ *pattern.Suggester) ([]pattern.Suggestion, error) {
 				ruleID := 1
 				return []pattern.Suggestion{
 					{
@@ -474,7 +486,7 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 				}
 				ms.On("GetCategories", ctx).Return(categories, nil)
 			},
-			setupSuggester: func(s *pattern.Suggester) ([]pattern.Suggestion, error) {
+			setupSuggester: func(_ *pattern.Suggester) ([]pattern.Suggestion, error) {
 				return []pattern.Suggestion{
 					{
 						Category:   "Shopping",
@@ -510,7 +522,11 @@ func TestPatternClassifier_ClassifyWithPatterns(t *testing.T) {
 
 			// If we have a custom suggester setup, we need to inject it
 			if tt.setupSuggester != nil && pc != nil {
-				suggestions, _ := tt.setupSuggester(pc.suggester.(*pattern.Suggester))
+				suggester, ok := pc.suggester.(*pattern.Suggester)
+				if !ok {
+					t.Fatalf("unexpected suggester type: %T", pc.suggester)
+				}
+				suggestions, _ := tt.setupSuggester(suggester)
 
 				// Create a mock suggester that returns our custom suggestions
 				mockSuggester := new(MockCategorySuggester)

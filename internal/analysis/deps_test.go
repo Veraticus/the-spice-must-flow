@@ -30,7 +30,7 @@ func (m *mockLLMClient) ValidateAndCorrectResponse(ctx context.Context, correcti
 	return args.String(0), args.Error(1)
 }
 
-func (m *mockLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]interface{}) (string, error) {
+func (m *mockLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]any) (string, error) {
 	args := m.Called(ctx, prompt, transactionData)
 	return args.String(0), args.Error(1)
 }

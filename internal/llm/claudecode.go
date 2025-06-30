@@ -12,21 +12,6 @@ import (
 	"time"
 )
 
-// Helper functions for min/max.
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // claudeCodeClient implements the Client interface using Claude Code CLI.
 type claudeCodeClient struct {
 	model       string

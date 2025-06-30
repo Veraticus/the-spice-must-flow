@@ -152,8 +152,8 @@ func (e *Engine) performAnalysisWithRecovery(ctx context.Context, session *Sessi
 		// Update session attempt count
 		session.Attempts = attempt
 		session.Status = StatusValidating
-		if err := e.deps.SessionStore.Update(ctx, session); err != nil {
-			slog.Warn("Failed to update session attempt", "error", err)
+		if updateErr := e.deps.SessionStore.Update(ctx, session); updateErr != nil {
+			slog.Warn("Failed to update session attempt", "error", updateErr)
 		}
 
 		progress(fmt.Sprintf("Analysis attempt %d/%d", attempt, maxAttempts), 40+attempt*10)
@@ -414,12 +414,4 @@ func (e *Engine) applyFixes(ctx context.Context, report *Report) error {
 	}
 
 	return nil
-}
-
-// minInt returns the minimum of two integers.
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

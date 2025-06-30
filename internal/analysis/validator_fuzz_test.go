@@ -4,13 +4,32 @@
 package analysis
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
 )
+
+// cryptoRandInt returns a cryptographically secure random int in range [0, max).
+func cryptoRandInt(max int) int {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		panic(err)
+	}
+	return int(n.Int64())
+}
+
+// cryptoRandFloat returns a cryptographically secure random float64 in range [0, 1).
+func cryptoRandFloat() float64 {
+	n, err := rand.Int(rand.Reader, big.NewInt(1<<53))
+	if err != nil {
+		panic(err)
+	}
+	return float64(n.Int64()) / float64(1<<53)
+}
 
 // FuzzJSONValidator_Validate fuzzes the JSON validator with random input.
 func FuzzJSONValidator_Validate(f *testing.F) {
@@ -43,9 +62,9 @@ func FuzzJSONValidator_Validate(f *testing.F) {
 		[]byte(`{"emoji": "🚀"}`),
 
 		// Large structures
-		[]byte(generateLargeJSON(100)),
-		[]byte(generateNestedJSON(10)),
-		[]byte(generateArrayJSON(50)),
+		generateLargeJSON(100),
+		generateNestedJSON(10),
+		generateArrayJSON(50),
 	}
 
 	for _, seed := range seedCorpus {
@@ -62,6 +81,7 @@ func FuzzJSONValidator_Validate(f *testing.F) {
 		if err == nil {
 			if report == nil {
 				t.Error("validator returned nil report without error")
+				return
 			}
 			// Verify required fields are present
 			if report.SessionID == "" {
@@ -85,6 +105,7 @@ func FuzzJSONValidator_Validate(f *testing.F) {
 			if badSection != "" && !strings.Contains(string(data), badSection) {
 				// Handle case where badSection might be truncated or modified
 				// This is acceptable as long as it doesn't panic
+				_ = badSection // Acknowledge but accept this edge case
 			}
 		}
 	})
@@ -104,7 +125,7 @@ func FuzzJSONValidator_ExtractBadSection(f *testing.F) {
 	}
 
 	for _, seed := range seeds {
-		f.Add(seed.data, int64(seed.err.(*json.SyntaxError).Offset))
+		f.Add(seed.data, seed.err.(*json.SyntaxError).Offset)
 	}
 
 	validator := NewJSONValidator()
@@ -207,7 +228,7 @@ func generateLargeJSON(issueCount int) []byte {
 			CurrentCategory: &categoryName,
 			Description:     fmt.Sprintf("Issue %d description with some long text to make it realistic", i),
 			TransactionIDs:  []string{fmt.Sprintf("txn-%d", i)},
-			AffectedCount:   rand.Intn(100),
+			AffectedCount:   cryptoRandInt(100),
 			Confidence:      0.8,
 		}
 	}
@@ -218,12 +239,12 @@ func generateLargeJSON(issueCount int) []byte {
 
 func generateNestedJSON(depth int) []byte {
 	type nested struct {
-		Data  interface{} `json:"data"`
-		Level int         `json:"level"`
+		Data  any `json:"data"`
+		Level int `json:"level"`
 	}
 
-	var build func(int) interface{}
-	build = func(d int) interface{} {
+	var build func(int) any
+	build = func(d int) any {
 		if d <= 0 {
 			return "leaf"
 		}
@@ -238,16 +259,16 @@ func generateNestedJSON(depth int) []byte {
 }
 
 func generateArrayJSON(size int) []byte {
-	arr := make([]map[string]interface{}, size)
+	arr := make([]map[string]any, size)
 	for i := 0; i < size; i++ {
-		arr[i] = map[string]interface{}{
+		arr[i] = map[string]any{
 			"id":    i,
-			"value": rand.Float64(),
+			"value": cryptoRandFloat(),
 			"name":  fmt.Sprintf("Item_%d", i),
 		}
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, _ := json.Marshal(map[string]any{
 		"items": arr,
 		"count": size,
 	})
@@ -289,6 +310,7 @@ func FuzzCalculatePosition(f *testing.F) {
 		// If offset is beyond data length, it should still return valid values
 		if offset > len(data) && line == 1 && col == 1 {
 			// This is acceptable fallback behavior
+			return // Accept default values for out-of-bounds offset
 		}
 
 		// Verify the calculation is consistent

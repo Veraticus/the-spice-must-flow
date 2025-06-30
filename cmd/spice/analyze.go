@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/analysis"
@@ -174,6 +174,11 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	validator := analysis.NewJSONValidator()
 	formatter := analysis.NewCLIFormatter()
 	sessionStore := analysis.NewMemorySessionStore()
+	defer func() {
+		if closeErr := sessionStore.Close(); closeErr != nil {
+			slog.Error("Failed to close session store", "error", closeErr)
+		}
+	}()
 	fixApplier := analysis.NewTransactionalFixApplier(db, patternClassifier)
 	llmAdapter := analysis.NewLLMAnalysisAdapter(llmClient)
 
@@ -196,9 +201,9 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 
 	// Progress callback
 	progress := func(stage string, percent int) {
-		fmt.Printf("\r%-40s %3d%%", stage, percent)
+		fmt.Fprintf(cmd.OutOrStdout(), "\r%-40s %3d%%", stage, percent)
 		if percent == 100 {
-			fmt.Println()
+			fmt.Fprintln(cmd.OutOrStdout())
 		}
 	}
 
@@ -218,7 +223,7 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	report, err := analysisEngine.Analyze(ctx, opts)
 	if err != nil {
 		if err == context.Canceled {
-			fmt.Println("\n\nAnalysis canceled by user")
+			fmt.Fprintln(cmd.OutOrStdout(), "\n\nAnalysis canceled by user")
 			return nil
 		}
 		return fmt.Errorf("analysis failed: %w", err)
@@ -228,17 +233,17 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	switch outputFormat {
 	case "json":
 		// Export as JSON for programmatic use
-		if err := exportReportJSON(report); err != nil {
+		if err := exportReportJSON(cmd.OutOrStdout(), report); err != nil {
 			return fmt.Errorf("failed to export report: %w", err)
 		}
 
 	case "summary":
 		// Display summary only
-		fmt.Println("\n" + formatter.FormatSummary(report))
+		fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatSummary(report))
 
 	case "interactive":
 		// Interactive report navigation
-		fmt.Println("\n" + formatter.FormatInteractive(report))
+		fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatInteractive(report))
 
 	default:
 		return fmt.Errorf("invalid output format: %s", outputFormat)
@@ -246,16 +251,16 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 
 	// Show next steps
 	if !autoApply && report.HasActionableIssues() {
-		fmt.Println("\nTo apply recommended fixes, run:")
-		fmt.Printf("  spice analyze --auto-apply --session-id %s\n", report.SessionID)
+		fmt.Fprintln(cmd.OutOrStdout(), "\nTo apply recommended fixes, run:")
+		fmt.Fprintf(cmd.OutOrStdout(), "  spice analyze --auto-apply --session-id %s\n", report.SessionID)
 	}
 
 	return nil
 }
 
-// exportReportJSON exports the analysis report as JSON to stdout.
-func exportReportJSON(report *analysis.Report) error {
-	encoder := json.NewEncoder(os.Stdout)
+// exportReportJSON exports the analysis report as JSON to the given writer.
+func exportReportJSON(w io.Writer, report *analysis.Report) error {
+	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(report); err != nil {
 		return fmt.Errorf("failed to encode report as JSON: %w", err)

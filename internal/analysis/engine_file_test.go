@@ -191,11 +191,11 @@ func TestEngine_TransactionCategoriesInFileExport(t *testing.T) {
 	sessionStore.On("Update", mock.Anything, mock.AnythingOfType("*analysis.Session")).Return(nil)
 
 	// Capture the data sent to LLM
-	var capturedTransactionData map[string]interface{}
-	llmClient.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("map[string]interface {}")).
-		Run(func(args mock.Arguments) {
-			capturedTransactionData = args.Get(2).(map[string]interface{})
-		}).
+	var capturedTransactionData map[string]any
+	llmClient.On("AnalyzeTransactionsWithFile", mock.Anything, mock.AnythingOfType("string"), mock.MatchedBy(func(data map[string]any) bool {
+		capturedTransactionData = data
+		return true
+	})).
 		Return(`{"coherence_score": 90, "issues": []}`, nil)
 
 	// Setup validator
@@ -274,7 +274,7 @@ func (m *fileTestPromptBuilder) BuildAnalysisPrompt(data PromptData) (string, er
 	return "test prompt", nil
 }
 
-func (m *fileTestPromptBuilder) BuildCorrectionPrompt(data CorrectionPromptData) (string, error) {
+func (m *fileTestPromptBuilder) BuildCorrectionPrompt(_ CorrectionPromptData) (string, error) {
 	return "correction prompt", nil
 }
 
@@ -355,10 +355,10 @@ func (m *fileTestStorage) SaveTransactions(ctx context.Context, transactions []m
 	return nil
 }
 func (m *fileTestStorage) GetTransactionsToClassify(ctx context.Context, fromDate *time.Time) ([]model.Transaction, error) {
-	return nil, nil
+	return nil, nil // Intentional nil return for test stub
 }
 func (m *fileTestStorage) GetTransactionByID(ctx context.Context, id string) (*model.Transaction, error) {
-	return nil, nil
+	return nil, nil // Intentional nil return for test stub
 }
 func (m *fileTestStorage) GetTransactionsByCategory(ctx context.Context, categoryName string) ([]model.Transaction, error) {
 	return nil, nil
@@ -383,13 +383,13 @@ func (m *fileTestStorage) GetLatestTransactionDate(ctx context.Context) (time.Ti
 	return time.Now(), nil
 }
 func (m *fileTestStorage) GetCategorySummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
-	return nil, nil
+	return nil, nil // Intentional nil return for test stub
 }
 func (m *fileTestStorage) GetMerchantSummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
-	return nil, nil
+	return nil, nil // Intentional nil return for test stub
 }
 func (m *fileTestStorage) GetVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
-	return nil, nil
+	return nil, nil // Intentional nil return for test stub
 }
 func (m *fileTestStorage) SaveVendor(ctx context.Context, vendor *model.Vendor) error  { return nil }
 func (m *fileTestStorage) DeleteVendor(ctx context.Context, merchantName string) error { return nil }
@@ -471,11 +471,11 @@ func (m *fileTestStorage) Close() error                                         
 
 type fileTestValidator struct{}
 
-func (m *fileTestValidator) Validate(data []byte) (*Report, error) {
+func (m *fileTestValidator) Validate(_ []byte) (*Report, error) {
 	return &Report{CoherenceScore: 85}, nil
 }
 
-func (m *fileTestValidator) ExtractError(data []byte, err error) (string, int, int) {
+func (m *fileTestValidator) ExtractError(_ []byte, _ error) (string, int, int) {
 	return "", 0, 0
 }
 
@@ -519,14 +519,14 @@ func (m *fileTestFixer) ApplyRecategorizations(ctx context.Context, issues []Iss
 
 type fileTestFormatter struct{}
 
-func (m *fileTestFormatter) FormatSummary(report *Report) string {
+func (m *fileTestFormatter) FormatSummary(_ *Report) string {
 	return "test summary"
 }
 
-func (m *fileTestFormatter) FormatIssue(issue Issue) string {
+func (m *fileTestFormatter) FormatIssue(_ Issue) string {
 	return "test issue"
 }
 
-func (m *fileTestFormatter) FormatInteractive(report *Report) string {
+func (m *fileTestFormatter) FormatInteractive(_ *Report) string {
 	return "test interactive"
 }

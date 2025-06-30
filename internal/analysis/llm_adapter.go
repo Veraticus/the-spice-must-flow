@@ -291,7 +291,7 @@ func truncateForLog(s string, maxLen int) string {
 }
 
 // AnalyzeTransactionsWithFile performs AI analysis using file-based approach for large datasets.
-func (a *LLMAnalysisAdapter) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]interface{}) (string, error) {
+func (a *LLMAnalysisAdapter) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]any) (string, error) {
 	// Create temporary file with transaction data
 	filePath, cleanup, err := a.tempFileManager.CreateTransactionFile(transactionData)
 	if err != nil {

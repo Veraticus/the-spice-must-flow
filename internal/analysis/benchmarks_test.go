@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -173,9 +174,9 @@ func generateBenchmarkJSON(issueCount int) []byte {
 		report.Issues[i] = generateBenchmarkIssue(i)
 	}
 
-	// Use a simple JSON encoding for benchmarking
-	// In real benchmarks, we'd use json.Marshal
-	return []byte(`{"id":"bench-test","sessionID":"bench-session","coherenceScore":0.85}`)
+	// Marshal the actual report for realistic benchmarking
+	data, _ := json.Marshal(report)
+	return data
 }
 
 func generateBenchmarkFixes(count int) []Fix {
