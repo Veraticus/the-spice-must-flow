@@ -34,6 +34,7 @@ type Config struct {
 	RateLimit      int
 	Temperature    float64
 	MaxTokens      int
+	MaxTurns       int // Maximum number of turns for Claude Code (0 = unlimited)
 }
 
 // NewClassifier creates a new LLM-based classifier.

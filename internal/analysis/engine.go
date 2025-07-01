@@ -26,7 +26,32 @@ func (e *Engine) Analyze(ctx context.Context, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// Update session status
+	// Check if session already has a completed report
+	if session.ReportID != nil && *session.ReportID != "" && opts.AutoApply {
+		// Load existing report instead of creating a new one
+		progress("Loading existing report", 50)
+		slog.Info("Session already has a report, loading it for fix application", "report_id", *session.ReportID)
+
+		report, err := e.deps.ReportStore.GetReport(ctx, *session.ReportID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load existing report: %w", err)
+		}
+
+		// Apply fixes if requested
+		if opts.AutoApply && !opts.DryRun {
+			progress("Applying fixes", 80)
+			if err := e.applyFixes(ctx, report); err != nil {
+				slog.Warn("Failed to apply some fixes from existing report", "error", err)
+			} else {
+				slog.Info("Successfully applied fixes from existing report")
+			}
+		}
+
+		progress("Analysis complete", 100)
+		return report, nil
+	}
+
+	// Update session status for new analysis
 	session.Status = StatusInProgress
 	session.LastAttempt = time.Now()
 	if updateErr := e.deps.SessionStore.Update(ctx, session); updateErr != nil {
@@ -96,7 +121,8 @@ func (e *Engine) Analyze(ctx context.Context, opts Options) (*Report, error) {
 
 	// Step 5: Perform analysis with validation recovery
 	progress("Running AI analysis", 40)
-	report, err := e.performAnalysisWithRecovery(ctx, session, promptData, transactions, progress)
+	// Use session-based analysis if available, otherwise fall back to legacy
+	report, err := e.performSessionBasedAnalysis(ctx, session, promptData, transactions, progress)
 	if err != nil {
 		return nil, e.failSession(ctx, session, fmt.Errorf("analysis failed: %w", err))
 	}
@@ -236,13 +262,34 @@ func (e *Engine) createOrContinueSession(ctx context.Context, sessionID string) 
 	if sessionID != "" {
 		// Try to continue existing session
 		session, err := e.deps.SessionStore.Get(ctx, sessionID)
-		if err == nil && session.Status != StatusCompleted && session.Status != StatusFailed {
-			slog.Info("Continuing existing session", "id", sessionID)
-			return session, nil
+		if err != nil {
+			// If a specific session ID was requested but not found, fail
+			return nil, fmt.Errorf("failed to retrieve session %s: %w", sessionID, err)
 		}
+
+		// Check if session can be continued
+		if session.Status == StatusFailed {
+			return nil, fmt.Errorf("session %s has failed and cannot be continued", sessionID)
+		}
+
+		// Allow continuing completed sessions by resetting their state
+		if session.Status == StatusCompleted {
+			slog.Info("Reopening completed session for continuation", "id", sessionID)
+			session.Status = StatusInProgress
+			session.CompletedAt = nil
+			session.Attempts = 0 // Reset attempts counter
+
+			// Update the session in the database
+			if err := e.deps.SessionStore.Update(ctx, session); err != nil {
+				return nil, fmt.Errorf("failed to reopen completed session: %w", err)
+			}
+		}
+
+		slog.Info("Continuing existing session", "id", sessionID)
+		return session, nil
 	}
 
-	// Create new session
+	// Create new session only if no session ID was provided
 	newID := uuid.New().String()
 	session := &Session{
 		ID:          newID,
@@ -414,4 +461,9 @@ func (e *Engine) applyFixes(ctx context.Context, report *Report) error {
 	}
 
 	return nil
+}
+
+// ApplyFixesFromReport applies fixes from an existing report.
+func (e *Engine) ApplyFixesFromReport(ctx context.Context, report *Report) error {
+	return e.applyFixes(ctx, report)
 }

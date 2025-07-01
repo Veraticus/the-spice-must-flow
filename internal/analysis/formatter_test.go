@@ -438,7 +438,7 @@ func TestFormatHelpers(t *testing.T) {
 		}
 
 		for _, tt := range tests {
-			icon := formatter.getSeverityIcon(tt.severity)
+			icon := formatter.GetSeverityIcon(tt.severity)
 			assert.Equal(t, tt.icon, icon)
 		}
 	})

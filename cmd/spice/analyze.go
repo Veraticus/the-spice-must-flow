@@ -11,6 +11,7 @@ import (
 	"github.com/Veraticus/the-spice-must-flow/internal/analysis"
 	"github.com/Veraticus/the-spice-must-flow/internal/cli"
 	"github.com/Veraticus/the-spice-must-flow/internal/engine"
+	"github.com/Veraticus/the-spice-must-flow/internal/llm"
 	"github.com/Veraticus/the-spice-must-flow/internal/storage"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -173,20 +174,24 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	}
 	validator := analysis.NewJSONValidator()
 	formatter := analysis.NewCLIFormatter()
-	sessionStore := analysis.NewMemorySessionStore()
-	defer func() {
-		if closeErr := sessionStore.Close(); closeErr != nil {
-			slog.Error("Failed to close session store", "error", closeErr)
-		}
-	}()
+	sessionStore := analysis.NewSQLiteSessionStore(db.DB())
 	fixApplier := analysis.NewTransactionalFixApplier(db, patternClassifier)
-	llmAdapter := analysis.NewLLMAnalysisAdapter(llmClient)
+
+	// Create appropriate LLM adapter based on client capabilities
+	var llmAdapter analysis.LLMClient
+	if sessionClient, ok := llmClient.(llm.SessionClient); ok {
+		slog.Info("Using session-capable LLM adapter for iterative corrections")
+		llmAdapter = analysis.NewSessionLLMAnalysisAdapter(sessionClient)
+	} else {
+		slog.Info("Using standard LLM adapter")
+		llmAdapter = analysis.NewLLMAnalysisAdapter(llmClient)
+	}
 
 	deps := analysis.Deps{
 		Storage:       db,
 		LLMClient:     llmAdapter,
 		SessionStore:  sessionStore,
-		ReportStore:   sessionStore, // MemorySessionStore implements both interfaces
+		ReportStore:   sessionStore, // SQLiteSessionStore implements both interfaces
 		Validator:     validator,
 		FixApplier:    fixApplier,
 		PromptBuilder: promptBuilder,
@@ -229,6 +234,13 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("analysis failed: %w", err)
 	}
 
+	// If auto-apply was used and we loaded an existing report, show summary and exit
+	if autoApply && report.SessionID != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatSummary(report))
+		fmt.Fprintln(cmd.OutOrStdout(), "\n✅ Fixes have been applied successfully")
+		return nil
+	}
+
 	// Display results based on output format
 	switch outputFormat {
 	case "json":
@@ -243,16 +255,21 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 
 	case "interactive":
 		// Interactive report navigation
-		fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatInteractive(report))
+		if err := showInteractiveAnalysis(ctx, nil, cmd.OutOrStdout(), report, analysisEngine, dryRun); err != nil {
+			return fmt.Errorf("interactive menu failed: %w", err)
+		}
+		return nil
 
 	default:
 		return fmt.Errorf("invalid output format: %s", outputFormat)
 	}
 
-	// Show next steps
-	if !autoApply && report.HasActionableIssues() {
-		fmt.Fprintln(cmd.OutOrStdout(), "\nTo apply recommended fixes, run:")
-		fmt.Fprintf(cmd.OutOrStdout(), "  spice analyze --auto-apply --session-id %s\n", report.SessionID)
+	// Show next steps (only for non-interactive modes)
+	if outputFormat != "interactive" {
+		if !autoApply && report.HasActionableIssues() {
+			fmt.Fprintln(cmd.OutOrStdout(), "\nTo apply recommended fixes, run:")
+			fmt.Fprintf(cmd.OutOrStdout(), "  spice analyze --auto-apply --session-id %s\n", report.SessionID)
+		}
 	}
 
 	return nil

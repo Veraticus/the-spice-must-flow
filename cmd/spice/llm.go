@@ -32,6 +32,7 @@ func createLLMClient() (engine.Classifier, error) {
 		CacheTTL:       viper.GetDuration("llm.cache_ttl"),
 		RateLimit:      viper.GetInt("llm.rate_limit"),
 		ClaudeCodePath: viper.GetString("llm.claude_code_path"),
+		MaxTurns:       viper.GetInt("llm.max_turns"),
 	}
 
 	// Set defaults if not specified
@@ -124,6 +125,7 @@ func createAnalysisLLMClient() (llm.Client, error) {
 		CacheTTL:       viper.GetDuration("llm.cache_ttl"),
 		RateLimit:      viper.GetInt("llm.rate_limit"),
 		ClaudeCodePath: viper.GetString("llm.claude_code_path"),
+		MaxTurns:       viper.GetInt("llm.max_turns"),
 	}
 
 	// Set defaults if not specified
@@ -185,6 +187,9 @@ func createAnalysisLLMClient() (llm.Client, error) {
 
 		// Always use opus for analysis
 		config.Model = "opus"
+
+		// Set unlimited max turns for analysis (-1 means no limit)
+		config.MaxTurns = -1
 
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", provider)

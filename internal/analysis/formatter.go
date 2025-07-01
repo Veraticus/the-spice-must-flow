@@ -187,8 +187,8 @@ func (f *CLIFormatter) formatIssuesSummary(issues []Issue) string {
 	for _, severity := range severities {
 		count := counts[severity]
 		if count > 0 {
-			icon := f.getSeverityIcon(severity)
-			style := f.getSeverityStyle(severity)
+			icon := f.GetSeverityIcon(severity)
+			style := f.GetSeverityStyle(severity)
 			line := style.Render(fmt.Sprintf("%s %s: %d", icon, severity, count))
 			lines = append(lines, line)
 		}
@@ -340,8 +340,8 @@ func (f *CLIFormatter) formatSuggestedPatternsSummary(patterns []SuggestedPatter
 
 // formatIssueHeader creates the header for an issue display.
 func (f *CLIFormatter) formatIssueHeader(issue Issue) string {
-	icon := f.getSeverityIcon(issue.Severity)
-	style := f.getSeverityStyle(issue.Severity)
+	icon := f.GetSeverityIcon(issue.Severity)
+	style := f.GetSeverityStyle(issue.Severity)
 
 	header := fmt.Sprintf("%s %s Issue [%s]", icon, issue.Severity, issue.Type)
 	return style.Bold(true).Render(header)
@@ -490,8 +490,8 @@ func (f *CLIFormatter) formatInteractiveMenu(report *Report) string {
 	return title + "\n" + strings.Join(lines, "\n")
 }
 
-// getSeverityIcon returns the appropriate icon for a severity level.
-func (f *CLIFormatter) getSeverityIcon(severity IssueSeverity) string {
+// GetSeverityIcon returns the appropriate icon for a severity level.
+func (f *CLIFormatter) GetSeverityIcon(severity IssueSeverity) string {
 	switch severity {
 	case SeverityCritical:
 		return "🚨"
@@ -506,8 +506,8 @@ func (f *CLIFormatter) getSeverityIcon(severity IssueSeverity) string {
 	}
 }
 
-// getSeverityStyle returns the appropriate style for a severity level.
-func (f *CLIFormatter) getSeverityStyle(severity IssueSeverity) lipgloss.Style {
+// GetSeverityStyle returns the appropriate style for a severity level.
+func (f *CLIFormatter) GetSeverityStyle(severity IssueSeverity) lipgloss.Style {
 	switch severity {
 	case SeverityCritical:
 		return f.styles.Error

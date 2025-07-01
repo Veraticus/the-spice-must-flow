@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 19
+const ExpectedSchemaVersion = 20
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -789,6 +789,68 @@ var migrations = []Migration{
 			}
 
 			slog.Info("Created AI analysis tables for session management and report storage")
+			return nil
+		},
+	},
+	{
+		Version:     20,
+		Description: "Remove CHECK constraint on analysis issue types to allow AI flexibility",
+		Up: func(tx *sql.Tx) error {
+			// SQLite doesn't support ALTER TABLE DROP CONSTRAINT
+			// We need to recreate the table without the constraint
+
+			// Create new table without CHECK constraint
+			if _, err := tx.Exec(`
+				CREATE TABLE analysis_issues_new (
+					id TEXT PRIMARY KEY,
+					report_id TEXT NOT NULL,
+					type TEXT NOT NULL,
+					severity TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+					description TEXT NOT NULL,
+					current_category TEXT,
+					suggested_category TEXT,
+					transaction_ids TEXT NOT NULL,
+					affected_count INTEGER NOT NULL,
+					confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (report_id) REFERENCES analysis_reports(id)
+				)
+			`); err != nil {
+				return fmt.Errorf("failed to create new analysis_issues table: %w", err)
+			}
+
+			// Copy data from old table
+			if _, err := tx.Exec(`
+				INSERT INTO analysis_issues_new 
+				SELECT * FROM analysis_issues
+			`); err != nil {
+				return fmt.Errorf("failed to copy analysis_issues data: %w", err)
+			}
+
+			// Drop old table
+			if _, err := tx.Exec(`DROP TABLE analysis_issues`); err != nil {
+				return fmt.Errorf("failed to drop old analysis_issues table: %w", err)
+			}
+
+			// Rename new table
+			if _, err := tx.Exec(`ALTER TABLE analysis_issues_new RENAME TO analysis_issues`); err != nil {
+				return fmt.Errorf("failed to rename analysis_issues table: %w", err)
+			}
+
+			// Recreate indexes
+			indexes := []string{
+				`CREATE INDEX idx_analysis_issues_report_id ON analysis_issues(report_id)`,
+				`CREATE INDEX idx_analysis_issues_type ON analysis_issues(type)`,
+				`CREATE INDEX idx_analysis_issues_severity ON analysis_issues(severity)`,
+			}
+
+			for _, index := range indexes {
+				if _, err := tx.Exec(index); err != nil {
+					return fmt.Errorf("failed to recreate index: %w", err)
+				}
+			}
+
+			slog.Info("Removed CHECK constraint on analysis issue types to allow AI flexibility")
 			return nil
 		},
 	},

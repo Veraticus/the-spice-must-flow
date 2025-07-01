@@ -65,6 +65,11 @@ func (s *SQLiteStorage) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying database connection.
+func (s *SQLiteStorage) DB() *sql.DB {
+	return s.db
+}
+
 // NewCheckpointManager creates a new checkpoint manager for this storage instance.
 func (s *SQLiteStorage) NewCheckpointManager() (*CheckpointManager, error) {
 	return NewCheckpointManager(s.db, s.dbPath)

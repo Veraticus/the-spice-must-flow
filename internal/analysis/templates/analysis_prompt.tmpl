@@ -53,11 +53,14 @@ Analyze these transactions to provide:
    - 0.50-0.69: Fair - noticeable inconsistencies that need attention
    - Below 0.50: Poor - significant issues requiring immediate attention
 
-2. **Key Issues**: Identify specific problems with the current categorization:
-   - Transactions miscategorized based on their description
-   - Inconsistent categorization of similar transactions
-   - Missing pattern rules that would improve accuracy
-   - Categories that might be too broad or too specific
+2. **Key Issues**: Identify specific problems with the current categorization. Common issue types include:
+   - **miscategorized**: Transactions assigned to wrong categories based on their description
+   - **inconsistent**: Similar transactions categorized differently across the data
+   - **missing_pattern**: Recurring transactions without pattern rules
+   - **duplicate_pattern**: Overlapping or redundant pattern rules causing conflicts
+   - **ambiguous_vendor**: Vendors with unclear or conflicting categorization
+   
+   You may also identify other issue types if you discover patterns not covered by the above examples. Be specific and descriptive with your issue types.
 
 {{if or (eq .AnalysisOptions.Focus "") (eq .AnalysisOptions.Focus "patterns")}}
 3. **Pattern Suggestions**: Recommend new pattern rules that would improve categorization accuracy

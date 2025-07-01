@@ -21,6 +21,9 @@ type claudeCodeClient struct {
 	maxTurns    int
 }
 
+// Ensure claudeCodeClient implements SessionClient interface.
+var _ SessionClient = (*claudeCodeClient)(nil)
+
 // newClaudeCodeClient creates a new Claude Code CLI client.
 func newClaudeCodeClient(cfg Config) (Client, error) {
 	// Use configured path or default
@@ -49,11 +52,17 @@ func newClaudeCodeClient(cfg Config) (Client, error) {
 		maxTokens = 150
 	}
 
+	maxTurns := cfg.MaxTurns
+	if maxTurns == 0 {
+		maxTurns = 10 // Default to 10 turns if not specified
+	}
+	// -1 means unlimited turns
+
 	return &claudeCodeClient{
 		model:       model,
 		temperature: temperature,
 		maxTokens:   maxTokens,
-		maxTurns:    10, // Allow up to 10 turns for complex analysis
+		maxTurns:    maxTurns,
 		cliPath:     cliPath,
 	}, nil
 }
@@ -504,7 +513,10 @@ func (c *claudeCodeClient) Analyze(ctx context.Context, prompt string, systemPro
 			"--print", // Required for --output-format json to return result field
 			"--output-format", "json",
 			"--model", c.model,
-			"--max-turns", strconv.Itoa(c.maxTurns),
+		}
+		// Only add max-turns if not unlimited (-1)
+		if c.maxTurns > 0 {
+			args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
 		}
 		// Add temp directory access if detected
 		if tempDir != "" {
@@ -520,7 +532,10 @@ func (c *claudeCodeClient) Analyze(ctx context.Context, prompt string, systemPro
 			"-p", fullPrompt,
 			"--output-format", "json",
 			"--model", c.model,
-			"--max-turns", strconv.Itoa(c.maxTurns),
+		}
+		// Only add max-turns if not unlimited (-1)
+		if c.maxTurns > 0 {
+			args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
 		}
 		// Add temp directory access if detected
 		if tempDir != "" {
@@ -612,6 +627,199 @@ func (c *claudeCodeClient) Analyze(ctx context.Context, prompt string, systemPro
 
 	// Return the raw result without any parsing
 	return response.Result, nil
+}
+
+// AnalyzeWithSession performs analysis with session support for iterative corrections.
+func (c *claudeCodeClient) AnalyzeWithSession(ctx context.Context, prompt string, systemPrompt string, sessionID string) (AnalysisResult, error) {
+	// Build the full prompt with system context
+	fullPrompt := systemPrompt + "\n\n" + prompt
+
+	// Log request details
+	slog.Debug("Claude Code session analysis request",
+		"model", c.model,
+		"session_id", sessionID,
+		"resuming", sessionID != "",
+		"prompt_length", len(fullPrompt),
+		"prompt_preview", truncateStr(fullPrompt, 500),
+	)
+
+	// For very large prompts, use stdin instead of command args
+	useStdin := len(fullPrompt) > 100000
+
+	var args []string
+	var cmd *exec.Cmd
+
+	// Check if we're resuming a session
+	if sessionID != "" {
+		// Resume existing session
+		args = []string{
+			"--resume", sessionID,
+			"--output-format", "json",
+			"--model", c.model,
+		}
+		// When resuming, don't use stdin - put the prompt in args
+		args = append(args, fullPrompt)
+		useStdin = false
+	} else {
+		// New session - similar to regular Analyze
+		if useStdin {
+			args = []string{
+				"--print",
+				"--output-format", "json",
+				"--model", c.model,
+			}
+			// Only add max-turns if not unlimited (-1)
+			if c.maxTurns > 0 {
+				args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
+			}
+		} else {
+			args = []string{
+				"-p", fullPrompt,
+				"--output-format", "json",
+				"--model", c.model,
+			}
+			// Only add max-turns if not unlimited (-1)
+			if c.maxTurns > 0 {
+				args = append(args, "--max-turns", strconv.Itoa(c.maxTurns))
+			}
+		}
+	}
+
+	// Handle temp directory access similar to Analyze
+	var tempDir string
+	fileAtPattern := "file at: /tmp/spice-analysis-"
+	if idx := strings.Index(fullPrompt, fileAtPattern); idx != -1 {
+		pathStart := idx + len("file at: ")
+		dirStart := pathStart
+		dirEnd := pathStart + len("/tmp/spice-analysis-")
+
+		for dirEnd < len(fullPrompt) && fullPrompt[dirEnd] != '/' {
+			dirEnd++
+		}
+
+		if dirEnd < len(fullPrompt) && fullPrompt[dirEnd] == '/' {
+			tempDir = fullPrompt[dirStart:dirEnd]
+			slog.Debug("Detected temp directory in prompt",
+				"temp_dir", tempDir,
+				"session_id", sessionID)
+		}
+	}
+
+	if tempDir != "" && sessionID == "" {
+		// Only add temp dir for new sessions, not resuming
+		args = append(args, "--add-dir", tempDir)
+		slog.Debug("Added temp directory access", "dir", tempDir)
+	}
+
+	// Create command
+	if useStdin && sessionID == "" {
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+		cmd.Stdin = strings.NewReader(fullPrompt)
+		slog.Debug("Using stdin for large prompt", "size", len(fullPrompt))
+	} else {
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+	}
+
+	// Capture output
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Set timeout if not already set
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		// Use 5 minute timeout for analysis
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+	}
+
+	// Recreate command with potentially updated context
+	if useStdin && sessionID == "" {
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+		cmd.Stdin = strings.NewReader(fullPrompt)
+	} else {
+		cmd = exec.CommandContext(ctx, c.cliPath, args...)
+	}
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Execute command
+	startTime := time.Now()
+	if err := cmd.Run(); err != nil {
+		duration := time.Since(startTime)
+		slog.Debug("Claude Code session command failed",
+			"duration", duration,
+			"error", err,
+			"stderr", stderr.String(),
+			"stdout_size", stdout.Len(),
+		)
+		if stderr.Len() > 0 {
+			return AnalysisResult{}, fmt.Errorf("claude code error after %v: %s", duration, stderr.String())
+		}
+		return AnalysisResult{}, fmt.Errorf("failed to execute claude after %v: %w", duration, err)
+	}
+
+	duration := time.Since(startTime)
+	slog.Debug("Claude Code session command completed",
+		"duration", duration,
+		"stdout_size", stdout.Len(),
+		"stderr_size", stderr.Len(),
+	)
+
+	// Parse JSON response
+	var response claudeCodeResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		slog.Debug("Failed to parse Claude Code JSON response",
+			"error", err,
+			"raw_output", truncateStr(stdout.String(), 1000),
+		)
+		return AnalysisResult{}, fmt.Errorf("failed to parse claude code response: %w", err)
+	}
+
+	// Check for errors
+	if response.IsError {
+		slog.Debug("Claude Code returned error response",
+			"is_error", response.IsError,
+			"result", truncateStr(response.Result, 500),
+		)
+		return AnalysisResult{}, fmt.Errorf("claude code error in response")
+	}
+
+	// Parse additional metadata if available
+	// The stdout contains the full response including metadata
+	var fullResponse struct {
+		Result     string  `json:"result"`
+		SessionID  string  `json:"session_id"`
+		TotalCost  float64 `json:"total_cost_usd"`
+		NumTurns   int     `json:"num_turns"`
+		IsError    bool    `json:"is_error"`
+		Type       string  `json:"type"`
+		Subtype    string  `json:"subtype"`
+		DurationMS int     `json:"duration_ms"`
+	}
+
+	if err := json.Unmarshal(stdout.Bytes(), &fullResponse); err != nil {
+		// Fallback to basic response if full parsing fails
+		return AnalysisResult{
+			Response:  response.Result,
+			SessionID: response.SessionID,
+		}, nil
+	}
+
+	slog.Debug("Claude Code session analysis response",
+		"response_length", len(fullResponse.Result),
+		"session_id", fullResponse.SessionID,
+		"num_turns", fullResponse.NumTurns,
+		"total_cost", fullResponse.TotalCost,
+		"is_error", fullResponse.IsError,
+	)
+
+	return AnalysisResult{
+		Response:  fullResponse.Result,
+		SessionID: fullResponse.SessionID,
+		TotalCost: fullResponse.TotalCost,
+		NumTurns:  fullResponse.NumTurns,
+	}, nil
 }
 
 // truncateStr truncates a string for logging purposes.

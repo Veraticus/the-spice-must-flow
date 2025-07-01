@@ -3,6 +3,7 @@ package analysis
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -174,8 +175,12 @@ func validateIssue(issue Issue) error {
 		return fmt.Errorf("issue type is required")
 	}
 
-	// Allow any issue type - let the LLM identify whatever issues it finds
-	// The LLM might discover new patterns or issues we haven't anticipated
+	// Allow any issue type - the LLM might discover new patterns
+	// The 5 predefined types are just examples, not an exhaustive list
+	slog.Debug("Validating issue type",
+		"issue_id", issue.ID,
+		"issue_type", string(issue.Type),
+		"note", "allowing any issue type for flexibility")
 
 	// Validate severity
 	validSeverities := map[IssueSeverity]bool{
