@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 )
 
 // AnalysisSession represents an ongoing analysis conversation.
@@ -49,54 +48,5 @@ type AnalysisResult struct {
 	NumTurns  int
 }
 
-// ApplyPatch applies a JSON patch to the given JSON data.
-func ApplyPatch(original json.RawMessage, patch JSONPatch) (json.RawMessage, error) {
-	// Parse the original JSON into a generic structure
-	var data interface{}
-	if err := json.Unmarshal(original, &data); err != nil {
-		return nil, fmt.Errorf("failed to parse original JSON: %w", err)
-	}
-
-	// Apply the patch
-	if err := applyPatchToData(&data, patch.Path, patch.Value); err != nil {
-		return nil, fmt.Errorf("failed to apply patch: %w", err)
-	}
-
-	// Marshal back to JSON
-	result, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal patched data: %w", err)
-	}
-
-	return result, nil
-}
-
-// applyPatchToData applies a patch to nested data using a path.
-func applyPatchToData(data *interface{}, path string, value interface{}) error {
-	// This is a simplified implementation - in production, you'd want to use
-	// a proper JSON path library or implement full path parsing
-
-	// For now, let's handle basic cases like:
-	// - "field"
-	// - "parent.child"
-	// - "array[0]"
-	// - "parent.array[0].field"
-
-	// TODO: Implement proper JSON path parsing and application
-	// For the MVP, we'll require the LLM to provide simple paths
-
-	return fmt.Errorf("path parsing not yet implemented: %s", path)
-}
-
-// ApplyPatches applies multiple patches to JSON data.
-func ApplyPatches(original json.RawMessage, patches []JSONPatch) (json.RawMessage, error) {
-	result := original
-	for i, patch := range patches {
-		var err error
-		result, err = ApplyPatch(result, patch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply patch %d: %w", i, err)
-		}
-	}
-	return result, nil
-}
+// JSON patching functionality has been moved to json_patch.go
+// Use JSONPatcher.ApplyPatch() and JSONPatcher.ApplyPatches() instead

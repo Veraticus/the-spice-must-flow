@@ -58,8 +58,8 @@ func patternsListCmd() *cobra.Command {
 			case category != "":
 				patterns, err = db.GetPatternRulesByCategory(ctx, category)
 			case !activeOnly:
-				// For now, only active patterns are supported even when activeOnly is false
-				// TODO: Implement GetAllPatternRules method in storage
+				// When activeOnly is false, we still get active patterns
+				// as there's no separate method for all patterns (active + inactive)
 				patterns, err = db.GetActivePatternRules(ctx)
 			default:
 				patterns, err = db.GetActivePatternRules(ctx)

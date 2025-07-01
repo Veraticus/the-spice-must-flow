@@ -58,12 +58,28 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 	defer func() { _ = store.Close() }()
 
 	if status {
-		// TODO: Add method to get current schema version
+		// Get current schema version
+		ctx := cmd.Context()
+		var currentVersion int
+		if err := store.DB().QueryRowContext(ctx, "PRAGMA user_version").Scan(&currentVersion); err != nil {
+			return fmt.Errorf("failed to get current schema version: %w", err)
+		}
+
 		slog.Info("📊 Database Migration Status")
 		slog.Info("Database", "path", dbPath)
-		slog.Info("Current version: (checking...)")
-		slog.Info("Latest version: 2")
-		slog.Warn("Migration status check not yet fully implemented")
+		slog.Info("Current version", "version", currentVersion)
+		slog.Info("Latest version", "version", storage.ExpectedSchemaVersion)
+
+		if currentVersion == storage.ExpectedSchemaVersion {
+			slog.Info("✅ Database is up to date")
+		} else if currentVersion < storage.ExpectedSchemaVersion {
+			slog.Warn("Database needs migration",
+				"migrations_pending", storage.ExpectedSchemaVersion-currentVersion)
+		} else {
+			slog.Error("Database version is newer than expected",
+				"database_version", currentVersion,
+				"expected_version", storage.ExpectedSchemaVersion)
+		}
 		return nil
 	}
 

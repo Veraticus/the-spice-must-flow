@@ -270,7 +270,7 @@ func validateSuggestedPattern(pattern SuggestedPattern) error {
 		return fmt.Errorf("confidence must be between 0 and 1")
 	}
 
-	// TODO: Add validation for the embedded pattern rule if needed
+	// The embedded pattern rule is validated in the Validate() method of SuggestedPattern
 
 	return nil
 }

@@ -15,8 +15,7 @@ type Client interface {
 	// Analyze performs general-purpose AI analysis and returns raw response text.
 	// This is used for complex analysis tasks that return arbitrary JSON or text.
 	Analyze(ctx context.Context, prompt string, systemPrompt string) (string, error)
-	// TODO: Add when implementing direction detection
-	// ClassifyDirection(ctx context.Context, prompt string) (DirectionResponse, error)
+	// Direction detection is handled automatically during import based on transaction types
 }
 
 // ClassificationResponse contains the LLM's classification result.
