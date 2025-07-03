@@ -175,9 +175,9 @@ func (e *Engine) buildCorrectionRequest(currentJSON json.RawMessage, validationE
 }
 
 // prepareTransactionData converts transactions to map format for LLM.
-func (e *Engine) prepareTransactionData(transactions []model.Transaction) map[string]interface{} {
-	transactionData := make(map[string]interface{})
-	transactionArray := make([]map[string]interface{}, len(transactions))
+func (e *Engine) prepareTransactionData(transactions []model.Transaction) map[string]any {
+	transactionData := make(map[string]any)
+	transactionArray := make([]map[string]any, len(transactions))
 
 	for i, txn := range transactions {
 		// Extract the first category from the slice for LLM analysis
@@ -186,7 +186,7 @@ func (e *Engine) prepareTransactionData(transactions []model.Transaction) map[st
 			category = txn.Category[0]
 		}
 
-		transactionArray[i] = map[string]interface{}{
+		transactionArray[i] = map[string]any{
 			"ID":       txn.ID,
 			"Date":     txn.Date.Format("2006-01-02"),
 			"Name":     txn.Name,

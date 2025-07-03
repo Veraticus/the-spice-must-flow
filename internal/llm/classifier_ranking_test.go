@@ -57,7 +57,7 @@ func (m *mockRankingClient) ClassifyMerchantBatch(_ context.Context, _ string) (
 	return MerchantBatchResponse{}, nil
 }
 
-func (m *mockRankingClient) Analyze(_ context.Context, prompt string, systemPrompt string) (string, error) {
+func (m *mockRankingClient) Analyze(_ context.Context, _ string, _ string) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}

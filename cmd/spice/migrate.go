@@ -70,12 +70,13 @@ func runMigrate(cmd *cobra.Command, _ []string) error {
 		slog.Info("Current version", "version", currentVersion)
 		slog.Info("Latest version", "version", storage.ExpectedSchemaVersion)
 
-		if currentVersion == storage.ExpectedSchemaVersion {
+		switch {
+		case currentVersion == storage.ExpectedSchemaVersion:
 			slog.Info("✅ Database is up to date")
-		} else if currentVersion < storage.ExpectedSchemaVersion {
+		case currentVersion < storage.ExpectedSchemaVersion:
 			slog.Warn("Database needs migration",
 				"migrations_pending", storage.ExpectedSchemaVersion-currentVersion)
-		} else {
+		default:
 			slog.Error("Database version is newer than expected",
 				"database_version", currentVersion,
 				"expected_version", storage.ExpectedSchemaVersion)

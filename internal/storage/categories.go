@@ -21,7 +21,7 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active, type
+		SELECT id, name, description, created_at, is_active, type, default_business_percent
 		FROM categories
 		WHERE is_active = 1
 		ORDER BY name`
@@ -40,7 +40,8 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 	for rows.Next() {
 		var cat model.Category
 		var catType sql.NullString
-		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType); err != nil {
+		var defaultBusinessPercent sql.NullInt64
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType, &defaultBusinessPercent); err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
 		}
 		// Set category type
@@ -48,6 +49,10 @@ func (s *SQLiteStorage) GetCategories(ctx context.Context) ([]model.Category, er
 			cat.Type = model.CategoryType(catType.String)
 		} else {
 			cat.Type = model.CategoryTypeExpense // default
+		}
+		// Set default business percent
+		if defaultBusinessPercent.Valid {
+			cat.DefaultBusinessPercent = int(defaultBusinessPercent.Int64)
 		}
 		categories = append(categories, cat)
 	}
@@ -71,14 +76,15 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active, type
+		SELECT id, name, description, created_at, is_active, type, default_business_percent
 		FROM categories
 		WHERE name = ? AND is_active = 1`
 
 	var cat model.Category
 	var catType sql.NullString
+	var defaultBusinessPercent sql.NullInt64
 	err := s.db.QueryRowContext(ctx, query, name).Scan(
-		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType,
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType, &defaultBusinessPercent,
 	)
 
 	if err == sql.ErrNoRows {
@@ -93,6 +99,10 @@ func (s *SQLiteStorage) GetCategoryByName(ctx context.Context, name string) (*mo
 		cat.Type = model.CategoryType(catType.String)
 	} else {
 		cat.Type = model.CategoryTypeExpense // default
+	}
+	// Set default business percent
+	if defaultBusinessPercent.Valid {
+		cat.DefaultBusinessPercent = int(defaultBusinessPercent.Int64)
 	}
 
 	return &cat, nil
@@ -109,14 +119,15 @@ func (s *SQLiteStorage) GetCategoryByID(ctx context.Context, id int) (*model.Cat
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active, type
+		SELECT id, name, description, created_at, is_active, type, default_business_percent
 		FROM categories
 		WHERE id = ? AND is_active = 1`
 
 	var cat model.Category
 	var catType sql.NullString
+	var defaultBusinessPercent sql.NullInt64
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType,
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType, &defaultBusinessPercent,
 	)
 
 	if err == sql.ErrNoRows {
@@ -131,6 +142,10 @@ func (s *SQLiteStorage) GetCategoryByID(ctx context.Context, id int) (*model.Cat
 		cat.Type = model.CategoryType(catType.String)
 	} else {
 		cat.Type = model.CategoryTypeExpense // default
+	}
+	// Set default business percent
+	if defaultBusinessPercent.Valid {
+		cat.DefaultBusinessPercent = int(defaultBusinessPercent.Int64)
 	}
 
 	return &cat, nil
@@ -153,14 +168,14 @@ func (s *SQLiteStorage) CreateCategoryWithType(ctx context.Context, name, descri
 
 	// Check if category already exists (including inactive ones)
 	existingQuery := `
-		SELECT id, name, description, created_at, is_active, type
+		SELECT id, name, description, created_at, is_active, type, default_business_percent
 		FROM categories
 		WHERE name = ?`
 
 	var existing model.Category
 	var typeStr sql.NullString
 	err := s.db.QueryRowContext(ctx, existingQuery, name).Scan(
-		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive, &typeStr,
+		&existing.ID, &existing.Name, &existing.Description, &existing.CreatedAt, &existing.IsActive, &typeStr, &existing.DefaultBusinessPercent,
 	)
 
 	if err == nil {
@@ -202,13 +217,10 @@ func (s *SQLiteStorage) CreateCategoryWithType(ctx context.Context, name, descri
 		return nil, fmt.Errorf("failed to get category ID: %w", err)
 	}
 
-	category := &model.Category{
-		ID:          int(id),
-		Name:        name,
-		Description: description,
-		CreatedAt:   now,
-		IsActive:    true,
-		Type:        categoryType,
+	// Query the created category to get all fields including default_business_percent
+	category, err := s.GetCategoryByName(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve created category: %w", err)
 	}
 
 	slog.Info("created new category", "name", name, "id", id, "type", categoryType)
@@ -224,7 +236,7 @@ func (t *sqliteTransaction) GetCategories(ctx context.Context) ([]model.Category
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active
+		SELECT id, name, description, created_at, is_active, type, default_business_percent
 		FROM categories
 		WHERE is_active = 1
 		ORDER BY name`
@@ -242,8 +254,20 @@ func (t *sqliteTransaction) GetCategories(ctx context.Context) ([]model.Category
 	var categories []model.Category
 	for rows.Next() {
 		var cat model.Category
-		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive); err != nil {
+		var catType sql.NullString
+		var defaultBusinessPercent sql.NullInt64
+		if err := rows.Scan(&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType, &defaultBusinessPercent); err != nil {
 			return nil, fmt.Errorf("failed to scan category: %w", err)
+		}
+		// Set category type
+		if catType.Valid && catType.String != "" {
+			cat.Type = model.CategoryType(catType.String)
+		} else {
+			cat.Type = model.CategoryTypeExpense // default
+		}
+		// Set default business percent
+		if defaultBusinessPercent.Valid {
+			cat.DefaultBusinessPercent = int(defaultBusinessPercent.Int64)
 		}
 		categories = append(categories, cat)
 	}
@@ -266,13 +290,15 @@ func (t *sqliteTransaction) GetCategoryByName(ctx context.Context, name string) 
 	}
 
 	query := `
-		SELECT id, name, description, created_at, is_active
+		SELECT id, name, description, created_at, is_active, type, default_business_percent
 		FROM categories
 		WHERE name = ? AND is_active = 1`
 
 	var cat model.Category
+	var catType sql.NullString
+	var defaultBusinessPercent sql.NullInt64
 	err := t.tx.QueryRowContext(ctx, query, name).Scan(
-		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive,
+		&cat.ID, &cat.Name, &cat.Description, &cat.CreatedAt, &cat.IsActive, &catType, &defaultBusinessPercent,
 	)
 
 	if err == sql.ErrNoRows {
@@ -280,6 +306,17 @@ func (t *sqliteTransaction) GetCategoryByName(ctx context.Context, name string) 
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query category: %w", err)
+	}
+
+	// Set category type
+	if catType.Valid && catType.String != "" {
+		cat.Type = model.CategoryType(catType.String)
+	} else {
+		cat.Type = model.CategoryTypeExpense // default
+	}
+	// Set default business percent
+	if defaultBusinessPercent.Valid {
+		cat.DefaultBusinessPercent = int(defaultBusinessPercent.Int64)
 	}
 
 	return &cat, nil
@@ -406,6 +443,54 @@ func (s *SQLiteStorage) UpdateCategory(ctx context.Context, id int, name, descri
 	return nil
 }
 
+// UpdateCategoryBusinessPercent updates the default business percentage for a category.
+func (s *SQLiteStorage) UpdateCategoryBusinessPercent(ctx context.Context, id int, businessPercent int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	if businessPercent < 0 || businessPercent > 100 {
+		return fmt.Errorf("business percentage must be between 0 and 100")
+	}
+
+	// Check if category exists and is not income/system type
+	var catType sql.NullString
+	checkQuery := `SELECT type FROM categories WHERE id = ? AND is_active = 1`
+	err := s.db.QueryRowContext(ctx, checkQuery, id).Scan(&catType)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("category with ID %d not found", id)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check category: %w", err)
+	}
+
+	// Only allow business percent updates for expense categories
+	if catType.Valid && (catType.String == string(model.CategoryTypeIncome) || catType.String == string(model.CategoryTypeSystem)) {
+		return fmt.Errorf("cannot set business percentage for %s categories", catType.String)
+	}
+
+	updateQuery := `
+		UPDATE categories 
+		SET default_business_percent = ?
+		WHERE id = ? AND is_active = 1`
+
+	result, err := s.db.ExecContext(ctx, updateQuery, businessPercent, id)
+	if err != nil {
+		return fmt.Errorf("failed to update category business percentage: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("category with ID %d not found", id)
+	}
+
+	slog.Info("updated category business percentage", "id", id, "business_percent", businessPercent)
+	return nil
+}
+
 // DeleteCategory soft-deletes a category by setting is_active to false.
 func (s *SQLiteStorage) DeleteCategory(ctx context.Context, id int) error {
 	if err := validateContext(ctx); err != nil {
@@ -487,6 +572,53 @@ func (t *sqliteTransaction) UpdateCategory(ctx context.Context, id int, name, de
 
 	if rowsAffected == 0 {
 		return fmt.Errorf("category not found or inactive")
+	}
+
+	return nil
+}
+
+// UpdateCategoryBusinessPercent updates the default business percentage for a category within a transaction.
+func (t *sqliteTransaction) UpdateCategoryBusinessPercent(ctx context.Context, id int, businessPercent int) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+
+	if businessPercent < 0 || businessPercent > 100 {
+		return fmt.Errorf("business percentage must be between 0 and 100")
+	}
+
+	// Check if category exists and is not income/system type
+	var catType sql.NullString
+	checkQuery := `SELECT type FROM categories WHERE id = ? AND is_active = 1`
+	err := t.tx.QueryRowContext(ctx, checkQuery, id).Scan(&catType)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("category with ID %d not found", id)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check category: %w", err)
+	}
+
+	// Only allow business percent updates for expense categories
+	if catType.Valid && (catType.String == string(model.CategoryTypeIncome) || catType.String == string(model.CategoryTypeSystem)) {
+		return fmt.Errorf("cannot set business percentage for %s categories", catType.String)
+	}
+
+	updateQuery := `
+		UPDATE categories 
+		SET default_business_percent = ?
+		WHERE id = ? AND is_active = 1`
+
+	result, err := t.tx.ExecContext(ctx, updateQuery, businessPercent, id)
+	if err != nil {
+		return fmt.Errorf("failed to update category business percentage: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("category with ID %d not found", id)
 	}
 
 	return nil

@@ -63,18 +63,43 @@ type MonthlyFlowRow struct {
 	RunningBalance decimal.Decimal
 }
 
+// VendorLookupRow represents a single row in the Vendor Lookup tab.
+type VendorLookupRow struct {
+	VendorName string
+	Category   string
+}
+
+// CategoryLookupRow represents a single row in the Category Lookup tab.
+type CategoryLookupRow struct {
+	CategoryName       string
+	Type               string // income/expense/system
+	Description        string
+	DefaultBusinessPct int
+}
+
+// BusinessRuleLookupRow represents a single row in the Business Rules Lookup tab.
+type BusinessRuleLookupRow struct {
+	VendorPattern string
+	Category      string
+	BusinessPct   int
+	Notes         string
+}
+
 // TabData holds all the data for the complete spreadsheet export.
 type TabData struct {
-	DateRange        DateRange
-	TotalIncome      decimal.Decimal
-	TotalExpenses    decimal.Decimal
-	TotalDeductible  decimal.Decimal
-	Expenses         []ExpenseRow
-	Income           []IncomeRow
-	VendorSummary    []VendorSummaryRow
-	CategorySummary  []CategorySummaryRow
-	BusinessExpenses []BusinessExpenseRow
-	MonthlyFlow      []MonthlyFlowRow
+	DateRange           DateRange
+	TotalIncome         decimal.Decimal
+	TotalExpenses       decimal.Decimal
+	TotalDeductible     decimal.Decimal
+	Expenses            []ExpenseRow
+	Income              []IncomeRow
+	VendorSummary       []VendorSummaryRow
+	CategorySummary     []CategorySummaryRow
+	BusinessExpenses    []BusinessExpenseRow
+	MonthlyFlow         []MonthlyFlowRow
+	VendorLookup        []VendorLookupRow
+	CategoryLookup      []CategoryLookupRow
+	BusinessRulesLookup []BusinessRuleLookupRow
 }
 
 // DateRange represents the time period covered by the report.

@@ -16,10 +16,10 @@ type SessionAnalysisResult struct {
 
 // ErrorCorrection represents a request to fix a specific error.
 type ErrorCorrection struct {
-	ErrorPath        string      `json:"error_path"`        // JSON path where error occurred
-	ErrorDescription string      `json:"error_description"` // What went wrong
-	CurrentValue     interface{} `json:"current_value"`     // The problematic value
-	ExpectedFormat   string      `json:"expected_format"`   // What format/type is expected
+	ErrorPath        string `json:"error_path"`        // JSON path where error occurred
+	ErrorDescription string `json:"error_description"` // What went wrong
+	CurrentValue     any    `json:"current_value"`     // The problematic value
+	ExpectedFormat   string `json:"expected_format"`   // What format/type is expected
 }
 
 // CorrectionRequest is sent to the LLM to fix validation errors.

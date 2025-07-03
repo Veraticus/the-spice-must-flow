@@ -69,7 +69,7 @@ func TestEngine_FileBasedAnalysisDetection(t *testing.T) {
 
 			// Mock the storage to return our test transactions
 			mockDeps.Storage = &fileTestStorage{
-				getClassificationsByDateRangeFunc: func(ctx context.Context, start, end time.Time) ([]model.Classification, error) {
+				getClassificationsByDateRangeFunc: func(_ context.Context, _, _ time.Time) ([]model.Classification, error) {
 					// Return classifications that reference our transactions
 					classifications := make([]model.Classification, len(transactions))
 					for i, txn := range transactions {
@@ -79,13 +79,13 @@ func TestEngine_FileBasedAnalysisDetection(t *testing.T) {
 					}
 					return classifications, nil
 				},
-				getCategoriesFunc: func(ctx context.Context) ([]model.Category, error) {
+				getCategoriesFunc: func(_ context.Context) ([]model.Category, error) {
 					return []model.Category{{Name: "Test", Type: "expense"}}, nil
 				},
-				getActivePatternRulesFunc: func(ctx context.Context) ([]model.PatternRule, error) {
+				getActivePatternRulesFunc: func(_ context.Context) ([]model.PatternRule, error) {
 					return []model.PatternRule{}, nil
 				},
-				getActiveCheckPatternsFunc: func(ctx context.Context) ([]model.CheckPattern, error) {
+				getActiveCheckPatternsFunc: func(_ context.Context) ([]model.CheckPattern, error) {
 					return []model.CheckPattern{}, nil
 				},
 			}
@@ -96,12 +96,12 @@ func TestEngine_FileBasedAnalysisDetection(t *testing.T) {
 
 			// Create a mock LLM client that tracks calls
 			mockLLMClient := &fileTestLLMClient{
-				analyzeTransactionsFunc: func(ctx context.Context, prompt string) (string, error) {
+				analyzeTransactionsFunc: func(_ context.Context, _ string) (string, error) {
 					return `{"coherenceScore": 85}`, nil
 				},
-				analyzeTransactionsWithFileFunc: func(ctx context.Context, prompt string, data map[string]interface{}) (string, error) {
+				analyzeTransactionsWithFileFunc: func(_ context.Context, _ string, data map[string]any) (string, error) {
 					// Verify we got the right number of transactions
-					if txns, ok := data["transactions"].([]map[string]interface{}); ok {
+					if txns, ok := data["transactions"].([]map[string]any); ok {
 						assert.Len(t, txns, tt.transactionCount)
 					}
 					return `{"coherenceScore": 85}`, nil
@@ -236,7 +236,7 @@ func TestEngine_TransactionCategoriesInFileExport(t *testing.T) {
 	transactionsRaw, ok := capturedTransactionData["transactions"]
 	require.True(t, ok, "transactions key should exist in data")
 
-	transactions, ok := transactionsRaw.([]map[string]interface{})
+	transactions, ok := transactionsRaw.([]map[string]any)
 	require.True(t, ok, "transactions should be a slice of maps")
 	require.Len(t, transactions, 2)
 
@@ -280,7 +280,7 @@ func (m *fileTestPromptBuilder) BuildCorrectionPrompt(_ CorrectionPromptData) (s
 
 type fileTestLLMClient struct {
 	analyzeTransactionsFunc         func(context.Context, string) (string, error)
-	analyzeTransactionsWithFileFunc func(context.Context, string, map[string]interface{}) (string, error)
+	analyzeTransactionsWithFileFunc func(context.Context, string, map[string]any) (string, error)
 }
 
 func (m *fileTestLLMClient) AnalyzeTransactions(ctx context.Context, prompt string) (string, error) {
@@ -290,14 +290,14 @@ func (m *fileTestLLMClient) AnalyzeTransactions(ctx context.Context, prompt stri
 	return `{"coherenceScore": 85}`, nil
 }
 
-func (m *fileTestLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, data map[string]interface{}) (string, error) {
+func (m *fileTestLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, data map[string]any) (string, error) {
 	if m.analyzeTransactionsWithFileFunc != nil {
 		return m.analyzeTransactionsWithFileFunc(ctx, prompt, data)
 	}
 	return `{"coherenceScore": 85}`, nil
 }
 
-func (m *fileTestLLMClient) ValidateAndCorrectResponse(ctx context.Context, prompt string) (string, error) {
+func (m *fileTestLLMClient) ValidateAndCorrectResponse(_ context.Context, _ string) (string, error) {
 	return `{"coherenceScore": 85}`, nil
 }
 
@@ -351,123 +351,131 @@ func (m *fileTestStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.C
 }
 
 // Stub implementations for the rest of the Storage interface.
-func (m *fileTestStorage) SaveTransactions(ctx context.Context, transactions []model.Transaction) error {
+func (m *fileTestStorage) SaveTransactions(_ context.Context, _ []model.Transaction) error {
 	return nil
 }
-func (m *fileTestStorage) GetTransactionsToClassify(ctx context.Context, fromDate *time.Time) ([]model.Transaction, error) {
+func (m *fileTestStorage) GetTransactionsToClassify(_ context.Context, _ *time.Time) ([]model.Transaction, error) {
 	return nil, nil // Intentional nil return for test stub
 }
-func (m *fileTestStorage) GetTransactionByID(ctx context.Context, id string) (*model.Transaction, error) {
-	return nil, nil // Intentional nil return for test stub
+func (m *fileTestStorage) GetTransactionByID(_ context.Context, _ string) (*model.Transaction, error) {
+	return &model.Transaction{}, nil // Return empty transaction for test stub
 }
-func (m *fileTestStorage) GetTransactionsByCategory(ctx context.Context, categoryName string) ([]model.Transaction, error) {
+func (m *fileTestStorage) GetTransactionsByCategory(_ context.Context, _ string) ([]model.Transaction, error) {
 	return nil, nil
 }
-func (m *fileTestStorage) GetTransactionsByCategoryID(ctx context.Context, categoryID int) ([]model.Transaction, error) {
+func (m *fileTestStorage) GetTransactionsByCategoryID(_ context.Context, _ int) ([]model.Transaction, error) {
 	return nil, nil
 }
-func (m *fileTestStorage) UpdateTransactionCategories(ctx context.Context, fromCategory, toCategory string) error {
+func (m *fileTestStorage) UpdateTransactionCategories(_ context.Context, _, _ string) error {
 	return nil
 }
-func (m *fileTestStorage) UpdateTransactionCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+func (m *fileTestStorage) UpdateTransactionCategoriesByID(_ context.Context, _, _ int) error {
 	return nil
 }
-func (m *fileTestStorage) GetTransactionCount(ctx context.Context) (int, error) { return 0, nil }
-func (m *fileTestStorage) GetTransactionCountByCategory(ctx context.Context, categoryName string) (int, error) {
+func (m *fileTestStorage) GetTransactionCount(_ context.Context) (int, error) { return 0, nil }
+func (m *fileTestStorage) GetTransactionCountByCategory(_ context.Context, _ string) (int, error) {
 	return 0, nil
 }
-func (m *fileTestStorage) GetEarliestTransactionDate(ctx context.Context) (time.Time, error) {
+func (m *fileTestStorage) GetEarliestTransactionDate(_ context.Context) (time.Time, error) {
 	return time.Now(), nil
 }
-func (m *fileTestStorage) GetLatestTransactionDate(ctx context.Context) (time.Time, error) {
+func (m *fileTestStorage) GetLatestTransactionDate(_ context.Context) (time.Time, error) {
 	return time.Now(), nil
 }
-func (m *fileTestStorage) GetCategorySummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
-	return nil, nil // Intentional nil return for test stub
+func (m *fileTestStorage) GetCategorySummary(_ context.Context, _, _ time.Time) (map[string]float64, error) {
+	return map[string]float64{}, nil // Return empty map for test stub
 }
-func (m *fileTestStorage) GetMerchantSummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
-	return nil, nil // Intentional nil return for test stub
+func (m *fileTestStorage) GetMerchantSummary(_ context.Context, _, _ time.Time) (map[string]float64, error) {
+	return map[string]float64{}, nil // Return empty map for test stub
 }
-func (m *fileTestStorage) GetVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
-	return nil, nil // Intentional nil return for test stub
+func (m *fileTestStorage) GetVendor(_ context.Context, _ string) (*model.Vendor, error) {
+	return &model.Vendor{}, nil // Return empty vendor for test stub
 }
-func (m *fileTestStorage) SaveVendor(ctx context.Context, vendor *model.Vendor) error  { return nil }
-func (m *fileTestStorage) DeleteVendor(ctx context.Context, merchantName string) error { return nil }
-func (m *fileTestStorage) GetAllVendors(ctx context.Context) ([]model.Vendor, error)   { return nil, nil }
-func (m *fileTestStorage) GetVendorsByCategory(ctx context.Context, categoryName string) ([]model.Vendor, error) {
-	return nil, nil
+func (m *fileTestStorage) SaveVendor(_ context.Context, _ *model.Vendor) error { return nil }
+func (m *fileTestStorage) DeleteVendor(_ context.Context, _ string) error      { return nil }
+func (m *fileTestStorage) GetAllVendors(_ context.Context) ([]model.Vendor, error) {
+	return []model.Vendor{}, nil
 }
-func (m *fileTestStorage) GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error) {
-	return nil, nil
+func (m *fileTestStorage) GetVendorsByCategory(_ context.Context, _ string) ([]model.Vendor, error) {
+	return []model.Vendor{}, nil
 }
-func (m *fileTestStorage) GetVendorsBySource(ctx context.Context, source model.VendorSource) ([]model.Vendor, error) {
-	return nil, nil
+func (m *fileTestStorage) GetVendorsByCategoryID(_ context.Context, _ int) ([]model.Vendor, error) {
+	return []model.Vendor{}, nil
 }
-func (m *fileTestStorage) DeleteVendorsBySource(ctx context.Context, source model.VendorSource) error {
+func (m *fileTestStorage) GetVendorsBySource(_ context.Context, _ model.VendorSource) ([]model.Vendor, error) {
+	return []model.Vendor{}, nil
+}
+func (m *fileTestStorage) DeleteVendorsBySource(_ context.Context, _ model.VendorSource) error {
 	return nil
 }
-func (m *fileTestStorage) UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error {
+func (m *fileTestStorage) UpdateVendorCategories(_ context.Context, _, _ string) error {
 	return nil
 }
-func (m *fileTestStorage) UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+func (m *fileTestStorage) UpdateVendorCategoriesByID(_ context.Context, _, _ int) error {
 	return nil
 }
-func (m *fileTestStorage) FindVendorMatch(ctx context.Context, merchantName string) (*model.Vendor, error) {
-	return nil, nil
+func (m *fileTestStorage) FindVendorMatch(_ context.Context, _ string) (*model.Vendor, error) {
+	return &model.Vendor{}, nil
 }
-func (m *fileTestStorage) SaveClassification(ctx context.Context, classification *model.Classification) error {
+func (m *fileTestStorage) SaveClassification(_ context.Context, _ *model.Classification) error {
 	return nil
 }
-func (m *fileTestStorage) GetClassificationsByConfidence(ctx context.Context, maxConfidence float64, excludeUserModified bool) ([]model.Classification, error) {
-	return nil, nil
+func (m *fileTestStorage) GetClassificationsByConfidence(_ context.Context, _ float64, _ bool) ([]model.Classification, error) {
+	return []model.Classification{}, nil
 }
-func (m *fileTestStorage) ClearAllClassifications(ctx context.Context) error { return nil }
-func (m *fileTestStorage) GetCategoryByName(ctx context.Context, name string) (*model.Category, error) {
-	return nil, nil
+func (m *fileTestStorage) ClearAllClassifications(_ context.Context) error { return nil }
+func (m *fileTestStorage) GetCategoryByName(_ context.Context, _ string) (*model.Category, error) {
+	return &model.Category{}, nil
 }
-func (m *fileTestStorage) CreateCategory(ctx context.Context, name, description string) (*model.Category, error) {
-	return nil, nil
+func (m *fileTestStorage) CreateCategory(_ context.Context, _, _ string) (*model.Category, error) {
+	return &model.Category{}, nil
 }
-func (m *fileTestStorage) CreateCategoryWithType(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error) {
-	return nil, nil
+func (m *fileTestStorage) CreateCategoryWithType(_ context.Context, _, _ string, _ model.CategoryType) (*model.Category, error) {
+	return &model.Category{}, nil
 }
-func (m *fileTestStorage) UpdateCategory(ctx context.Context, id int, name, description string) error {
+func (m *fileTestStorage) UpdateCategory(_ context.Context, _ int, _, _ string) error {
 	return nil
 }
-func (m *fileTestStorage) DeleteCategory(ctx context.Context, id int) error { return nil }
-func (m *fileTestStorage) CreateCheckPattern(ctx context.Context, pattern *model.CheckPattern) error {
+func (m *fileTestStorage) DeleteCategory(_ context.Context, _ int) error { return nil }
+func (m *fileTestStorage) CreateCheckPattern(_ context.Context, _ *model.CheckPattern) error {
 	return nil
 }
-func (m *fileTestStorage) GetCheckPattern(ctx context.Context, id int64) (*model.CheckPattern, error) {
+func (m *fileTestStorage) GetCheckPattern(_ context.Context, _ int64) (*model.CheckPattern, error) {
+	return &model.CheckPattern{}, nil
+}
+func (m *fileTestStorage) GetMatchingCheckPatterns(_ context.Context, _ model.Transaction) ([]model.CheckPattern, error) {
+	return []model.CheckPattern{}, nil
+}
+func (m *fileTestStorage) UpdateCheckPattern(_ context.Context, _ *model.CheckPattern) error {
+	return nil
+}
+func (m *fileTestStorage) DeleteCheckPattern(_ context.Context, _ int64) error { return nil }
+func (m *fileTestStorage) IncrementCheckPatternUseCount(_ context.Context, _ int64) error {
+	return nil
+}
+func (m *fileTestStorage) CreatePatternRule(_ context.Context, _ *model.PatternRule) error {
+	return nil
+}
+func (m *fileTestStorage) GetPatternRule(_ context.Context, _ int) (*model.PatternRule, error) {
+	return &model.PatternRule{}, nil
+}
+func (m *fileTestStorage) UpdatePatternRule(_ context.Context, _ *model.PatternRule) error {
+	return nil
+}
+func (m *fileTestStorage) DeletePatternRule(_ context.Context, _ int) error            { return nil }
+func (m *fileTestStorage) IncrementPatternRuleUseCount(_ context.Context, _ int) error { return nil }
+func (m *fileTestStorage) GetPatternRulesByCategory(_ context.Context, _ string) ([]model.PatternRule, error) {
 	return nil, nil
 }
-func (m *fileTestStorage) GetMatchingCheckPatterns(ctx context.Context, txn model.Transaction) ([]model.CheckPattern, error) {
-	return nil, nil
+func (m *fileTestStorage) Migrate(_ context.Context) error { return nil }
+func (m *fileTestStorage) BeginTx(_ context.Context) (service.Transaction, error) {
+	// For testing, return an error since this is a stub that shouldn't be called
+	return nil, fmt.Errorf("BeginTx not implemented in test stub")
 }
-func (m *fileTestStorage) UpdateCheckPattern(ctx context.Context, pattern *model.CheckPattern) error {
+func (m *fileTestStorage) UpdateCategoryBusinessPercent(_ context.Context, _ int, _ int) error {
 	return nil
 }
-func (m *fileTestStorage) DeleteCheckPattern(ctx context.Context, id int64) error { return nil }
-func (m *fileTestStorage) IncrementCheckPatternUseCount(ctx context.Context, id int64) error {
-	return nil
-}
-func (m *fileTestStorage) CreatePatternRule(ctx context.Context, rule *model.PatternRule) error {
-	return nil
-}
-func (m *fileTestStorage) GetPatternRule(ctx context.Context, id int) (*model.PatternRule, error) {
-	return nil, nil
-}
-func (m *fileTestStorage) UpdatePatternRule(ctx context.Context, rule *model.PatternRule) error {
-	return nil
-}
-func (m *fileTestStorage) DeletePatternRule(ctx context.Context, id int) error            { return nil }
-func (m *fileTestStorage) IncrementPatternRuleUseCount(ctx context.Context, id int) error { return nil }
-func (m *fileTestStorage) GetPatternRulesByCategory(ctx context.Context, category string) ([]model.PatternRule, error) {
-	return nil, nil
-}
-func (m *fileTestStorage) Migrate(ctx context.Context) error                        { return nil }
-func (m *fileTestStorage) BeginTx(ctx context.Context) (service.Transaction, error) { return nil, nil }
-func (m *fileTestStorage) Close() error                                             { return nil }
+func (m *fileTestStorage) Close() error { return nil }
 
 type fileTestValidator struct{}
 
@@ -481,39 +489,39 @@ func (m *fileTestValidator) ExtractError(_ []byte, _ error) (string, int, int) {
 
 type fileTestSessionStore struct{}
 
-func (m *fileTestSessionStore) Create(ctx context.Context, session *Session) error {
+func (m *fileTestSessionStore) Create(_ context.Context, _ *Session) error {
 	return nil
 }
 
-func (m *fileTestSessionStore) Get(ctx context.Context, id string) (*Session, error) {
+func (m *fileTestSessionStore) Get(_ context.Context, id string) (*Session, error) {
 	return &Session{ID: id, Status: StatusPending}, nil
 }
 
-func (m *fileTestSessionStore) Update(ctx context.Context, session *Session) error {
+func (m *fileTestSessionStore) Update(_ context.Context, _ *Session) error {
 	return nil
 }
 
 type fileTestReportStore struct{}
 
-func (m *fileTestReportStore) SaveReport(ctx context.Context, report *Report) error {
+func (m *fileTestReportStore) SaveReport(_ context.Context, _ *Report) error {
 	return nil
 }
 
-func (m *fileTestReportStore) GetReport(ctx context.Context, reportID string) (*Report, error) {
-	return nil, nil
+func (m *fileTestReportStore) GetReport(_ context.Context, _ string) (*Report, error) {
+	return &Report{}, nil
 }
 
 type fileTestFixer struct{}
 
-func (m *fileTestFixer) ApplyPatternFixes(ctx context.Context, patterns []SuggestedPattern) error {
+func (m *fileTestFixer) ApplyPatternFixes(_ context.Context, _ []SuggestedPattern) error {
 	return nil
 }
 
-func (m *fileTestFixer) ApplyCategoryFixes(ctx context.Context, fixes []Fix) error {
+func (m *fileTestFixer) ApplyCategoryFixes(_ context.Context, _ []Fix) error {
 	return nil
 }
 
-func (m *fileTestFixer) ApplyRecategorizations(ctx context.Context, issues []Issue) error {
+func (m *fileTestFixer) ApplyRecategorizations(_ context.Context, _ []Issue) error {
 	return nil
 }
 

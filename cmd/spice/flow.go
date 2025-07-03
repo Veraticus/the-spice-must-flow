@@ -154,7 +154,7 @@ func runFlow(cmd *cobra.Command, _ []string) error {
 
 	// Handle export to Google Sheets
 	if export {
-		if err := exportToSheets(ctx, classifications, summary, categoryTypes); err != nil {
+		if err := exportToSheets(ctx, classifications, summary, categories); err != nil {
 			return fmt.Errorf("failed to export to Google Sheets: %w", err)
 		}
 		slog.Info(cli.FormatSuccess("Successfully exported to Google Sheets!"))
@@ -261,7 +261,7 @@ Top Categories:`, summary.TotalAmount, len(classifications), len(summary.ByCateg
 	return content
 }
 
-func exportToSheets(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) error {
+func exportToSheets(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categories []model.Category) error {
 	// Load Google Sheets config from viper (config.yaml) and environment
 	sheetsConfig, err := config.LoadSheetsConfig()
 	if err != nil {
@@ -275,7 +275,7 @@ func exportToSheets(ctx context.Context, classifications []model.Classification,
 	}
 
 	// Write the report
-	if err := writer.Write(ctx, classifications, summary, categoryTypes); err != nil {
+	if err := writer.Write(ctx, classifications, summary, categories); err != nil {
 		return fmt.Errorf("failed to write report: %w", err)
 	}
 

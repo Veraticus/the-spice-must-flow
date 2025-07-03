@@ -222,7 +222,9 @@ func (s *SQLiteSessionStore) SaveReport(ctx context.Context, report *Report) err
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback() // Will be no-op if already committed
+	}()
 
 	// Save the main report
 	query := `
@@ -343,24 +345,25 @@ func (s *SQLiteSessionStore) GetReport(ctx context.Context, reportID string) (*R
 	}
 
 	// Parse insights
-	if err := json.Unmarshal([]byte(insightsJSON), &report.Insights); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal insights: %w", err)
+	if unmarshalErr := json.Unmarshal([]byte(insightsJSON), &report.Insights); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to unmarshal insights: %w", unmarshalErr)
 	}
 
 	// Load related data
-	report.Issues, err = s.loadIssues(ctx, reportID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load issues: %w", err)
+	var loadErr error
+	report.Issues, loadErr = s.loadIssues(ctx, reportID)
+	if loadErr != nil {
+		return nil, fmt.Errorf("failed to load issues: %w", loadErr)
 	}
 
-	report.SuggestedPatterns, err = s.loadSuggestedPatterns(ctx, reportID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load suggested patterns: %w", err)
+	report.SuggestedPatterns, loadErr = s.loadSuggestedPatterns(ctx, reportID)
+	if loadErr != nil {
+		return nil, fmt.Errorf("failed to load suggested patterns: %w", loadErr)
 	}
 
-	report.CategorySummary, err = s.loadCategoryStats(ctx, reportID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load category stats: %w", err)
+	report.CategorySummary, loadErr = s.loadCategoryStats(ctx, reportID)
+	if loadErr != nil {
+		return nil, fmt.Errorf("failed to load category stats: %w", loadErr)
 	}
 
 	// Report is now fully loaded
@@ -539,7 +542,9 @@ func (s *SQLiteSessionStore) loadIssues(ctx context.Context, reportID string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var issues []Issue
 	for rows.Next() {
@@ -628,7 +633,9 @@ func (s *SQLiteSessionStore) loadSuggestedPatterns(ctx context.Context, reportID
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	var patterns []SuggestedPattern
 	for rows.Next() {
@@ -680,7 +687,9 @@ func (s *SQLiteSessionStore) loadCategoryStats(ctx context.Context, reportID str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	stats := make(map[string]CategoryStat)
 	for rows.Next() {

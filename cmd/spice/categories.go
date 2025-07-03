@@ -99,16 +99,18 @@ func listCategoriesCmd() *cobra.Command {
 
 			// Header
 			headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				headerStyle.Render("ID"),
 				headerStyle.Render("Name"),
 				headerStyle.Render("Type"),
+				headerStyle.Render("Business %"),
 				headerStyle.Render("Description")); err != nil {
 				slog.Error("failed to write table header", "error", err)
 			}
-			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				strings.Repeat("-", 4),
 				strings.Repeat("-", 20),
+				strings.Repeat("-", 10),
 				strings.Repeat("-", 10),
 				strings.Repeat("-", 50)); err != nil {
 				slog.Error("failed to write table separator", "error", err)
@@ -135,7 +137,13 @@ func listCategoriesCmd() *cobra.Command {
 					typeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Expense")
 				}
 
-				if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", cat.ID, cat.Name, typeStr, desc); err != nil {
+				// Format business percentage
+				businessPctStr := fmt.Sprintf("%d%%", cat.DefaultBusinessPercent)
+				if cat.Type == model.CategoryTypeIncome || cat.Type == model.CategoryTypeSystem {
+					businessPctStr = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("N/A")
+				}
+
+				if _, err := fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", cat.ID, cat.Name, typeStr, businessPctStr, desc); err != nil {
 					slog.Error("failed to write category row", "error", err, "category", cat.Name)
 				}
 			}
@@ -320,13 +328,28 @@ func updateCategoryCmd() *cobra.Command {
 		categoryName        string
 		categoryDescription string
 		regenerateDesc      bool
+		businessPercent     int
+		setBusinessPercent  bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a category",
-		Long:  `Update the name or description of an existing category. Use --regenerate to create a new AI-generated description.`,
-		Args:  cobra.ExactArgs(1),
+		Long: `Update an existing category's properties including name, description, and default business percentage.
+
+Examples:
+  # Update category name
+  spice categories update 5 --name "Dining Out"
+  
+  # Update business percentage
+  spice categories update 5 --business-percent 50
+  
+  # Update multiple properties
+  spice categories update 5 --name "Business Meals" --business-percent 100
+  
+  # Regenerate AI description
+  spice categories update 5 --regenerate`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 
@@ -336,8 +359,8 @@ func updateCategoryCmd() *cobra.Command {
 				return fmt.Errorf("invalid category ID: %w", err)
 			}
 
-			if categoryName == "" && categoryDescription == "" && !regenerateDesc {
-				return fmt.Errorf("must specify --name, --description, or --regenerate to update")
+			if categoryName == "" && categoryDescription == "" && !regenerateDesc && !setBusinessPercent {
+				return fmt.Errorf("must specify --name, --description, --regenerate, or --business-percent to update")
 			}
 
 			// Initialize storage with auto-migration
@@ -408,14 +431,26 @@ func updateCategoryCmd() *cobra.Command {
 				description = categoryDescription
 			}
 
-			// Update category
-			if err := store.UpdateCategory(ctx, id, name, description); err != nil {
-				return fmt.Errorf("failed to update category: %w", err)
+			// Update category name/description if changed
+			if categoryName != "" || categoryDescription != "" || regenerateDesc {
+				if err := store.UpdateCategory(ctx, id, name, description); err != nil {
+					return fmt.Errorf("failed to update category: %w", err)
+				}
+			}
+
+			// Update business percentage if specified
+			if setBusinessPercent {
+				if err := store.UpdateCategoryBusinessPercent(ctx, id, businessPercent); err != nil {
+					return fmt.Errorf("failed to update business percentage: %w", err)
+				}
 			}
 
 			fmt.Println(cli.SuccessStyle.Render(fmt.Sprintf("✓ Updated category %d", id))) //nolint:forbidigo // User-facing output
 			if regenerateDesc {
 				fmt.Printf("  Description: %s\n", description) //nolint:forbidigo // User-facing output
+			}
+			if setBusinessPercent {
+				fmt.Printf("  Business percentage: %d%%\n", businessPercent) //nolint:forbidigo // User-facing output
 			}
 			return nil
 		},
@@ -424,6 +459,13 @@ func updateCategoryCmd() *cobra.Command {
 	cmd.Flags().StringVar(&categoryName, "name", "", "New category name")
 	cmd.Flags().StringVar(&categoryDescription, "description", "", "New category description")
 	cmd.Flags().BoolVar(&regenerateDesc, "regenerate", false, "Regenerate description using AI")
+	cmd.Flags().IntVar(&businessPercent, "business-percent", 0, "Default business percentage (0-100)")
+
+	// Mark that the flag was explicitly set
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		setBusinessPercent = cmd.Flags().Changed("business-percent")
+		return nil
+	}
 
 	return cmd
 }

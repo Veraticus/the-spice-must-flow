@@ -88,7 +88,7 @@ func (m *mockClient) ClassifyMerchantBatch(_ context.Context, _ string) (Merchan
 	return MerchantBatchResponse{}, nil
 }
 
-func (m *mockClient) Analyze(_ context.Context, prompt string, systemPrompt string) (string, error) {
+func (m *mockClient) Analyze(_ context.Context, prompt string, _ string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

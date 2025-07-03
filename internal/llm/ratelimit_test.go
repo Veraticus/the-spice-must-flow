@@ -58,9 +58,12 @@ func TestRateLimiter(t *testing.T) {
 			done <- rl.wait(ctx)
 		}()
 
-		// Cancel the context
-		time.Sleep(10 * time.Millisecond)
-		cancel()
+		// Cancel the context after a short delay
+		go func() {
+			timer := time.NewTimer(10 * time.Millisecond)
+			<-timer.C
+			cancel()
+		}()
 
 		// Should get context error
 		err = <-done
@@ -158,10 +161,16 @@ func TestRateLimiter(t *testing.T) {
 		// Close the rate limiter
 		rl.Close()
 
-		// Give time for goroutine to shut down
-		time.Sleep(50 * time.Millisecond)
+		// Verify operations after close don't panic
+		// This ensures the close was properly handled
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Operation after Close() caused panic: %v", r)
+			}
+		}()
 
-		// The test passes if Close() didn't panic and returned quickly
+		// Try to use rate limiter after close - should not panic
+		_ = rl.tryAcquire()
 		assert.True(t, true, "Rate limiter closed without panic")
 	})
 }

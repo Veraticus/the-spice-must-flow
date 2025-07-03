@@ -19,7 +19,7 @@ func NewJSONPatcher() *JSONPatcher {
 // ApplyPatch applies a single patch to JSON data.
 func (p *JSONPatcher) ApplyPatch(data json.RawMessage, patch JSONPatch) (json.RawMessage, error) {
 	// Parse the JSON into a generic structure
-	var root interface{}
+	var root any
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
@@ -52,7 +52,7 @@ func (p *JSONPatcher) ApplyPatches(data json.RawMessage, patches []JSONPatch) (j
 }
 
 // setPatchValue sets a value at the given JSON path.
-func (p *JSONPatcher) setPatchValue(data *interface{}, path string, value interface{}) error {
+func (p *JSONPatcher) setPatchValue(data *any, path string, value any) error {
 	segments := p.parsePath(path)
 	if len(segments) == 0 {
 		return fmt.Errorf("empty path")
@@ -99,19 +99,19 @@ func (p *JSONPatcher) parsePath(path string) []string {
 }
 
 // navigate moves to the next level in the data structure.
-func (p *JSONPatcher) navigate(data *interface{}, segment string) (*interface{}, error) {
+func (p *JSONPatcher) navigate(data *any, segment string) (*any, error) {
 	switch v := (*data).(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Object navigation
 		if val, ok := v[segment]; ok {
 			return &val, nil
 		}
 		// Create the key if it doesn't exist
-		v[segment] = make(map[string]interface{})
+		v[segment] = make(map[string]any)
 		val := v[segment]
 		return &val, nil
 
-	case []interface{}:
+	case []any:
 		// Array navigation
 		index, err := strconv.Atoi(segment)
 		if err != nil {
@@ -128,14 +128,14 @@ func (p *JSONPatcher) navigate(data *interface{}, segment string) (*interface{},
 }
 
 // setValue sets the value at the final segment.
-func (p *JSONPatcher) setValue(data *interface{}, segment string, value interface{}) error {
+func (p *JSONPatcher) setValue(data *any, segment string, value any) error {
 	switch v := (*data).(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		// Setting object property
 		v[segment] = value
 		return nil
 
-	case []interface{}:
+	case []any:
 		// Setting array element
 		index, err := strconv.Atoi(segment)
 		if err != nil {
@@ -147,13 +147,13 @@ func (p *JSONPatcher) setValue(data *interface{}, segment string, value interfac
 		v[index] = value
 		return nil
 
-	case *interface{}:
+	case *any:
 		// If we have a pointer to interface, try to dereference
 		if v != nil && *v != nil {
 			return p.setValue(v, segment, value)
 		}
 		// Create a new map if nil
-		newMap := make(map[string]interface{})
+		newMap := make(map[string]any)
 		newMap[segment] = value
 		*data = newMap
 		return nil
@@ -164,8 +164,8 @@ func (p *JSONPatcher) setValue(data *interface{}, segment string, value interfac
 }
 
 // ExtractValue extracts a value from JSON data at the given path.
-func (p *JSONPatcher) ExtractValue(data json.RawMessage, path string) (interface{}, error) {
-	var root interface{}
+func (p *JSONPatcher) ExtractValue(data json.RawMessage, path string) (any, error) {
+	var root any
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}

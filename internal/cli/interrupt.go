@@ -50,8 +50,9 @@ func (h *InterruptHandler) HandleInterrupts(ctx context.Context, showProgress bo
 		h.mu.Unlock()
 		cancel()
 
-		// Give the program a moment to clean up gracefully
-		time.Sleep(100 * time.Millisecond)
+		// Create a timer to give the program a moment to clean up gracefully
+		timer := time.NewTimer(100 * time.Millisecond)
+		<-timer.C
 
 		// Force exit if still running
 		os.Exit(0)

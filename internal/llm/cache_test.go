@@ -56,8 +56,9 @@ func TestSuggestionCache(t *testing.T) {
 		_, found := cache.get("key2")
 		assert.True(t, found)
 
-		// Wait for expiration
-		time.Sleep(100 * time.Millisecond)
+		// Wait for expiration using a timer
+		timer := time.NewTimer(100 * time.Millisecond)
+		<-timer.C
 
 		// Should not be found after expiration
 		_, found = cache.get("key2")
@@ -89,9 +90,9 @@ func TestSuggestionCache(t *testing.T) {
 		}()
 
 		go func() {
-			for i := 0; i < 10; i++ {
+			// Run size checks without sleeps
+			for i := 0; i < 100; i++ {
 				_ = cache.size()
-				time.Sleep(time.Millisecond)
 			}
 			done <- true
 		}()
@@ -150,12 +151,16 @@ func TestSuggestionCache(t *testing.T) {
 		// Close the cache
 		cache.Close()
 
-		// Give time for goroutine to shut down
-		time.Sleep(50 * time.Millisecond)
+		// Verify cache operations after close don't panic
+		// This ensures the close was properly handled
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Operation after Close() caused panic: %v", r)
+			}
+		}()
 
-		// The test passes if Close() didn't panic and returned quickly
-		// In a real test environment, we could use runtime.NumGoroutine()
-		// to verify the goroutine count decreased
+		// Try to use cache after close - should not panic
+		_, _ = cache.get("test")
 		assert.True(t, true, "Cache closed without panic")
 	})
 }

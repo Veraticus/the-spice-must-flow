@@ -67,8 +67,9 @@ func TestHandleInterrupts(t *testing.T) {
 		t.Fatal("Context should be canceled after interrupt")
 	}
 
-	// Give the handler time to write the message
-	time.Sleep(10 * time.Millisecond)
+	// Give the handler time to write the message using a timer
+	timer := time.NewTimer(10 * time.Millisecond)
+	<-timer.C
 
 	assert.True(t, handler.WasInterrupted())
 	outputStr := output.String()
@@ -97,8 +98,9 @@ func TestHandleInterrupts_NoProgress(t *testing.T) {
 		t.Fatal("Context should be canceled after SIGTERM")
 	}
 
-	// Give the handler time to write the message
-	time.Sleep(10 * time.Millisecond)
+	// Give the handler time to write the message using a timer
+	timer := time.NewTimer(10 * time.Millisecond)
+	<-timer.C
 
 	assert.True(t, handler.WasInterrupted())
 	outputStr := output.String()
@@ -120,7 +122,9 @@ func TestMultipleInterrupts(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		err = process.Signal(os.Interrupt)
 		require.NoError(t, err)
-		time.Sleep(5 * time.Millisecond)
+		// Use timer instead of sleep
+		timer := time.NewTimer(5 * time.Millisecond)
+		<-timer.C
 	}
 
 	// Wait for context to be canceled

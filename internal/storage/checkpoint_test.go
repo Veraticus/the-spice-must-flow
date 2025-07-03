@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
@@ -214,8 +213,6 @@ func TestCheckpointManager_List(t *testing.T) {
 	_, err = manager.Create(ctx, "checkpoint-1", "First checkpoint")
 	require.NoError(t, err)
 
-	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
-
 	_, err = manager.Create(ctx, "checkpoint-2", "Second checkpoint")
 	require.NoError(t, err)
 
@@ -404,7 +401,6 @@ func TestCheckpointManager_CleanupOldAutoCheckpoints(t *testing.T) {
 	for i := 0; i < 7; i++ {
 		err = manager.AutoCheckpoint(ctx, fmt.Sprintf("test-%d", i))
 		require.NoError(t, err)
-		time.Sleep(100 * time.Millisecond) // Ensure different timestamps
 	}
 
 	// List all checkpoints

@@ -11,14 +11,14 @@ import (
 
 func TestTempFileManager_CreateTransactionFile(t *testing.T) {
 	tests := []struct {
-		data    map[string]interface{}
+		data    map[string]any
 		name    string
 		wantErr bool
 	}{
 		{
 			name: "simple transaction data",
-			data: map[string]interface{}{
-				"transactions": []map[string]interface{}{
+			data: map[string]any{
+				"transactions": []map[string]any{
 					{
 						"id":          "123",
 						"description": "Test Transaction",
@@ -30,17 +30,17 @@ func TestTempFileManager_CreateTransactionFile(t *testing.T) {
 		},
 		{
 			name:    "empty data",
-			data:    map[string]interface{}{},
+			data:    map[string]any{},
 			wantErr: false,
 		},
 		{
 			name: "complex nested data",
-			data: map[string]interface{}{
-				"metadata": map[string]interface{}{
+			data: map[string]any{
+				"metadata": map[string]any{
 					"count": 2,
 					"date":  "2024-01-01",
 				},
-				"transactions": []map[string]interface{}{
+				"transactions": []map[string]any{
 					{
 						"id":          "123",
 						"description": "Test Transaction 1",
@@ -114,7 +114,7 @@ func TestTempFileManager_CreateTransactionFile_DirectoryCreation(t *testing.T) {
 
 	manager := NewTempFileManager(nonExistentDir)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"test": "data",
 	}
 

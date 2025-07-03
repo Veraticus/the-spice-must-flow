@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Veraticus/the-spice-must-flow/internal/analysis"
@@ -251,10 +252,10 @@ func showCategoryAnalysis(ctx context.Context, reader *bufio.Reader, writer io.W
 	}
 
 	// Convert map to slice for sorting
-	var categories []struct {
+	categories := make([]struct {
 		Name string
 		Stat analysis.CategoryStat
-	}
+	}, 0, len(report.CategorySummary))
 	for name, stat := range report.CategorySummary {
 		categories = append(categories, struct {
 			Name string
@@ -383,11 +384,12 @@ func showSuggestedPatterns(ctx context.Context, reader *bufio.Reader, writer io.
 		// Pattern rules
 		if pattern.Pattern.AmountMin != nil || pattern.Pattern.AmountMax != nil {
 			var amountRule string
-			if pattern.Pattern.AmountMin != nil && pattern.Pattern.AmountMax != nil {
+			switch {
+			case pattern.Pattern.AmountMin != nil && pattern.Pattern.AmountMax != nil:
 				amountRule = fmt.Sprintf("  Amount: $%.2f - $%.2f", *pattern.Pattern.AmountMin, *pattern.Pattern.AmountMax)
-			} else if pattern.Pattern.AmountMin != nil {
+			case pattern.Pattern.AmountMin != nil:
 				amountRule = fmt.Sprintf("  Amount: >= $%.2f", *pattern.Pattern.AmountMin)
-			} else {
+			default:
 				amountRule = fmt.Sprintf("  Amount: <= $%.2f", *pattern.Pattern.AmountMax)
 			}
 			if _, err := fmt.Fprintln(writer, cli.SubtleStyle.Render(amountRule)); err != nil {
@@ -407,7 +409,7 @@ func showSuggestedPatterns(ctx context.Context, reader *bufio.Reader, writer io.
 }
 
 // showInsights displays analysis insights.
-func showInsights(ctx context.Context, reader *bufio.Reader, writer io.Writer, report *analysis.Report) error {
+func showInsights(_ context.Context, reader *bufio.Reader, writer io.Writer, report *analysis.Report) error {
 	if err := clearScreen(writer); err != nil {
 		return err
 	}
@@ -539,8 +541,8 @@ func showApplyFixes(ctx context.Context, reader *bufio.Reader, writer io.Writer,
 
 	if engine != nil && !dryRun {
 		if err := engine.ApplyFixesFromReport(ctx, report); err != nil {
-			if _, err := fmt.Fprintln(writer, cli.ErrorStyle.Render(fmt.Sprintf("\n❌ Error applying fixes: %v", err))); err != nil {
-				return err
+			if _, writeErr := fmt.Fprintln(writer, cli.ErrorStyle.Render(fmt.Sprintf("\n❌ Error applying fixes: %v", err))); writeErr != nil {
+				return writeErr
 			}
 		} else {
 			if _, err := fmt.Fprintln(writer, cli.SuccessStyle.Render("\n✅ Fixes applied successfully!")); err != nil {
@@ -588,8 +590,18 @@ func exportReportInteractive(ctx context.Context, reader *bufio.Reader, writer i
 
 	choice := strings.TrimSpace(strings.ToLower(input))
 	if choice != "" && choice != "y" && choice != "yes" {
-		if _, err := fmt.Fprintln(writer, "Export canceled."); err != nil {
-			return err
+		if _, writeErr := fmt.Fprintln(writer, "Export canceled."); writeErr != nil {
+			return writeErr
+		}
+		return waitForEnter(reader, writer)
+	}
+
+	// Validate and sanitize the filename
+	filename = filepath.Clean(filename)
+	if filepath.IsAbs(filename) || strings.Contains(filename, "..") {
+		errMsg := "Invalid filename: must be a relative path without directory traversal"
+		if _, writeErr := fmt.Fprintln(writer, cli.ErrorStyle.Render(errMsg)); writeErr != nil {
+			return writeErr
 		}
 		return waitForEnter(reader, writer)
 	}
@@ -598,12 +610,18 @@ func exportReportInteractive(ctx context.Context, reader *bufio.Reader, writer i
 	file, err := os.Create(filename)
 	if err != nil {
 		errMsg := fmt.Sprintf("Failed to create file: %v", err)
-		if _, err := fmt.Fprintln(writer, cli.ErrorStyle.Render(errMsg)); err != nil {
-			return err
+		if _, writeErr := fmt.Fprintln(writer, cli.ErrorStyle.Render(errMsg)); writeErr != nil {
+			return writeErr
 		}
 		return waitForEnter(reader, writer)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			// Log error but don't return it since we're in a defer
+			errMsg := fmt.Sprintf("Warning: Failed to close file: %v", closeErr)
+			_, _ = fmt.Fprintln(writer, cli.WarningStyle.Render(errMsg))
+		}
+	}()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")

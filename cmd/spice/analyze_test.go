@@ -238,7 +238,7 @@ func BenchmarkAnalyzeCmd_Parse(b *testing.B) {
 // Test flag parsing edge cases.
 func TestAnalyzeCmd_FlagParsing(t *testing.T) {
 	tests := []struct {
-		expected  interface{}
+		expected  any
 		name      string
 		checkFlag string
 		flagType  string

@@ -276,7 +276,7 @@ func (m *mockBatchClient) GenerateDescription(_ context.Context, _ string) (Desc
 	return DescriptionResponse{}, nil
 }
 
-func (m *mockBatchClient) Analyze(_ context.Context, prompt string, systemPrompt string) (string, error) {
+func (m *mockBatchClient) Analyze(_ context.Context, _ string, _ string) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}

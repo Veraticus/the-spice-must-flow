@@ -206,9 +206,9 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 
 	// Progress callback
 	progress := func(stage string, percent int) {
-		fmt.Fprintf(cmd.OutOrStdout(), "\r%-40s %3d%%", stage, percent)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\r%-40s %3d%%", stage, percent)
 		if percent == 100 {
-			fmt.Fprintln(cmd.OutOrStdout())
+			_, _ = fmt.Fprintln(cmd.OutOrStdout())
 		}
 	}
 
@@ -228,7 +228,7 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	report, err := analysisEngine.Analyze(ctx, opts)
 	if err != nil {
 		if err == context.Canceled {
-			fmt.Fprintln(cmd.OutOrStdout(), "\n\nAnalysis canceled by user")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\n\nAnalysis canceled by user")
 			return nil
 		}
 		return fmt.Errorf("analysis failed: %w", err)
@@ -236,8 +236,8 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 
 	// If auto-apply was used and we loaded an existing report, show summary and exit
 	if autoApply && report.SessionID != "" {
-		fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatSummary(report))
-		fmt.Fprintln(cmd.OutOrStdout(), "\n✅ Fixes have been applied successfully")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatSummary(report))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\n✅ Fixes have been applied successfully")
 		return nil
 	}
 
@@ -251,7 +251,7 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 
 	case "summary":
 		// Display summary only
-		fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatSummary(report))
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\n"+formatter.FormatSummary(report))
 
 	case "interactive":
 		// Interactive report navigation
@@ -267,8 +267,8 @@ func runAnalyze(cmd *cobra.Command, _ []string) error {
 	// Show next steps (only for non-interactive modes)
 	if outputFormat != "interactive" {
 		if !autoApply && report.HasActionableIssues() {
-			fmt.Fprintln(cmd.OutOrStdout(), "\nTo apply recommended fixes, run:")
-			fmt.Fprintf(cmd.OutOrStdout(), "  spice analyze --auto-apply --session-id %s\n", report.SessionID)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nTo apply recommended fixes, run:")
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  spice analyze --auto-apply --session-id %s\n", report.SessionID)
 		}
 	}
 

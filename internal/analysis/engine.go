@@ -32,16 +32,16 @@ func (e *Engine) Analyze(ctx context.Context, opts Options) (*Report, error) {
 		progress("Loading existing report", 50)
 		slog.Info("Session already has a report, loading it for fix application", "report_id", *session.ReportID)
 
-		report, err := e.deps.ReportStore.GetReport(ctx, *session.ReportID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load existing report: %w", err)
+		report, loadErr := e.deps.ReportStore.GetReport(ctx, *session.ReportID)
+		if loadErr != nil {
+			return nil, fmt.Errorf("failed to load existing report: %w", loadErr)
 		}
 
 		// Apply fixes if requested
 		if opts.AutoApply && !opts.DryRun {
 			progress("Applying fixes", 80)
-			if err := e.applyFixes(ctx, report); err != nil {
-				slog.Warn("Failed to apply some fixes from existing report", "error", err)
+			if applyErr := e.applyFixes(ctx, report); applyErr != nil {
+				slog.Warn("Failed to apply some fixes from existing report", "error", applyErr)
 			} else {
 				slog.Info("Successfully applied fixes from existing report")
 			}
@@ -187,8 +187,8 @@ func (e *Engine) performAnalysisWithRecovery(ctx context.Context, session *Sessi
 		// Always use file-based analysis
 		var responseJSON string
 		// Prepare transaction data for file-based analysis
-		transactionData := make(map[string]interface{})
-		transactionArray := make([]map[string]interface{}, len(allTransactions))
+		transactionData := make(map[string]any)
+		transactionArray := make([]map[string]any, len(allTransactions))
 
 		for i, txn := range allTransactions {
 			// Extract the first category from the slice for LLM analysis
@@ -197,7 +197,7 @@ func (e *Engine) performAnalysisWithRecovery(ctx context.Context, session *Sessi
 				category = txn.Category[0]
 			}
 
-			transactionArray[i] = map[string]interface{}{
+			transactionArray[i] = map[string]any{
 				"ID":       txn.ID,
 				"Date":     txn.Date.Format("2006-01-02"),
 				"Name":     txn.Name,

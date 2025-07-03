@@ -32,19 +32,19 @@ func (m *mockLLMClientForFile) Analyze(ctx context.Context, prompt, systemPrompt
 	return `{"coherenceScore": 85}`, nil
 }
 
-func (m *mockLLMClientForFile) Classify(ctx context.Context, prompt string) (llm.ClassificationResponse, error) {
+func (m *mockLLMClientForFile) Classify(_ context.Context, _ string) (llm.ClassificationResponse, error) {
 	return llm.ClassificationResponse{}, fmt.Errorf("not implemented")
 }
 
-func (m *mockLLMClientForFile) ClassifyWithRankings(ctx context.Context, prompt string) (llm.RankingResponse, error) {
+func (m *mockLLMClientForFile) ClassifyWithRankings(_ context.Context, _ string) (llm.RankingResponse, error) {
 	return llm.RankingResponse{}, fmt.Errorf("not implemented")
 }
 
-func (m *mockLLMClientForFile) ClassifyMerchantBatch(ctx context.Context, prompt string) (llm.MerchantBatchResponse, error) {
+func (m *mockLLMClientForFile) ClassifyMerchantBatch(_ context.Context, _ string) (llm.MerchantBatchResponse, error) {
 	return llm.MerchantBatchResponse{}, fmt.Errorf("not implemented")
 }
 
-func (m *mockLLMClientForFile) GenerateDescription(ctx context.Context, prompt string) (llm.DescriptionResponse, error) {
+func (m *mockLLMClientForFile) GenerateDescription(_ context.Context, _ string) (llm.DescriptionResponse, error) {
 	return llm.DescriptionResponse{}, fmt.Errorf("not implemented")
 }
 
@@ -73,6 +73,7 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 			mockResponse:   `{"coherenceScore": 90, "issues": []}`,
 			wantErr:        false,
 			checkPrompt: func(t *testing.T, prompt string) {
+				t.Helper()
 				assert.Contains(t, prompt, "/tmp/spice-analysis-")
 				assert.Contains(t, prompt, "transactions_")
 				assert.Contains(t, prompt, ".json")
@@ -82,12 +83,13 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 		{
 			name: "large transaction dataset",
 			transactionData: map[string]any{
-				"transactions": make([]map[string]interface{}, 10000),
+				"transactions": make([]map[string]any, 10000),
 			},
 			originalPrompt: "Analyze these transactions",
 			mockResponse:   `{"coherenceScore": 85, "issues": []}`,
 			wantErr:        false,
 			checkPrompt: func(t *testing.T, prompt string) {
+				t.Helper()
 				assert.Contains(t, prompt, "/tmp/spice-analysis-")
 			},
 		},
@@ -102,7 +104,7 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 		},
 		{
 			name:            "llm error",
-			transactionData: map[string]any{"transactions": []map[string]interface{}{{}}},
+			transactionData: map[string]any{"transactions": []map[string]any{{}}},
 			originalPrompt:  "Analyze these transactions",
 			mockError:       fmt.Errorf("LLM service unavailable"),
 			wantErr:         true,
@@ -113,7 +115,7 @@ func TestLLMAnalysisAdapter_AnalyzeTransactionsWithFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock client
 			mockClient := &mockLLMClientForFile{
-				analyzeFunc: func(ctx context.Context, prompt, systemPrompt string) (string, error) {
+				analyzeFunc: func(_ context.Context, prompt, _ string) (string, error) {
 					if tt.checkPrompt != nil {
 						tt.checkPrompt(t, prompt)
 					}
@@ -167,15 +169,15 @@ func TestLLMAnalysisAdapter_FileSecurity(t *testing.T) {
 	adapter := NewLLMAnalysisAdapter(mockClient)
 
 	// Create temp file through the adapter
-	transactionData := map[string]interface{}{
-		"transactions": []map[string]interface{}{
+	transactionData := map[string]any{
+		"transactions": []map[string]any{
 			{"id": "123", "amount": 100},
 		},
 	}
 
 	// Store the file path from the prompt
 	var createdFilePath string
-	mockClient.analyzeFunc = func(ctx context.Context, prompt, systemPrompt string) (string, error) {
+	mockClient.analyzeFunc = func(_ context.Context, prompt, _ string) (string, error) {
 		// Extract file path from prompt
 		if idx := strings.Index(prompt, "/tmp/spice-analysis-"); idx != -1 {
 			endIdx := strings.Index(prompt[idx:], "\n")

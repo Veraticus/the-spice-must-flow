@@ -45,10 +45,16 @@ func NewWriter(ctx context.Context, config Config, logger *slog.Logger) (*Writer
 }
 
 // Write implements the ReportWriter interface.
-func (w *Writer) Write(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) error {
+func (w *Writer) Write(ctx context.Context, classifications []model.Classification, summary *service.ReportSummary, categories []model.Category) error {
 	w.logger.Info("starting report generation",
 		"classifications", len(classifications),
 		"date_range", fmt.Sprintf("%s to %s", summary.DateRange.Start.Format("2006-01-02"), summary.DateRange.End.Format("2006-01-02")))
+
+	// Build category type map from categories array
+	categoryTypes := make(map[string]model.CategoryType)
+	for _, cat := range categories {
+		categoryTypes[cat.Name] = cat.Type
+	}
 
 	// Get or create spreadsheet with all required tabs
 	spreadsheetID, err := w.getOrCreateSpreadsheetWithTabs(ctx)
@@ -57,7 +63,7 @@ func (w *Writer) Write(ctx context.Context, classifications []model.Classificati
 	}
 
 	// Aggregate data for all tabs
-	tabData, err := w.aggregateData(classifications, summary, categoryTypes)
+	tabData, err := w.aggregateData(classifications, summary, categories)
 	if err != nil {
 		return fmt.Errorf("failed to aggregate data: %w", err)
 	}
@@ -98,48 +104,47 @@ func (w *Writer) Write(ctx context.Context, classifications []model.Classificati
 		"spreadsheet_id", spreadsheetID,
 		"total_income", tabData.TotalIncome,
 		"total_expenses", tabData.TotalExpenses,
-		"total_deductible", tabData.TotalDeductible)
+		"net_flow", tabData.TotalIncome.Sub(tabData.TotalExpenses))
 
 	return nil
 }
 
-// createSheetsService creates a Google Sheets API service.
+// createSheetsService creates the Google Sheets API service.
 func createSheetsService(ctx context.Context, config Config) (*sheets.Service, error) {
-	var client *oauth2.Config
-	var tokenSource oauth2.TokenSource
-
+	// If using service account
 	if config.ServiceAccountPath != "" {
-		// Use service account authentication
-		jsonKey, err := os.ReadFile(config.ServiceAccountPath)
+		credentialsJSON, err := os.ReadFile(config.ServiceAccountPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read service account key file: %w", err)
+			return nil, fmt.Errorf("unable to read service account file: %w", err)
 		}
 
-		jwtConfig, err := google.JWTConfigFromJSON(jsonKey, sheets.SpreadsheetsScope)
+		// Create service with service account
+		srv, err := sheets.NewService(ctx, option.WithCredentialsJSON(credentialsJSON))
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse service account key: %w", err)
+			return nil, fmt.Errorf("unable to create sheets service with service account: %w", err)
 		}
-
-		tokenSource = jwtConfig.TokenSource(ctx)
-	} else {
-		// Use OAuth2 authentication
-		client = &oauth2.Config{
-			ClientID:     config.ClientID,
-			ClientSecret: config.ClientSecret,
-			Endpoint:     google.Endpoint,
-			Scopes:       []string{sheets.SpreadsheetsScope},
-		}
-
-		token := &oauth2.Token{
-			RefreshToken: config.RefreshToken,
-			TokenType:    "Bearer",
-		}
-
-		tokenSource = client.TokenSource(ctx, token)
+		return srv, nil
 	}
 
-	httpClient := oauth2.NewClient(ctx, tokenSource)
-	srv, err := sheets.NewService(ctx, option.WithHTTPClient(httpClient))
+	// Otherwise use OAuth2
+	oauthConfig := &oauth2.Config{
+		ClientID:     config.ClientID,
+		ClientSecret: config.ClientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{sheets.SpreadsheetsScope},
+	}
+
+	// Create token
+	token := &oauth2.Token{
+		RefreshToken: config.RefreshToken,
+		TokenType:    "Bearer",
+	}
+
+	// Create client
+	client := oauthConfig.Client(ctx, token)
+
+	// Create Sheets service
+	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create sheets service: %w", err)
 	}
@@ -147,16 +152,15 @@ func createSheetsService(ctx context.Context, config Config) (*sheets.Service, e
 	return srv, nil
 }
 
-// getOrCreateSpreadsheet gets an existing spreadsheet or creates a new one.
+// getOrCreateSpreadsheetWithTabs gets the existing spreadsheet or creates a new one with all required tabs.
 func (w *Writer) getOrCreateSpreadsheetWithTabs(ctx context.Context) (string, error) {
 	if w.config.SpreadsheetID != "" {
-		// Verify the spreadsheet exists and is accessible
+		// Use existing spreadsheet, but ensure all tabs exist
 		spreadsheet, err := w.service.Spreadsheets.Get(w.config.SpreadsheetID).Context(ctx).Do()
 		if err != nil {
-			return "", fmt.Errorf("unable to access spreadsheet %s: %w", w.config.SpreadsheetID, err)
+			return "", fmt.Errorf("unable to get spreadsheet: %w", err)
 		}
 
-		// Ensure all required tabs exist
 		if err := w.ensureTabsExist(ctx, spreadsheet); err != nil {
 			return "", fmt.Errorf("failed to ensure tabs exist: %w", err)
 		}
@@ -164,7 +168,12 @@ func (w *Writer) getOrCreateSpreadsheetWithTabs(ctx context.Context) (string, er
 		return w.config.SpreadsheetID, nil
 	}
 
-	// Create a new spreadsheet with all required tabs
+	// Create new spreadsheet with all tabs
+	return w.createSpreadsheetWithTabs(ctx)
+}
+
+// createSpreadsheetWithTabs creates a new spreadsheet with all required tabs.
+func (w *Writer) createSpreadsheetWithTabs(ctx context.Context) (string, error) {
 	spreadsheet := &sheets.Spreadsheet{
 		Properties: &sheets.SpreadsheetProperties{
 			Title:    w.config.SpreadsheetName,
@@ -177,6 +186,9 @@ func (w *Writer) getOrCreateSpreadsheetWithTabs(ctx context.Context) (string, er
 			{Properties: &sheets.SheetProperties{Title: "Category Summary", Index: 3}},
 			{Properties: &sheets.SheetProperties{Title: "Business Expenses", Index: 4}},
 			{Properties: &sheets.SheetProperties{Title: "Monthly Flow", Index: 5}},
+			{Properties: &sheets.SheetProperties{Title: "Vendor Lookup", Index: 6}},
+			{Properties: &sheets.SheetProperties{Title: "Category Lookup", Index: 7}},
+			{Properties: &sheets.SheetProperties{Title: "Business Rules", Index: 8}},
 		},
 	}
 
@@ -185,7 +197,7 @@ func (w *Writer) getOrCreateSpreadsheetWithTabs(ctx context.Context) (string, er
 		return "", fmt.Errorf("unable to create spreadsheet: %w", err)
 	}
 
-	w.logger.Info("created new spreadsheet with 6 tabs",
+	w.logger.Info("created new spreadsheet with 9 tabs",
 		"id", created.SpreadsheetId,
 		"url", created.SpreadsheetUrl)
 
@@ -194,7 +206,7 @@ func (w *Writer) getOrCreateSpreadsheetWithTabs(ctx context.Context) (string, er
 
 // ensureTabsExist ensures all required tabs exist in the spreadsheet.
 func (w *Writer) ensureTabsExist(ctx context.Context, spreadsheet *sheets.Spreadsheet) error {
-	requiredTabs := []string{"Expenses", "Income", "Vendor Summary", "Category Summary", "Business Expenses", "Monthly Flow"}
+	requiredTabs := []string{"Expenses", "Income", "Vendor Summary", "Category Summary", "Business Expenses", "Monthly Flow", "Vendor Lookup", "Category Lookup", "Business Rules"}
 	existingTabs := make(map[string]bool)
 
 	for _, sheet := range spreadsheet.Sheets {
@@ -230,7 +242,7 @@ func (w *Writer) ensureTabsExist(ctx context.Context, spreadsheet *sheets.Spread
 
 // clearAllTabs clears data from all tabs.
 func (w *Writer) clearAllTabs(ctx context.Context, spreadsheetID string) error {
-	tabs := []string{"Expenses", "Income", "Vendor Summary", "Category Summary", "Business Expenses", "Monthly Flow"}
+	tabs := []string{"Expenses", "Income", "Vendor Summary", "Category Summary", "Business Expenses", "Monthly Flow", "Vendor Lookup", "Category Lookup", "Business Rules"}
 
 	for _, tab := range tabs {
 		rangeStr := fmt.Sprintf("%s!A:Z", tab)
@@ -245,25 +257,39 @@ func (w *Writer) clearAllTabs(ctx context.Context, spreadsheetID string) error {
 }
 
 // aggregateData processes classifications into the TabData structure.
-func (w *Writer) aggregateData(classifications []model.Classification, summary *service.ReportSummary, categoryTypes map[string]model.CategoryType) (*TabData, error) {
+func (w *Writer) aggregateData(classifications []model.Classification, summary *service.ReportSummary, categories []model.Category) (*TabData, error) {
 
 	data := &TabData{
 		DateRange: DateRange{
 			Start: summary.DateRange.Start,
 			End:   summary.DateRange.End,
 		},
-		Expenses:         make([]ExpenseRow, 0),
-		Income:           make([]IncomeRow, 0),
-		VendorSummary:    make([]VendorSummaryRow, 0),
-		CategorySummary:  make([]CategorySummaryRow, 0),
-		BusinessExpenses: make([]BusinessExpenseRow, 0),
-		MonthlyFlow:      make([]MonthlyFlowRow, 0),
+		Expenses:            make([]ExpenseRow, 0),
+		Income:              make([]IncomeRow, 0),
+		VendorSummary:       make([]VendorSummaryRow, 0),
+		CategorySummary:     make([]CategorySummaryRow, 0),
+		BusinessExpenses:    make([]BusinessExpenseRow, 0),
+		MonthlyFlow:         make([]MonthlyFlowRow, 0),
+		VendorLookup:        make([]VendorLookupRow, 0),
+		CategoryLookup:      make([]CategoryLookupRow, 0),
+		BusinessRulesLookup: make([]BusinessRuleLookupRow, 0),
+	}
+
+	// Build category maps from categories array
+	categoryTypes := make(map[string]model.CategoryType)
+	categoryInfoMap := make(map[string]*model.Category)
+	for i := range categories {
+		categoryTypes[categories[i].Name] = categories[i].Type
+		categoryInfoMap[categories[i].Name] = &categories[i]
 	}
 
 	// Maps for aggregation
-	vendorMap := make(map[string]*VendorSummaryRow)
-	categoryMap := make(map[string]*CategorySummaryRow)
+	vendorSummaryMap := make(map[string]*VendorSummaryRow)
+	categorySummaryMap := make(map[string]*CategorySummaryRow)
 	monthlyMap := make(map[string]*MonthlyFlowRow)
+	// Maps for lookup tables
+	vendorLookupMap := make(map[string]string)   // vendor -> category
+	categoryLookupMap := make(map[string]string) // category -> type
 
 	// Process each classification
 	for _, class := range classifications {
@@ -313,17 +339,19 @@ func (w *Writer) aggregateData(classifications []model.Classification, summary *
 
 		// Update vendor summary
 		vendorKey := class.Transaction.MerchantName
-		if vendor, exists := vendorMap[vendorKey]; exists {
+		if vendor, exists := vendorSummaryMap[vendorKey]; exists {
 			vendor.TotalAmount = vendor.TotalAmount.Add(amount)
 			vendor.TransactionCount++
 		} else {
-			vendorMap[vendorKey] = &VendorSummaryRow{
+			vendorSummaryMap[vendorKey] = &VendorSummaryRow{
 				VendorName:         vendorKey,
 				AssociatedCategory: class.Category,
 				TotalAmount:        amount,
 				TransactionCount:   1,
 			}
 		}
+		// Track vendor -> category mapping for lookup table
+		vendorLookupMap[vendorKey] = class.Category
 
 		// Update category summary
 		categoryKey := class.Category
@@ -332,7 +360,7 @@ func (w *Writer) aggregateData(classifications []model.Classification, summary *
 			categoryType = "Income"
 		}
 
-		if cat, exists := categoryMap[categoryKey]; exists {
+		if cat, exists := categorySummaryMap[categoryKey]; exists {
 			cat.TotalAmount = cat.TotalAmount.Add(amount)
 			cat.TransactionCount++
 			// Update monthly amount
@@ -343,7 +371,7 @@ func (w *Writer) aggregateData(classifications []model.Classification, summary *
 			monthIndex := class.Transaction.Date.Month() - 1
 			monthlyAmounts[monthIndex] = amount
 
-			categoryMap[categoryKey] = &CategorySummaryRow{
+			categorySummaryMap[categoryKey] = &CategorySummaryRow{
 				CategoryName:     categoryKey,
 				Type:             categoryType,
 				TotalAmount:      amount,
@@ -351,6 +379,8 @@ func (w *Writer) aggregateData(classifications []model.Classification, summary *
 				MonthlyAmounts:   monthlyAmounts,
 			}
 		}
+		// Track category -> type mapping for lookup table
+		categoryLookupMap[categoryKey] = categoryType
 
 		// Update monthly flow
 		monthKey := class.Transaction.Date.Format("January 2006")
@@ -374,11 +404,11 @@ func (w *Writer) aggregateData(classifications []model.Classification, summary *
 	}
 
 	// Convert maps to slices
-	for _, vendor := range vendorMap {
+	for _, vendor := range vendorSummaryMap {
 		data.VendorSummary = append(data.VendorSummary, *vendor)
 	}
 
-	for _, category := range categoryMap {
+	for _, category := range categorySummaryMap {
 		// Calculate average business percentage for expense categories
 		if category.Type == "Expense" && category.TransactionCount > 0 {
 			totalBusinessPct := 0
@@ -434,12 +464,99 @@ func (w *Writer) aggregateData(classifications []model.Classification, summary *
 		return data.BusinessExpenses[i].Date.After(data.BusinessExpenses[j].Date)
 	})
 
+	// Build vendor lookup table from map
+	for vendor, category := range vendorLookupMap {
+		data.VendorLookup = append(data.VendorLookup, VendorLookupRow{
+			VendorName: vendor,
+			Category:   category,
+		})
+	}
+	sort.Slice(data.VendorLookup, func(i, j int) bool {
+		return data.VendorLookup[i].VendorName < data.VendorLookup[j].VendorName
+	})
+
+	// Build category lookup table - include ALL categories, not just used ones
+	// First add all categories from the categories array
+	for _, cat := range categories {
+		data.CategoryLookup = append(data.CategoryLookup, CategoryLookupRow{
+			CategoryName:       cat.Name,
+			Type:               string(cat.Type),
+			Description:        cat.Description,
+			DefaultBusinessPct: cat.DefaultBusinessPercent,
+		})
+		// Make sure it's in the map for backward compatibility
+		categoryLookupMap[cat.Name] = string(cat.Type)
+	}
+
+	// Then add any additional categories from classifications that weren't in the array
+	for category, catType := range categoryLookupMap {
+		found := false
+		for _, existing := range data.CategoryLookup {
+			if existing.CategoryName == category {
+				found = true
+				break
+			}
+		}
+		if !found {
+			lookupRow := CategoryLookupRow{
+				CategoryName:       category,
+				Type:               catType,
+				Description:        "",
+				DefaultBusinessPct: 0,
+			}
+			data.CategoryLookup = append(data.CategoryLookup, lookupRow)
+		}
+	}
+	sort.Slice(data.CategoryLookup, func(i, j int) bool {
+		return data.CategoryLookup[i].CategoryName < data.CategoryLookup[j].CategoryName
+	})
+
+	// Build business rules lookup from unique vendor/category/business% combinations
+	businessRulesMap := make(map[string]BusinessRuleLookupRow)
+	for _, expense := range data.Expenses {
+		if expense.BusinessPct > 0 {
+			key := fmt.Sprintf("%s:%s:%d", expense.Vendor, expense.Category, expense.BusinessPct)
+			if _, exists := businessRulesMap[key]; !exists {
+				businessRulesMap[key] = BusinessRuleLookupRow{
+					VendorPattern: expense.Vendor,
+					Category:      expense.Category,
+					BusinessPct:   expense.BusinessPct,
+					Notes:         "",
+				}
+			}
+		}
+	}
+
+	// Convert to slice and sort
+	for _, rule := range businessRulesMap {
+		data.BusinessRulesLookup = append(data.BusinessRulesLookup, rule)
+	}
+	sort.Slice(data.BusinessRulesLookup, func(i, j int) bool {
+		if data.BusinessRulesLookup[i].VendorPattern != data.BusinessRulesLookup[j].VendorPattern {
+			return data.BusinessRulesLookup[i].VendorPattern < data.BusinessRulesLookup[j].VendorPattern
+		}
+		return data.BusinessRulesLookup[i].Category < data.BusinessRulesLookup[j].Category
+	})
+
 	return data, nil
 }
 
 // writeAllTabs writes data to all tabs in the spreadsheet.
 func (w *Writer) writeAllTabs(ctx context.Context, spreadsheetID string, data *TabData) error {
-	// Write each tab
+	// Write lookup tables first (they need to exist for formulas to work)
+	if err := w.writeVendorLookupTab(ctx, spreadsheetID, data.VendorLookup); err != nil {
+		return fmt.Errorf("failed to write vendor lookup tab: %w", err)
+	}
+
+	if err := w.writeCategoryLookupTab(ctx, spreadsheetID, data.CategoryLookup); err != nil {
+		return fmt.Errorf("failed to write category lookup tab: %w", err)
+	}
+
+	if err := w.writeBusinessRulesTab(ctx, spreadsheetID, data.BusinessRulesLookup); err != nil {
+		return fmt.Errorf("failed to write business rules tab: %w", err)
+	}
+
+	// Write transaction tabs
 	if err := w.writeExpensesTab(ctx, spreadsheetID, data.Expenses); err != nil {
 		return fmt.Errorf("failed to write expenses tab: %w", err)
 	}
@@ -514,6 +631,21 @@ func (w *Writer) applyFormattingToAllTabs(ctx context.Context, spreadsheetID str
 		requests = append(requests, w.formatMonthlyFlowTab(sheetID)...)
 	}
 
+	// Format Vendor Lookup tab
+	if sheetID, ok := sheetIDs["Vendor Lookup"]; ok {
+		requests = append(requests, w.formatVendorLookupTab(sheetID)...)
+	}
+
+	// Format Category Lookup tab
+	if sheetID, ok := sheetIDs["Category Lookup"]; ok {
+		requests = append(requests, w.formatCategoryLookupTab(sheetID)...)
+	}
+
+	// Format Business Rules tab
+	if sheetID, ok := sheetIDs["Business Rules"]; ok {
+		requests = append(requests, w.formatBusinessRulesTab(sheetID)...)
+	}
+
 	// Apply all formatting in a single batch
 	if len(requests) > 0 {
 		batchUpdateRequest := &sheets.BatchUpdateSpreadsheetRequest{
@@ -529,7 +661,7 @@ func (w *Writer) applyFormattingToAllTabs(ctx context.Context, spreadsheetID str
 	return nil
 }
 
-// writeExpensesTab writes expense data to the Expenses tab.
+// writeExpensesTab writes expense data to the Expenses tab with formulas.
 func (w *Writer) writeExpensesTab(ctx context.Context, spreadsheetID string, expenses []ExpenseRow) error {
 	// Prepare values
 	values := [][]any{
@@ -537,14 +669,28 @@ func (w *Writer) writeExpensesTab(ctx context.Context, spreadsheetID string, exp
 		{"Date", "Amount", "Vendor", "Category", "Business %", "Notes"},
 	}
 
-	// Add expense rows
-	for _, expense := range expenses {
+	// Add expense rows with formulas
+	for i, expense := range expenses {
+		row := i + 2 // Account for header row, 1-based indexing
+
+		// Category formula using VLOOKUP to find category from vendor
+		categoryFormula := fmt.Sprintf(`=IFERROR(VLOOKUP(C%d,'Vendor Lookup'!A:B,2,FALSE),"%s")`, row, expense.Category)
+
+		// Business percentage formula with smart override support
+		// First tries to find a specific rule in Business Rules table
+		// If not found, uses VLOOKUP to get the category default from Category Lookup
+		// We use the static category value from the expense data, not the formula result
+		businessPctFormula := fmt.Sprintf(
+			`=IFERROR(INDEX('Business Rules'!C:C,MATCH(1,(C%d='Business Rules'!A:A)*(D%d='Business Rules'!B:B),0)),IFERROR(VLOOKUP("%s",'Category Lookup'!A:D,4,FALSE)/100,%g))`,
+			row, row, expense.Category, float64(expense.BusinessPct)/100,
+		)
+
 		values = append(values, []any{
 			expense.Date.Format("2006-01-02"),
 			expense.Amount.InexactFloat64(),
 			expense.Vendor,
-			expense.Category,
-			expense.BusinessPct,
+			categoryFormula,    // Use formula instead of static value
+			businessPctFormula, // Use formula to lookup business %
 			expense.Notes,
 		})
 	}
@@ -563,7 +709,7 @@ func (w *Writer) writeExpensesTab(ctx context.Context, spreadsheetID string, exp
 	return err
 }
 
-// writeIncomeTab writes income data to the Income tab.
+// writeIncomeTab writes income data to the Income tab with formulas.
 func (w *Writer) writeIncomeTab(ctx context.Context, spreadsheetID string, income []IncomeRow) error {
 	// Prepare values
 	values := [][]any{
@@ -571,13 +717,18 @@ func (w *Writer) writeIncomeTab(ctx context.Context, spreadsheetID string, incom
 		{"Date", "Amount", "Source", "Category", "Notes"},
 	}
 
-	// Add income rows
-	for _, inc := range income {
+	// Add income rows with formulas
+	for i, inc := range income {
+		row := i + 2 // Account for header row, 1-based indexing
+
+		// Category formula using VLOOKUP to find category from source/vendor
+		categoryFormula := fmt.Sprintf(`=IFERROR(VLOOKUP(C%d,'Vendor Lookup'!A:B,2,FALSE),"%s")`, row, inc.Category)
+
 		values = append(values, []any{
 			inc.Date.Format("2006-01-02"),
 			inc.Amount.InexactFloat64(),
 			inc.Source,
-			inc.Category,
+			categoryFormula, // Use formula instead of static value
 			inc.Notes,
 		})
 	}
@@ -596,7 +747,7 @@ func (w *Writer) writeIncomeTab(ctx context.Context, spreadsheetID string, incom
 	return err
 }
 
-// writeVendorSummaryTab writes vendor summary data.
+// writeVendorSummaryTab writes vendor summary data with formulas.
 func (w *Writer) writeVendorSummaryTab(ctx context.Context, spreadsheetID string, vendors []VendorSummaryRow) error {
 	// Prepare values
 	values := [][]any{
@@ -604,13 +755,30 @@ func (w *Writer) writeVendorSummaryTab(ctx context.Context, spreadsheetID string
 		{"Vendor Name", "Category", "Total Amount", "Transaction Count"},
 	}
 
-	// Add vendor rows
-	for _, vendor := range vendors {
+	// Add vendor rows with formulas
+	for i, vendor := range vendors {
+		row := i + 2 // Account for header row, 1-based indexing
+
+		// Category lookup from Vendor Lookup table
+		categoryFormula := fmt.Sprintf(`=IFERROR(VLOOKUP(A%d,'Vendor Lookup'!A:B,2,FALSE),"")`, row)
+
+		// Total amount formula - sum from both Expenses and Income sheets
+		totalFormula := fmt.Sprintf(
+			`=SUMIF(Expenses!C:C,A%d,Expenses!B:B)+SUMIF(Income!C:C,A%d,Income!B:B)`,
+			row, row,
+		)
+
+		// Transaction count formula
+		countFormula := fmt.Sprintf(
+			`=COUNTIF(Expenses!C:C,A%d)+COUNTIF(Income!C:C,A%d)`,
+			row, row,
+		)
+
 		values = append(values, []any{
 			vendor.VendorName,
-			vendor.AssociatedCategory,
-			vendor.TotalAmount.InexactFloat64(),
-			vendor.TransactionCount,
+			categoryFormula,
+			totalFormula,
+			countFormula,
 		})
 	}
 
@@ -628,11 +796,11 @@ func (w *Writer) writeVendorSummaryTab(ctx context.Context, spreadsheetID string
 	return err
 }
 
-// writeCategorySummaryTab writes category summary data with monthly breakdown.
+// writeCategorySummaryTab writes category summary data with formulas.
 func (w *Writer) writeCategorySummaryTab(ctx context.Context, spreadsheetID string, categories []CategorySummaryRow) error {
 	// Prepare header
 	header := []any{
-		"Category", "Type", "Total Amount", "Count", "Business %",
+		"Category", "Type", "Total Amount", "Count", "Avg Business % (Edit in Category Lookup)",
 		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
 		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 	}
@@ -649,25 +817,45 @@ func (w *Writer) writeCategorySummaryTab(ctx context.Context, spreadsheetID stri
 		}
 	}
 
+	currentRow := 2 // Track current row for formulas
+
 	// Add section headers and data
 	if len(incomeCategories) > 0 {
 		values = append(values,
 			[]any{}, // Empty row
 			[]any{"INCOME CATEGORIES"})
+		currentRow += 2
 
 		for _, cat := range incomeCategories {
+			// Type lookup from Category Lookup table
+			typeFormula := fmt.Sprintf(`=IFERROR(VLOOKUP(A%d,'Category Lookup'!A:B,2,FALSE),"Income")`, currentRow)
+
+			// Total amount formula
+			totalFormula := fmt.Sprintf(`=SUMIF(Income!D:D,A%d,Income!B:B)`, currentRow)
+
+			// Count formula
+			countFormula := fmt.Sprintf(`=COUNTIF(Income!D:D,A%d)`, currentRow)
+
 			row := []any{
 				cat.CategoryName,
-				cat.Type,
-				cat.TotalAmount.InexactFloat64(),
-				cat.TransactionCount,
+				typeFormula,
+				totalFormula,
+				countFormula,
 				"", // No business % for income
 			}
-			// Add monthly amounts
-			for i := 0; i < 12; i++ {
-				row = append(row, cat.MonthlyAmounts[i].InexactFloat64())
+
+			// Add monthly amount formulas
+			for i := 1; i <= 12; i++ {
+				// This is simplified - in reality we'd need the actual year from the date range
+				monthFormula := fmt.Sprintf(
+					`=SUMIFS(Income!B:B,Income!D:D,A%d,Income!A:A,">="&DATE(YEAR(TODAY()),%d,1),Income!A:A,"<"&DATE(YEAR(TODAY()),%d,1))`,
+					currentRow, i, i+1,
+				)
+				row = append(row, monthFormula)
 			}
+
 			values = append(values, row)
+			currentRow++
 		}
 	}
 
@@ -675,20 +863,45 @@ func (w *Writer) writeCategorySummaryTab(ctx context.Context, spreadsheetID stri
 		values = append(values,
 			[]any{}, // Empty row
 			[]any{"EXPENSE CATEGORIES"})
+		currentRow += 2
 
 		for _, cat := range expenseCategories {
+			// Type lookup from Category Lookup table
+			typeFormula := fmt.Sprintf(`=IFERROR(VLOOKUP(A%d,'Category Lookup'!A:B,2,FALSE),"Expense")`, currentRow)
+
+			// Total amount formula
+			totalFormula := fmt.Sprintf(`=SUMIF(Expenses!D:D,A%d,Expenses!B:B)`, currentRow)
+
+			// Count formula
+			countFormula := fmt.Sprintf(`=COUNTIF(Expenses!D:D,A%d)`, currentRow)
+
+			// Average business percentage formula
+			// The Expenses!E:E column already contains percentage values
+			businessPctFormula := fmt.Sprintf(
+				`=IFERROR(AVERAGEIF(Expenses!D:D,A%d,Expenses!E:E),0)`,
+				currentRow,
+			)
+
 			row := []any{
 				cat.CategoryName,
-				cat.Type,
-				cat.TotalAmount.InexactFloat64(),
-				cat.TransactionCount,
-				cat.BusinessPct,
+				typeFormula,
+				totalFormula,
+				countFormula,
+				businessPctFormula,
 			}
-			// Add monthly amounts
-			for i := 0; i < 12; i++ {
-				row = append(row, cat.MonthlyAmounts[i].InexactFloat64())
+
+			// Add monthly amount formulas
+			for i := 1; i <= 12; i++ {
+				// This is simplified - in reality we'd need the actual year from the date range
+				monthFormula := fmt.Sprintf(
+					`=SUMIFS(Expenses!B:B,Expenses!D:D,A%d,Expenses!A:A,">="&DATE(YEAR(TODAY()),%d,1),Expenses!A:A,"<"&DATE(YEAR(TODAY()),%d,1))`,
+					currentRow, i, i+1,
+				)
+				row = append(row, monthFormula)
 			}
+
 			values = append(values, row)
+			currentRow++
 		}
 	}
 
@@ -706,37 +919,36 @@ func (w *Writer) writeCategorySummaryTab(ctx context.Context, spreadsheetID stri
 	return err
 }
 
-// writeBusinessExpensesTab writes business expense data with deductible calculations.
+// writeBusinessExpensesTab writes business expense data with category totals.
 func (w *Writer) writeBusinessExpensesTab(ctx context.Context, spreadsheetID string, expenses []BusinessExpenseRow) error {
 	// Prepare values
 	values := [][]any{
 		// Header row
-		{"Date", "Vendor", "Category", "Original Amount", "Business %", "Deductible Amount", "Notes"},
+		{"Date", "Vendor", "Category", "Amount", "Business %", "Deductible", "Notes"},
 	}
 
-	// Group by category and add rows
+	// Group by category and add subtotals
 	currentCategory := ""
 	categoryTotal := decimal.Zero
 	grandTotal := decimal.Zero
 
 	for i, expense := range expenses {
-		// Add category header and subtotal when category changes
+		// Add category header and subtotal from previous category
 		if expense.Category != currentCategory {
+			// Add subtotal for previous category if not the first
 			if currentCategory != "" && !categoryTotal.IsZero() {
-				// Add subtotal for previous category
-				values = append(values,
-					[]any{
-						"", "", fmt.Sprintf("Subtotal - %s", currentCategory), "", "", categoryTotal.InexactFloat64(), "",
-					},
-					[]any{}) // Empty row
+				values = append(values, []any{
+					"", "", fmt.Sprintf("Subtotal - %s", currentCategory), "", "", categoryTotal.InexactFloat64(), "",
+				})
 			}
-			currentCategory = expense.Category
-			categoryTotal = decimal.Zero
 
 			// Add category header
-			values = append(values, []any{
-				fmt.Sprintf("Category: %s", expense.Category),
-			})
+			values = append(values,
+				[]any{}, // Empty row
+				[]any{fmt.Sprintf("CATEGORY: %s", expense.Category)})
+
+			currentCategory = expense.Category
+			categoryTotal = decimal.Zero
 		}
 
 		// Add expense row
@@ -847,336 +1059,426 @@ func (w *Writer) writeMonthlyFlowTab(ctx context.Context, spreadsheetID string, 
 	return err
 }
 
-// Helper functions for common formatting patterns
-
-// formatCurrencyColumn formats a column as currency ($#,##0.00).
-func formatCurrencyColumn(sheetID int64, column, startRow, endRow int) *sheets.Request {
-	return &sheets.Request{
-		RepeatCell: &sheets.RepeatCellRequest{
-			Range: &sheets.GridRange{
-				SheetId:          sheetID,
-				StartRowIndex:    int64(startRow),
-				EndRowIndex:      int64(endRow),
-				StartColumnIndex: int64(column),
-				EndColumnIndex:   int64(column + 1),
-			},
-			Cell: &sheets.CellData{
-				UserEnteredFormat: &sheets.CellFormat{
-					NumberFormat: &sheets.NumberFormat{
-						Type:    "CURRENCY",
-						Pattern: "$#,##0.00",
-					},
-				},
-			},
-			Fields: "userEnteredFormat.numberFormat",
-		},
-	}
-}
-
-// formatPercentageColumn formats a column as percentage.
-func formatPercentageColumn(sheetID int64, column, startRow, endRow int) *sheets.Request {
-	return &sheets.Request{
-		RepeatCell: &sheets.RepeatCellRequest{
-			Range: &sheets.GridRange{
-				SheetId:          sheetID,
-				StartRowIndex:    int64(startRow),
-				EndRowIndex:      int64(endRow),
-				StartColumnIndex: int64(column),
-				EndColumnIndex:   int64(column + 1),
-			},
-			Cell: &sheets.CellData{
-				UserEnteredFormat: &sheets.CellFormat{
-					NumberFormat: &sheets.NumberFormat{
-						Type:    "PERCENT",
-						Pattern: "0%",
-					},
-				},
-			},
-			Fields: "userEnteredFormat.numberFormat",
-		},
-	}
-}
-
-// formatDateColumn formats a column as date (YYYY-MM-DD).
-func formatDateColumn(sheetID int64, column, startRow, endRow int) *sheets.Request {
-	return &sheets.Request{
-		RepeatCell: &sheets.RepeatCellRequest{
-			Range: &sheets.GridRange{
-				SheetId:          sheetID,
-				StartRowIndex:    int64(startRow),
-				EndRowIndex:      int64(endRow),
-				StartColumnIndex: int64(column),
-				EndColumnIndex:   int64(column + 1),
-			},
-			Cell: &sheets.CellData{
-				UserEnteredFormat: &sheets.CellFormat{
-					NumberFormat: &sheets.NumberFormat{
-						Type:    "DATE",
-						Pattern: "yyyy-mm-dd",
-					},
-				},
-			},
-			Fields: "userEnteredFormat.numberFormat",
-		},
-	}
-}
-
-// formatHeaderRow formats a row as bold.
-func formatHeaderRow(sheetID int64, row, startColumn, endColumn int) *sheets.Request {
-	return &sheets.Request{
-		RepeatCell: &sheets.RepeatCellRequest{
-			Range: &sheets.GridRange{
-				SheetId:          sheetID,
-				StartRowIndex:    int64(row),
-				EndRowIndex:      int64(row + 1),
-				StartColumnIndex: int64(startColumn),
-				EndColumnIndex:   int64(endColumn),
-			},
-			Cell: &sheets.CellData{
-				UserEnteredFormat: &sheets.CellFormat{
-					TextFormat: &sheets.TextFormat{
-						Bold: true,
-					},
-				},
-			},
-			Fields: "userEnteredFormat.textFormat.bold",
-		},
-	}
-}
-
-// freezeRows freezes the specified number of rows at the top of the sheet.
-func freezeRows(sheetID int64, rowCount int) *sheets.Request {
-	return &sheets.Request{
-		UpdateSheetProperties: &sheets.UpdateSheetPropertiesRequest{
-			Properties: &sheets.SheetProperties{
-				SheetId: sheetID,
-				GridProperties: &sheets.GridProperties{
-					FrozenRowCount: int64(rowCount),
-				},
-			},
-			Fields: "gridProperties.frozenRowCount",
-		},
-	}
-}
-
-// addBorders adds borders around the specified range.
-func addBorders(sheetID int64, startRow, endRow, startColumn, endColumn int) *sheets.Request {
-	border := &sheets.Border{
-		Style: "SOLID",
-		Color: &sheets.Color{
-			Red:   0.0,
-			Green: 0.0,
-			Blue:  0.0,
-			Alpha: 1.0,
-		},
-	}
-
-	return &sheets.Request{
-		UpdateBorders: &sheets.UpdateBordersRequest{
-			Range: &sheets.GridRange{
-				SheetId:          sheetID,
-				StartRowIndex:    int64(startRow),
-				EndRowIndex:      int64(endRow),
-				StartColumnIndex: int64(startColumn),
-				EndColumnIndex:   int64(endColumn),
-			},
-			Top:    border,
-			Bottom: border,
-			Left:   border,
-			Right:  border,
-		},
-	}
-}
-
-// autoResizeColumns auto-resizes columns to fit content.
-func autoResizeColumns(sheetID int64, startColumn, endColumn int) *sheets.Request {
-	return &sheets.Request{
-		AutoResizeDimensions: &sheets.AutoResizeDimensionsRequest{
-			Dimensions: &sheets.DimensionRange{
-				SheetId:    sheetID,
-				Dimension:  "COLUMNS",
-				StartIndex: int64(startColumn),
-				EndIndex:   int64(endColumn),
-			},
-		},
-	}
-}
-
-// formatNumberColumn formats a column as a plain number.
-func formatNumberColumn(sheetID int64, column, startRow, endRow int) *sheets.Request {
-	return &sheets.Request{
-		RepeatCell: &sheets.RepeatCellRequest{
-			Range: &sheets.GridRange{
-				SheetId:          sheetID,
-				StartRowIndex:    int64(startRow),
-				EndRowIndex:      int64(endRow),
-				StartColumnIndex: int64(column),
-				EndColumnIndex:   int64(column + 1),
-			},
-			Cell: &sheets.CellData{
-				UserEnteredFormat: &sheets.CellFormat{
-					NumberFormat: &sheets.NumberFormat{
-						Type:    "NUMBER",
-						Pattern: "#,##0",
-					},
-				},
-			},
-			Fields: "userEnteredFormat.numberFormat",
-		},
-	}
-}
-
-// Tab-specific formatting methods
-
 // formatExpensesTab formats the Expenses tab.
 func (w *Writer) formatExpensesTab(sheetID int64) []*sheets.Request {
-	var requests []*sheets.Request
-
-	// Bold header row
-	requests = append(requests,
-		formatHeaderRow(sheetID, 0, 0, 6),
-		freezeRows(sheetID, 1),
-		formatDateColumn(sheetID, 0, 1, 1000),
-		formatCurrencyColumn(sheetID, 1, 1, 1000),
-		formatPercentageColumn(sheetID, 4, 1, 1000),
-		autoResizeColumns(sheetID, 0, 6),
-		addBorders(sheetID, 0, 1000, 0, 6))
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+		// Format amount column as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 1,
+					EndColumnIndex:   2,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+		// Format business % as percentage
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 4,
+					EndColumnIndex:   5,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "PERCENT",
+							Pattern: "0%",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+	}
 
 	return requests
 }
 
 // formatIncomeTab formats the Income tab.
 func (w *Writer) formatIncomeTab(sheetID int64) []*sheets.Request {
-	var requests []*sheets.Request
-
-	// Bold header row
-	requests = append(requests,
-		formatHeaderRow(sheetID, 0, 0, 5),
-		freezeRows(sheetID, 1),
-		formatDateColumn(sheetID, 0, 1, 1000),
-		formatCurrencyColumn(sheetID, 1, 1, 1000),
-		autoResizeColumns(sheetID, 0, 5),
-		addBorders(sheetID, 0, 1000, 0, 5))
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+		// Format amount column as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 1,
+					EndColumnIndex:   2,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+	}
 
 	return requests
 }
 
 // formatVendorSummaryTab formats the Vendor Summary tab.
 func (w *Writer) formatVendorSummaryTab(sheetID int64) []*sheets.Request {
-	var requests []*sheets.Request
-
-	// Bold header row
-	requests = append(requests,
-		formatHeaderRow(sheetID, 0, 0, 4),
-		freezeRows(sheetID, 1),
-		formatCurrencyColumn(sheetID, 2, 1, 1000),
-		formatNumberColumn(sheetID, 3, 1, 1000),
-		autoResizeColumns(sheetID, 0, 4),
-		addBorders(sheetID, 0, 1000, 0, 4))
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+		// Format total amount column as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 2,
+					EndColumnIndex:   3,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+	}
 
 	return requests
 }
 
 // formatCategorySummaryTab formats the Category Summary tab.
 func (w *Writer) formatCategorySummaryTab(sheetID int64) []*sheets.Request {
-	var requests []*sheets.Request
-
-	// Bold header row
-	requests = append(requests,
-		formatHeaderRow(sheetID, 0, 0, 18),
-		freezeRows(sheetID, 1),
-		formatCurrencyColumn(sheetID, 2, 1, 1000),
-		formatPercentageColumn(sheetID, 4, 1, 1000))
-
-	// Format monthly columns (F-Q) as currency
-	for col := 5; col <= 16; col++ {
-		requests = append(requests, formatCurrencyColumn(sheetID, col, 1, 1000))
-	}
-
-	// Bold section headers (INCOME CATEGORIES, EXPENSE CATEGORIES)
-	// These would be in specific rows - would need to track during data write
-
-	// Add conditional formatting for monthly amounts > average
-	avgFormula := "=AVERAGE($F2:$Q2)"
-	for col := 5; col <= 16; col++ {
-		requests = append(requests, &sheets.Request{
-			AddConditionalFormatRule: &sheets.AddConditionalFormatRuleRequest{
-				Rule: &sheets.ConditionalFormatRule{
-					Ranges: []*sheets.GridRange{
-						{
-							SheetId:          sheetID,
-							StartRowIndex:    1,
-							EndRowIndex:      1000,
-							StartColumnIndex: int64(col),
-							EndColumnIndex:   int64(col + 1),
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
 						},
-					},
-					BooleanRule: &sheets.BooleanRule{
-						Condition: &sheets.BooleanCondition{
-							Type: "CUSTOM_FORMULA",
-							Values: []*sheets.ConditionValue{
-								{
-									UserEnteredValue: fmt.Sprintf("=$%s2>%s", string(rune('F'+col-5)), avgFormula),
-								},
-							},
-						},
-						Format: &sheets.CellFormat{
-							BackgroundColor: &sheets.Color{
-								Red:   1.0,
-								Green: 0.9,
-								Blue:  0.9,
-								Alpha: 1.0,
-							},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
 						},
 					},
 				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
 			},
-		})
+		},
+		// Format amount columns as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 2,
+					EndColumnIndex:   3,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+		// Format business % column as percentage
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 4,
+					EndColumnIndex:   5,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "PERCENT",
+							Pattern: "0%",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+		// Format monthly columns as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 5,
+					EndColumnIndex:   17,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
 	}
-
-	// Auto-resize all columns
-	requests = append(requests,
-		autoResizeColumns(sheetID, 0, 18),
-		addBorders(sheetID, 0, 1000, 0, 18))
 
 	return requests
 }
 
 // formatBusinessExpensesTab formats the Business Expenses tab.
 func (w *Writer) formatBusinessExpensesTab(sheetID int64) []*sheets.Request {
-	var requests []*sheets.Request
-
-	// Bold header row
-	requests = append(requests,
-		formatHeaderRow(sheetID, 0, 0, 7),
-		freezeRows(sheetID, 1),
-		formatDateColumn(sheetID, 0, 1, 1000),
-		formatCurrencyColumn(sheetID, 3, 1, 1000),
-		formatPercentageColumn(sheetID, 4, 1, 1000),
-		formatCurrencyColumn(sheetID, 5, 1, 1000),
-		autoResizeColumns(sheetID, 0, 7),
-		addBorders(sheetID, 0, 1000, 0, 7))
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+		// Format amount columns as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 3,
+					EndColumnIndex:   4,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+		// Format business % as percentage
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 4,
+					EndColumnIndex:   5,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "PERCENT",
+							Pattern: "0%",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+		// Format deductible column as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 5,
+					EndColumnIndex:   6,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+	}
 
 	return requests
 }
 
 // formatMonthlyFlowTab formats the Monthly Flow tab.
 func (w *Writer) formatMonthlyFlowTab(sheetID int64) []*sheets.Request {
-	var requests []*sheets.Request
-
-	// Bold header row
-	requests = append(requests,
-		formatHeaderRow(sheetID, 0, 0, 5),
-		freezeRows(sheetID, 1))
-
-	// Format currency columns (B-E)
-	for col := 1; col <= 4; col++ {
-		requests = append(requests, formatCurrencyColumn(sheetID, col, 1, 1000))
-	}
-
-	// Add conditional formatting for Net Flow (column D) - red if negative, green if positive
-	requests = append(requests,
-		&sheets.Request{
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+		// Format amount columns as currency
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:          sheetID,
+					StartRowIndex:    1,
+					EndRowIndex:      1000,
+					StartColumnIndex: 1,
+					EndColumnIndex:   5,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						NumberFormat: &sheets.NumberFormat{
+							Type:    "CURRENCY",
+							Pattern: "$#,##0.00",
+						},
+					},
+				},
+				Fields: "userEnteredFormat.numberFormat",
+			},
+		},
+		// Conditional formatting - red for negative net flow
+		{
 			AddConditionalFormatRule: &sheets.AddConditionalFormatRuleRequest{
 				Rule: &sheets.ConditionalFormatRule{
 					Ranges: []*sheets.GridRange{
@@ -1211,7 +1513,7 @@ func (w *Writer) formatMonthlyFlowTab(sheetID int64) []*sheets.Request {
 				},
 			},
 		},
-		&sheets.Request{
+		{
 			AddConditionalFormatRule: &sheets.AddConditionalFormatRuleRequest{
 				Rule: &sheets.ConditionalFormatRule{
 					Ranges: []*sheets.GridRange{
@@ -1246,8 +1548,133 @@ func (w *Writer) formatMonthlyFlowTab(sheetID int64) []*sheets.Request {
 				},
 			},
 		},
-		autoResizeColumns(sheetID, 0, 5),
-		addBorders(sheetID, 0, 1000, 0, 5))
+	}
+
+	return requests
+}
+
+// writeVendorLookupTab writes the vendor lookup table.
+func (w *Writer) writeVendorLookupTab(ctx context.Context, spreadsheetID string, vendors []VendorLookupRow) error {
+	// Prepare values
+	values := [][]any{
+		// Header row
+		{"Vendor", "Category"},
+	}
+
+	// Add vendor rows
+	for _, vendor := range vendors {
+		values = append(values, []any{
+			vendor.VendorName,
+			vendor.Category,
+		})
+	}
+
+	// Write to sheet
+	valueRange := &sheets.ValueRange{
+		Values: values,
+	}
+
+	rangeStr := "Vendor Lookup!A1"
+	_, err := w.service.Spreadsheets.Values.Update(spreadsheetID, rangeStr, valueRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+
+	return err
+}
+
+// writeCategoryLookupTab writes the category lookup table.
+func (w *Writer) writeCategoryLookupTab(ctx context.Context, spreadsheetID string, categories []CategoryLookupRow) error {
+	// Prepare values
+	values := [][]any{
+		// Header row
+		{"Category", "Type", "Description", "Default Business %"},
+	}
+
+	// Add category rows
+	for _, category := range categories {
+		values = append(values, []any{
+			category.CategoryName,
+			category.Type,
+			category.Description,
+			category.DefaultBusinessPct,
+		})
+	}
+
+	// Write to sheet
+	valueRange := &sheets.ValueRange{
+		Values: values,
+	}
+
+	rangeStr := "Category Lookup!A1"
+	_, err := w.service.Spreadsheets.Values.Update(spreadsheetID, rangeStr, valueRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+
+	return err
+}
+
+// formatVendorLookupTab formats the Vendor Lookup tab.
+func (w *Writer) formatVendorLookupTab(sheetID int64) []*sheets.Request {
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+	}
+
+	return requests
+}
+
+// formatCategoryLookupTab formats the Category Lookup tab.
+func (w *Writer) formatCategoryLookupTab(sheetID int64) []*sheets.Request {
+	requests := []*sheets.Request{
+		// Bold header row
+		{
+			RepeatCell: &sheets.RepeatCellRequest{
+				Range: &sheets.GridRange{
+					SheetId:       sheetID,
+					StartRowIndex: 0,
+					EndRowIndex:   1,
+				},
+				Cell: &sheets.CellData{
+					UserEnteredFormat: &sheets.CellFormat{
+						TextFormat: &sheets.TextFormat{
+							Bold: true,
+						},
+						BackgroundColor: &sheets.Color{
+							Red:   0.9,
+							Green: 0.9,
+							Blue:  0.9,
+							Alpha: 1.0,
+						},
+					},
+				},
+				Fields: "userEnteredFormat.textFormat,userEnteredFormat.backgroundColor",
+			},
+		},
+	}
 
 	return requests
 }

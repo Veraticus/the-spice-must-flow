@@ -111,6 +111,11 @@ func (m *engineMockStorage) DeleteCategory(ctx context.Context, id int) error {
 	return args.Error(0)
 }
 
+func (m *engineMockStorage) UpdateCategoryBusinessPercent(ctx context.Context, id int, businessPercent int) error {
+	args := m.Called(ctx, id, businessPercent)
+	return args.Error(0)
+}
+
 func (m *engineMockStorage) GetDefaultCategoryID(ctx context.Context, categoryType model.CategoryType) (string, error) {
 	args := m.Called(ctx, categoryType)
 	return args.String(0), args.Error(1)
@@ -266,7 +271,7 @@ func (m *engineMockLLMClient) ValidateAndCorrectResponse(ctx context.Context, co
 	return args.String(0), args.Error(1)
 }
 
-func (m *engineMockLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]interface{}) (string, error) {
+func (m *engineMockLLMClient) AnalyzeTransactionsWithFile(ctx context.Context, prompt string, transactionData map[string]any) (string, error) {
 	args := m.Called(ctx, prompt, transactionData)
 	return args.String(0), args.Error(1)
 }

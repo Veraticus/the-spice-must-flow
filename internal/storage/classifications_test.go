@@ -212,8 +212,6 @@ func TestSQLiteStorage_ClassificationHistory(t *testing.T) {
 		if err := store.SaveClassification(ctx, &c); err != nil {
 			t.Fatalf("Failed to save classification %d: %v", i, err)
 		}
-		// Add small delay to ensure different timestamps
-		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Verify transaction is no longer in unclassified list

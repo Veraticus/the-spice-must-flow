@@ -466,8 +466,9 @@ func TestClassificationEngine_ContextCancellation(t *testing.T) {
 		errChan <- engine.ClassifyTransactions(ctx, nil)
 	}()
 
-	// Cancel after short delay
-	time.Sleep(50 * time.Millisecond)
+	// Cancel after short delay using a timer
+	timer := time.NewTimer(50 * time.Millisecond)
+	<-timer.C
 	cancel()
 
 	// Check error

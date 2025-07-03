@@ -10,7 +10,7 @@ import (
 
 // ExpectedSchemaVersion is the latest schema version that the application expects.
 // If the database cannot be migrated to this version, it's a fatal error.
-const ExpectedSchemaVersion = 20
+const ExpectedSchemaVersion = 22
 
 // Migration represents a database schema migration.
 type Migration struct {
@@ -851,6 +851,91 @@ var migrations = []Migration{
 			}
 
 			slog.Info("Removed CHECK constraint on analysis issue types to allow AI flexibility")
+			return nil
+		},
+	},
+	{
+		Version:     21,
+		Description: "Add default business percentage to categories",
+		Up: func(tx *sql.Tx) error {
+			// Add default_business_percent column to categories table
+			if _, err := tx.Exec(`
+				ALTER TABLE categories 
+				ADD COLUMN default_business_percent INTEGER DEFAULT 0
+			`); err != nil {
+				return fmt.Errorf("failed to add default_business_percent column: %w", err)
+			}
+
+			// Set sensible defaults based on category names and types
+			defaults := []struct {
+				pattern string
+				percent int
+			}{
+				// Office/Work categories - 100% business
+				{pattern: "%office%", percent: 100},
+				{pattern: "%work%", percent: 100},
+				{pattern: "%business%", percent: 100},
+				{pattern: "%professional%", percent: 100},
+				{pattern: "%consulting%", percent: 100},
+				{pattern: "%freelance%", percent: 100},
+
+				// Partially deductible categories - 50%
+				{pattern: "%meal%", percent: 50},
+				{pattern: "%dining%", percent: 50},
+				{pattern: "%restaurant%", percent: 50},
+				{pattern: "%entertainment%", percent: 50},
+				{pattern: "%conference%", percent: 50},
+				{pattern: "%travel%", percent: 50},
+
+				// Personal categories - 0%
+				{pattern: "%personal%", percent: 0},
+				{pattern: "%home%", percent: 0},
+				{pattern: "%family%", percent: 0},
+				{pattern: "%groceries%", percent: 0},
+				{pattern: "%medical%", percent: 0},
+				{pattern: "%health%", percent: 0},
+			}
+
+			// Apply defaults based on patterns
+			for _, def := range defaults {
+				if _, err := tx.Exec(`
+					UPDATE categories 
+					SET default_business_percent = ?
+					WHERE LOWER(name) LIKE LOWER(?) 
+					AND default_business_percent = 0
+				`, def.percent, def.pattern); err != nil {
+					return fmt.Errorf("failed to set default for pattern %s: %w", def.pattern, err)
+				}
+			}
+
+			// For expense categories without a match, default to 0%
+			// Income and system categories should always be 0%
+			if _, err := tx.Exec(`
+				UPDATE categories 
+				SET default_business_percent = 0
+				WHERE type IN ('income', 'system')
+			`); err != nil {
+				return fmt.Errorf("failed to set defaults for income/system categories: %w", err)
+			}
+
+			slog.Info("Added default business percentage to categories")
+			return nil
+		},
+	},
+	{
+		Version:     22,
+		Description: "Reset all category default business percentages to 0",
+		Up: func(tx *sql.Tx) error {
+			// Reset all default business percentages to 0
+			// Users should explicitly set business percentages as needed
+			if _, err := tx.Exec(`
+				UPDATE categories 
+				SET default_business_percent = 0
+			`); err != nil {
+				return fmt.Errorf("failed to reset default business percentages: %w", err)
+			}
+
+			slog.Info("Reset all category default business percentages to 0")
 			return nil
 		},
 	},

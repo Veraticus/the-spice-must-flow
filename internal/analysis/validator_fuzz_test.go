@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// cryptoRandInt returns a cryptographically secure random int in range [0, max).
-func cryptoRandInt(max int) int {
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+// cryptoRandInt returns a cryptographically secure random int in range [0, maxVal).
+func cryptoRandInt(maxVal int) int {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(maxVal)))
 	if err != nil {
 		panic(err)
 	}
@@ -125,7 +125,11 @@ func FuzzJSONValidator_ExtractBadSection(f *testing.F) {
 	}
 
 	for _, seed := range seeds {
-		f.Add(seed.data, seed.err.(*json.SyntaxError).Offset)
+		syntaxErr, ok := seed.err.(*json.SyntaxError)
+		if !ok {
+			panic("expected json.SyntaxError in test seed")
+		}
+		f.Add(seed.data, syntaxErr.Offset)
 	}
 
 	validator := NewJSONValidator()
@@ -148,7 +152,7 @@ func FuzzJSONValidator_ExtractBadSection(f *testing.F) {
 		// Offset should be within bounds or handled gracefully
 		if offset >= 0 && offset < int64(len(data)) {
 			// Bad section should contain some context around the error
-			if len(badSection) == 0 && len(data) > 0 {
+			if badSection == "" && len(data) > 0 {
 				t.Error("expected non-empty bad section for valid offset")
 			}
 		}

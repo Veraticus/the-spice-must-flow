@@ -16,10 +16,11 @@ const (
 
 // Category represents a valid expense category.
 type Category struct {
-	CreatedAt   time.Time
-	Name        string
-	Description string
-	Type        CategoryType
-	ID          int
-	IsActive    bool
+	CreatedAt              time.Time
+	Name                   string
+	Description            string
+	Type                   CategoryType
+	ID                     int
+	DefaultBusinessPercent int
+	IsActive               bool
 }

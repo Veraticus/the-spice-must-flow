@@ -37,6 +37,6 @@ func NewSessionClient(cfg Config) (SessionClient, error) {
 		return nil, fmt.Errorf("claude code client does not implement SessionClient")
 	default:
 		// Other providers don't support sessions yet
-		return nil, nil
+		return nil, fmt.Errorf("provider %s does not support sessions", cfg.Provider)
 	}
 }

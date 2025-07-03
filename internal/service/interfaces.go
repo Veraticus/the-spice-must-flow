@@ -50,6 +50,7 @@ type Storage interface {
 	CreateCategory(ctx context.Context, name, description string) (*model.Category, error)
 	CreateCategoryWithType(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error)
 	UpdateCategory(ctx context.Context, id int, name, description string) error
+	UpdateCategoryBusinessPercent(ctx context.Context, id int, businessPercent int) error
 	DeleteCategory(ctx context.Context, id int) error
 
 	// Check pattern operations

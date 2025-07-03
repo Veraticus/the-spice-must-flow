@@ -35,145 +35,148 @@ func (u UnimplementedStorage) GetTransactionsToClassify(_ context.Context, _ *ti
 func (u UnimplementedStorage) GetTransactionByID(_ context.Context, _ string) (*model.Transaction, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetTransactionsByCategory(ctx context.Context, categoryName string) ([]model.Transaction, error) {
+func (u UnimplementedStorage) GetTransactionsByCategory(_ context.Context, _ string) ([]model.Transaction, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetTransactionsByCategoryID(ctx context.Context, categoryID int) ([]model.Transaction, error) {
+func (u UnimplementedStorage) GetTransactionsByCategoryID(_ context.Context, _ int) ([]model.Transaction, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdateTransactionCategories(ctx context.Context, fromCategory, toCategory string) error {
+func (u UnimplementedStorage) UpdateTransactionCategories(_ context.Context, _, _ string) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdateTransactionCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+func (u UnimplementedStorage) UpdateTransactionCategoriesByID(_ context.Context, _, _ int) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetTransactionCount(ctx context.Context) (int, error) {
+func (u UnimplementedStorage) GetTransactionCount(_ context.Context) (int, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetTransactionCountByCategory(ctx context.Context, categoryName string) (int, error) {
+func (u UnimplementedStorage) GetTransactionCountByCategory(_ context.Context, _ string) (int, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetEarliestTransactionDate(ctx context.Context) (time.Time, error) {
+func (u UnimplementedStorage) GetEarliestTransactionDate(_ context.Context) (time.Time, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetLatestTransactionDate(ctx context.Context) (time.Time, error) {
+func (u UnimplementedStorage) GetLatestTransactionDate(_ context.Context) (time.Time, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetCategorySummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
+func (u UnimplementedStorage) GetCategorySummary(_ context.Context, _, _ time.Time) (map[string]float64, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetMerchantSummary(ctx context.Context, start, end time.Time) (map[string]float64, error) {
+func (u UnimplementedStorage) GetMerchantSummary(_ context.Context, _, _ time.Time) (map[string]float64, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetVendor(ctx context.Context, merchantName string) (*model.Vendor, error) {
+func (u UnimplementedStorage) GetVendor(_ context.Context, _ string) (*model.Vendor, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) SaveVendor(ctx context.Context, vendor *model.Vendor) error {
+func (u UnimplementedStorage) SaveVendor(_ context.Context, _ *model.Vendor) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) DeleteVendor(ctx context.Context, merchantName string) error {
+func (u UnimplementedStorage) DeleteVendor(_ context.Context, _ string) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetAllVendors(ctx context.Context) ([]model.Vendor, error) {
+func (u UnimplementedStorage) GetAllVendors(_ context.Context) ([]model.Vendor, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetVendorsByCategory(ctx context.Context, categoryName string) ([]model.Vendor, error) {
+func (u UnimplementedStorage) GetVendorsByCategory(_ context.Context, _ string) ([]model.Vendor, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetVendorsByCategoryID(ctx context.Context, categoryID int) ([]model.Vendor, error) {
+func (u UnimplementedStorage) GetVendorsByCategoryID(_ context.Context, _ int) ([]model.Vendor, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetVendorsBySource(ctx context.Context, source model.VendorSource) ([]model.Vendor, error) {
+func (u UnimplementedStorage) GetVendorsBySource(_ context.Context, _ model.VendorSource) ([]model.Vendor, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) DeleteVendorsBySource(ctx context.Context, source model.VendorSource) error {
+func (u UnimplementedStorage) DeleteVendorsBySource(_ context.Context, _ model.VendorSource) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdateVendorCategories(ctx context.Context, fromCategory, toCategory string) error {
+func (u UnimplementedStorage) UpdateVendorCategories(_ context.Context, _, _ string) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdateVendorCategoriesByID(ctx context.Context, fromCategoryID, toCategoryID int) error {
+func (u UnimplementedStorage) UpdateVendorCategoriesByID(_ context.Context, _, _ int) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) FindVendorMatch(ctx context.Context, merchantName string) (*model.Vendor, error) {
+func (u UnimplementedStorage) FindVendorMatch(_ context.Context, _ string) (*model.Vendor, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) SaveClassification(ctx context.Context, classification *model.Classification) error {
+func (u UnimplementedStorage) SaveClassification(_ context.Context, _ *model.Classification) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetClassificationsByDateRange(ctx context.Context, start, end time.Time) ([]model.Classification, error) {
+func (u UnimplementedStorage) GetClassificationsByDateRange(_ context.Context, _, _ time.Time) ([]model.Classification, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetClassificationsByConfidence(ctx context.Context, maxConfidence float64, excludeUserModified bool) ([]model.Classification, error) {
+func (u UnimplementedStorage) GetClassificationsByConfidence(_ context.Context, _ float64, _ bool) ([]model.Classification, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) ClearAllClassifications(ctx context.Context) error {
+func (u UnimplementedStorage) ClearAllClassifications(_ context.Context) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetCategories(ctx context.Context) ([]model.Category, error) {
+func (u UnimplementedStorage) GetCategories(_ context.Context) ([]model.Category, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetCategoryByName(ctx context.Context, name string) (*model.Category, error) {
+func (u UnimplementedStorage) GetCategoryByName(_ context.Context, _ string) (*model.Category, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) CreateCategory(ctx context.Context, name, description string) (*model.Category, error) {
+func (u UnimplementedStorage) CreateCategory(_ context.Context, _, _ string) (*model.Category, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) CreateCategoryWithType(ctx context.Context, name, description string, categoryType model.CategoryType) (*model.Category, error) {
+func (u UnimplementedStorage) CreateCategoryWithType(_ context.Context, _, _ string, _ model.CategoryType) (*model.Category, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdateCategory(ctx context.Context, id int, name, description string) error {
+func (u UnimplementedStorage) UpdateCategory(_ context.Context, _ int, _, _ string) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) DeleteCategory(ctx context.Context, id int) error {
+func (u UnimplementedStorage) DeleteCategory(_ context.Context, _ int) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) CreateCheckPattern(ctx context.Context, pattern *model.CheckPattern) error {
+func (u UnimplementedStorage) CreateCheckPattern(_ context.Context, _ *model.CheckPattern) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetCheckPattern(ctx context.Context, id int64) (*model.CheckPattern, error) {
+func (u UnimplementedStorage) GetCheckPattern(_ context.Context, _ int64) (*model.CheckPattern, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetActiveCheckPatterns(ctx context.Context) ([]model.CheckPattern, error) {
+func (u UnimplementedStorage) GetActiveCheckPatterns(_ context.Context) ([]model.CheckPattern, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetMatchingCheckPatterns(ctx context.Context, txn model.Transaction) ([]model.CheckPattern, error) {
+func (u UnimplementedStorage) GetMatchingCheckPatterns(_ context.Context, _ model.Transaction) ([]model.CheckPattern, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdateCheckPattern(ctx context.Context, pattern *model.CheckPattern) error {
+func (u UnimplementedStorage) UpdateCheckPattern(_ context.Context, _ *model.CheckPattern) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) DeleteCheckPattern(ctx context.Context, id int64) error {
+func (u UnimplementedStorage) DeleteCheckPattern(_ context.Context, _ int64) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) IncrementCheckPatternUseCount(ctx context.Context, id int64) error {
+func (u UnimplementedStorage) IncrementCheckPatternUseCount(_ context.Context, _ int64) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) CreatePatternRule(ctx context.Context, rule *model.PatternRule) error {
+func (u UnimplementedStorage) CreatePatternRule(_ context.Context, _ *model.PatternRule) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetPatternRule(ctx context.Context, id int) (*model.PatternRule, error) {
+func (u UnimplementedStorage) GetPatternRule(_ context.Context, _ int) (*model.PatternRule, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetActivePatternRules(ctx context.Context) ([]model.PatternRule, error) {
+func (u UnimplementedStorage) GetActivePatternRules(_ context.Context) ([]model.PatternRule, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) UpdatePatternRule(ctx context.Context, rule *model.PatternRule) error {
+func (u UnimplementedStorage) UpdatePatternRule(_ context.Context, _ *model.PatternRule) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) DeletePatternRule(ctx context.Context, id int) error {
+func (u UnimplementedStorage) DeletePatternRule(_ context.Context, _ int) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) IncrementPatternRuleUseCount(ctx context.Context, id int) error {
+func (u UnimplementedStorage) IncrementPatternRuleUseCount(_ context.Context, _ int) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) GetPatternRulesByCategory(ctx context.Context, category string) ([]model.PatternRule, error) {
+func (u UnimplementedStorage) GetPatternRulesByCategory(_ context.Context, _ string) ([]model.PatternRule, error) {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) Migrate(ctx context.Context) error {
+func (u UnimplementedStorage) Migrate(_ context.Context) error {
 	panic("unimplemented")
 }
-func (u UnimplementedStorage) BeginTx(ctx context.Context) (service.Transaction, error) {
+func (u UnimplementedStorage) BeginTx(_ context.Context) (service.Transaction, error) {
+	panic("unimplemented")
+}
+func (u UnimplementedStorage) UpdateCategoryBusinessPercent(_ context.Context, _ int, _ int) error {
 	panic("unimplemented")
 }
 func (u UnimplementedStorage) Close() error {
@@ -237,7 +240,11 @@ func (m *MockCategorySuggester) Suggest(ctx context.Context, txn model.Transacti
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]pattern.Suggestion), args.Error(1)
+	suggestions, ok := args.Get(0).([]pattern.Suggestion)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for suggestions: %T", args.Get(0))
+	}
+	return suggestions, args.Error(1)
 }
 
 func (m *MockCategorySuggester) SuggestWithValidation(ctx context.Context, txn model.Transaction, categories []model.Category) ([]pattern.Suggestion, error) {
@@ -245,7 +252,11 @@ func (m *MockCategorySuggester) SuggestWithValidation(ctx context.Context, txn m
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]pattern.Suggestion), args.Error(1)
+	suggestions, ok := args.Get(0).([]pattern.Suggestion)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for suggestions: %T", args.Get(0))
+	}
+	return suggestions, args.Error(1)
 }
 
 // MockTransactionValidator for testing.

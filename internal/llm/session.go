@@ -15,16 +15,16 @@ type AnalysisSession struct {
 
 // JSONPatch represents a single JSON patch operation.
 type JSONPatch struct {
-	Value interface{} `json:"value"`
-	Path  string      `json:"path"`
+	Value any    `json:"value"`
+	Path  string `json:"path"`
 }
 
 // PatchRequest is what we ask the LLM to provide when fixing errors.
 type PatchRequest struct {
-	ErrorDescription string      `json:"error_description"`
-	ErrorPath        string      `json:"error_path,omitempty"`
-	OriginalValue    interface{} `json:"original_value,omitempty"`
-	SuggestedFix     string      `json:"suggested_fix"`
+	ErrorDescription string `json:"error_description"`
+	ErrorPath        string `json:"error_path,omitempty"`
+	OriginalValue    any    `json:"original_value,omitempty"`
+	SuggestedFix     string `json:"suggested_fix"`
 }
 
 // PatchResponse is what the LLM returns with corrections.
